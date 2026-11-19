@@ -1,0 +1,463 @@
+//! Everything the Flutter app calls. Each function maps onto one `bragi_core::Core` call;
+//! the types here are flat copies of the core's, shaped for Dart.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
+
+use bragi_core::demo::DemoNode;
+use bragi_core::{
+    AppState, ChatEvent, ChatHandle, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus, PairState, Role,
+};
+use flutter_rust_bridge::frb;
+use tokio::sync::mpsc::UnboundedReceiver;
+
+use crate::frb_generated::StreamSink;
+
+struct Running {
+    core: Core,
+    _demo: Option<Arc<DemoNode>>,
+    _runtime: Option<tokio::runtime::Runtime>,
+}
+
+fn slot() -> &'static Mutex<Option<Running>> {
+    static S: OnceLock<Mutex<Option<Running>>> = OnceLock::new();
+    S.get_or_init(|| Mutex::new(None))
+}
+
+/// Answers waiting for `follow_chat`, by request id.
+fn pending() -> &'static Mutex<HashMap<String, UnboundedReceiver<ChatEvent>>> {
+    static P: OnceLock<Mutex<HashMap<String, UnboundedReceiver<ChatEvent>>>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+fn core() -> Result<Core, String> {
+    slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.core.clone()).ok_or_else(|| "Bragi has not started".to_string())
+}
+
+fn err(e: bragi_core::CoreError) -> String {
+    e.message
+}
+
+// ---- types -------------------------------------------------------------------------------------
+
+/// [`PairState`] flattened: `state` is `unpaired`, `offering`, `confirm`, `waiting`, `linked`
+/// or `failed`; the other fields are set when that state has them.
+#[derive(Debug, Clone, Default)]
+pub struct PairView {
+    pub state: String,
+    pub link: Option<String>,
+    pub expires_ms: Option<i64>,
+    pub sas: Option<String>,
+    pub user: Option<String>,
+    pub device: Option<String>,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelView {
+    pub id: String,
+    /// `warm`, `loadable`, `loading` or `busy`.
+    pub status: String,
+    pub replicas: u32,
+    pub tokens_per_sec: Option<f64>,
+    pub context: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StateView {
+    pub pair: PairView,
+    pub online: bool,
+    pub node: Option<String>,
+    pub models: Vec<ModelView>,
+    pub default_model: Option<String>,
+}
+
+/// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
+/// `done` or `error`. A delta's text goes at `offset` (characters), replacing what was there.
+#[derive(Debug, Clone, Default)]
+pub struct ChatEventView {
+    pub kind: String,
+    pub offset: u64,
+    pub text: String,
+    pub node: Option<String>,
+    pub model: Option<String>,
+    pub position: u32,
+    pub prompt_tokens: u64,
+    pub completion_tokens: u64,
+    pub finish_reason: Option<String>,
+    /// For errors: `cancelled`, `unavailable`, `busy`, `refused`, … (`bragi_core::ErrorKind`).
+    pub error_kind: Option<String>,
+    /// For errors: the text that streamed before it.
+    pub partial: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatStarted {
+    pub request_id: String,
+    pub conversation_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessageView {
+    /// `user` or `assistant`.
+    pub role: String,
+    pub text: String,
+    /// `complete`, `streaming`, `stopped` or `failed`.
+    pub state: String,
+    pub model: Option<String>,
+    pub node: Option<String>,
+    pub at_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConversationView {
+    pub id: String,
+    pub title: String,
+    pub updated_ms: i64,
+    pub messages: Vec<MessageView>,
+    /// The last answer was stopped or cut off and can be continued.
+    pub continuable: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SummaryView {
+    pub id: String,
+    pub title: String,
+    pub updated_ms: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkCheckView {
+    pub sas: String,
+    pub device: String,
+}
+
+fn status_name(s: ModelStatus) -> String {
+    match s {
+        ModelStatus::Warm => "warm",
+        ModelStatus::Loadable => "loadable",
+        ModelStatus::Loading => "loading",
+        ModelStatus::Busy => "busy",
+    }
+    .into()
+}
+
+fn message_state_name(s: MessageState) -> String {
+    match s {
+        MessageState::Complete => "complete",
+        MessageState::Streaming => "streaming",
+        MessageState::Stopped => "stopped",
+        MessageState::Failed => "failed",
+    }
+    .into()
+}
+
+fn error_kind_name(k: ErrorKind) -> String {
+    match k {
+        ErrorKind::NotPaired => "not_paired",
+        ErrorKind::Pairing => "pairing",
+        ErrorKind::Unavailable => "unavailable",
+        ErrorKind::Busy => "busy",
+        ErrorKind::Cancelled => "cancelled",
+        ErrorKind::Refused => "refused",
+        ErrorKind::BadRequest => "bad_request",
+        ErrorKind::Storage => "storage",
+        ErrorKind::NotFound => "not_found",
+        ErrorKind::Other => "other",
+    }
+    .into()
+}
+
+fn pair_view(p: &PairState) -> PairView {
+    let mut v = PairView::default();
+    match p {
+        PairState::Unpaired => v.state = "unpaired".into(),
+        PairState::Offering { link, expires_ms } => {
+            v.state = "offering".into();
+            v.link = Some(link.clone());
+            v.expires_ms = Some(*expires_ms);
+        }
+        PairState::Confirm { sas } => {
+            v.state = "confirm".into();
+            v.sas = Some(sas.clone());
+        }
+        PairState::Waiting { sas } => {
+            v.state = "waiting".into();
+            v.sas = Some(sas.clone());
+        }
+        PairState::Linked { user, device } => {
+            v.state = "linked".into();
+            v.user = Some(user.clone());
+            v.device = Some(device.clone());
+        }
+        PairState::Failed { message } => {
+            v.state = "failed".into();
+            v.message = Some(message.clone());
+        }
+    }
+    v
+}
+
+fn state_view(s: &AppState) -> StateView {
+    StateView {
+        pair: pair_view(&s.pair),
+        online: s.online,
+        node: s.catalog.node.clone(),
+        models: s
+            .catalog
+            .models
+            .iter()
+            .map(|m| ModelView {
+                id: m.id.clone(),
+                status: status_name(m.status),
+                replicas: m.replicas,
+                tokens_per_sec: m.tokens_per_sec.map(f64::from),
+                context: m.context,
+            })
+            .collect(),
+        default_model: s.catalog.default_model().map(str::to_string),
+    }
+}
+
+fn event_view(e: ChatEvent) -> ChatEventView {
+    let mut v = ChatEventView::default();
+    match e {
+        ChatEvent::Queued { position } => {
+            v.kind = "queued".into();
+            v.position = position;
+        }
+        ChatEvent::Started { node, model, .. } => {
+            v.kind = "started".into();
+            v.node = Some(node);
+            v.model = Some(model);
+        }
+        ChatEvent::Delta { offset, text } => {
+            v.kind = "delta".into();
+            v.offset = offset;
+            v.text = text;
+        }
+        ChatEvent::Reasoning { offset, text } => {
+            v.kind = "reasoning".into();
+            v.offset = offset;
+            v.text = text;
+        }
+        ChatEvent::Resumed { node, offset } => {
+            v.kind = "resumed".into();
+            v.node = Some(node);
+            v.offset = offset;
+        }
+        ChatEvent::Usage { prompt_tokens, completion_tokens } => {
+            v.kind = "usage".into();
+            v.prompt_tokens = prompt_tokens;
+            v.completion_tokens = completion_tokens;
+        }
+        ChatEvent::Done { finish_reason } => {
+            v.kind = "done".into();
+            v.finish_reason = finish_reason;
+        }
+        ChatEvent::Error { kind, message, partial } => {
+            v.kind = "error".into();
+            v.error_kind = Some(error_kind_name(kind));
+            v.text = message;
+            v.partial = partial;
+        }
+    }
+    v
+}
+
+fn conversation_view(c: &Conversation) -> ConversationView {
+    ConversationView {
+        id: c.id.clone(),
+        title: c.title.clone(),
+        updated_ms: c.updated_ms,
+        continuable: c.continuable(),
+        messages: c
+            .messages
+            .iter()
+            .map(|m| MessageView {
+                role: if m.role == Role::User { "user" } else { "assistant" }.into(),
+                text: m.text.clone(),
+                state: message_state_name(m.state),
+                model: m.model.clone(),
+                node: m.node.clone(),
+                at_ms: m.at_ms,
+            })
+            .collect(),
+    }
+}
+
+fn summary_view(s: &ConversationSummary) -> SummaryView {
+    SummaryView { id: s.id.clone(), title: s.title.clone(), updated_ms: s.updated_ms }
+}
+
+fn started(h: ChatHandle) -> ChatStarted {
+    let out = ChatStarted { request_id: h.request_id.clone(), conversation_id: h.conversation_id.clone() };
+    pending().lock().unwrap_or_else(|e| e.into_inner()).insert(h.request_id, h.events);
+    out
+}
+
+// ---- lifecycle ---------------------------------------------------------------------------------
+
+#[frb(init)]
+pub fn init_app() {
+    flutter_rust_bridge::setup_default_user_utils();
+}
+
+/// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
+pub fn start(dir: String, label: String) -> Result<(), String> {
+    let mut s = slot().lock().unwrap_or_else(|e| e.into_inner());
+    if s.is_some() {
+        return Ok(());
+    }
+    let core = Core::start(Config::new(PathBuf::from(dir), label)).map_err(err)?;
+    *s = Some(Running { core, _demo: None, _runtime: None });
+    Ok(())
+}
+
+/// Starts the demo: an in-process inference node with a test identity, which opens the
+/// link code after `accept_after_ms`. Nothing touches the real network.
+pub fn start_demo(dir: String, label: String, accept_after_ms: u32, word_delay_ms: u32) -> Result<(), String> {
+    let mut s = slot().lock().unwrap_or_else(|e| e.into_inner());
+    if s.is_some() {
+        return Ok(());
+    }
+    let dir = PathBuf::from(dir);
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().map_err(|e| e.to_string())?;
+    let node = Arc::new(rt.block_on(DemoNode::start(&dir.join("demo"), Duration::from_millis(word_delay_ms.into()))).map_err(err)?);
+    let core = {
+        let _g = rt.enter();
+        Core::start(node.app_config(&dir.join("app"), &label)).map_err(err)?
+    };
+    node.auto_accept_after(&core, Duration::from_millis(accept_after_ms.into()));
+    *s = Some(Running { core, _demo: Some(node), _runtime: Some(rt) });
+    Ok(())
+}
+
+/// The demo node's answer to `prompt`, which a test compares a continued answer with.
+pub fn demo_answer(model: String, prompt: String) -> String {
+    bragi_core::demo::answer_for(&model, &prompt)
+}
+
+pub fn shutdown() {
+    if let Some(r) = slot().lock().unwrap_or_else(|e| e.into_inner()).take() {
+        r.core.shutdown();
+    }
+}
+
+pub fn paused() -> Result<(), String> {
+    core()?.paused();
+    Ok(())
+}
+
+pub fn resumed() -> Result<(), String> {
+    core()?.resumed();
+    Ok(())
+}
+
+pub fn network_changed() -> Result<(), String> {
+    core()?.network_changed();
+    Ok(())
+}
+
+// ---- state -------------------------------------------------------------------------------------
+
+#[frb(sync)]
+pub fn state() -> Result<StateView, String> {
+    Ok(state_view(&core()?.state()))
+}
+
+/// Sends the state now and on every change, until the app stops listening.
+pub fn watch_state(sink: StreamSink<StateView>) -> Result<(), String> {
+    let core = core()?;
+    let mut w = core.watch();
+    core.handle().spawn(async move {
+        loop {
+            let v = state_view(&w.borrow_and_update());
+            if sink.add(v).is_err() || w.changed().await.is_err() {
+                return;
+            }
+        }
+    });
+    Ok(())
+}
+
+// ---- pairing -----------------------------------------------------------------------------------
+
+/// Shows a link code for a device that is already linked; returns it (also in the state).
+pub async fn pair_offer() -> Result<String, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.pair_offer().await }).await.map_err(|e| e.to_string())?.map_err(err)
+}
+
+pub fn pair_confirm(matches: bool) -> Result<(), String> {
+    core()?.pair_confirm(matches).map_err(err)
+}
+
+pub fn pair_cancel() -> Result<(), String> {
+    core()?.pair_cancel();
+    Ok(())
+}
+
+/// Opens another device's code from this (linked) one; compare the returned check code.
+pub async fn pair_accept(link: String) -> Result<LinkCheckView, String> {
+    let core = core()?;
+    let c = core.clone();
+    let check = core.handle().spawn(async move { c.pair_accept(&link).await }).await.map_err(|e| e.to_string())?.map_err(err)?;
+    Ok(LinkCheckView { sas: check.sas, device: check.device })
+}
+
+pub async fn pair_accept_confirm(matches: bool) -> Result<(), String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.pair_accept_confirm(matches).await }).await.map_err(|e| e.to_string())?.map_err(err)
+}
+
+// ---- chat --------------------------------------------------------------------------------------
+
+/// Asks `prompt` in `conversation` (a new one when none); stream it with `follow_chat`.
+pub fn send(conversation: Option<String>, prompt: String, model: Option<String>) -> Result<ChatStarted, String> {
+    core()?.send(conversation.as_deref(), &prompt, model).map(started).map_err(err)
+}
+
+/// Continues the stopped or cut-off last answer in `conversation`.
+pub fn continue_answer(conversation: String, model: Option<String>) -> Result<ChatStarted, String> {
+    core()?.continue_answer(&conversation, model).map(started).map_err(err)
+}
+
+/// Streams a started answer's events, ending after `done` or `error`.
+pub fn follow_chat(request_id: String, sink: StreamSink<ChatEventView>) -> Result<(), String> {
+    let core = core()?;
+    let mut rx = pending().lock().unwrap_or_else(|e| e.into_inner()).remove(&request_id).ok_or_else(|| "no such answer".to_string())?;
+    core.handle().spawn(async move {
+        while let Some(e) = rx.recv().await {
+            let end = matches!(e, ChatEvent::Done { .. } | ChatEvent::Error { .. });
+            if sink.add(event_view(e)).is_err() || end {
+                return;
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Stops an answer; what streamed so far is kept.
+#[frb(sync)]
+pub fn cancel(request_id: String) -> bool {
+    core().map(|c| c.cancel(&request_id)).unwrap_or(false)
+}
+
+// ---- history -----------------------------------------------------------------------------------
+
+pub fn conversations(offset: u32, limit: u32) -> Result<Vec<SummaryView>, String> {
+    Ok(core()?.conversations(offset as usize, limit as usize).map_err(err)?.iter().map(summary_view).collect())
+}
+
+pub fn conversation(id: String) -> Result<ConversationView, String> {
+    core()?.conversation(&id).map(|c| conversation_view(&c)).map_err(err)
+}
+
+pub fn delete_conversation(id: String) -> Result<(), String> {
+    core()?.delete_conversation(&id).map_err(err)
+}

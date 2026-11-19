@@ -1,0 +1,11 @@
+# Read by the Flutter app's Native Assets build (app/hook/build.dart). B1 ships Android;
+# the Linux targets are for `flutter test` on the host.
+[toolchain]
+channel = "1.99.1"
+targets = [
+  "armv7-linux-androideabi",
+  "aarch64-linux-android",
+  "x86_64-linux-android",
+  "x86_64-unknown-linux-gnu",
+  "aarch64-unknown-linux-gnu",
+]

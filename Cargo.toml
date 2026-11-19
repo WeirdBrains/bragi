@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/bragi-core", "crates/bragi-desktop"]
+members = ["crates/bragi-core", "crates/bragi-desktop", "crates/bragi-bridge"]
 
 [workspace.package]
 version = "0.1.0"
