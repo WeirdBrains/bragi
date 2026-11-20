@@ -3,19 +3,22 @@
 //! device" side of linking. The tests, and both shells' demo profile (screenshots, the shared
 //! end-to-end scenario), use it; it never touches the real network or a real identity.
 
+use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use weirdnet_agent::model::ModelBackend;
 use weirdnet_agent::remote::catalog::{CatalogFeed, CatalogModel, ModelState, Purpose};
-use weirdnet_agent::remote::infer::v2::{Finish, InferBackend, Output, Request, Usage};
+use weirdnet_agent::remote::infer::v2::{Finish, InferBackend, Meta, Output, Request, Usage};
 use weirdnet_agent::remote::infer::{Admission, InferHost};
 use weirdnet_agent::serve::{RosterAuth, Server, Serving};
 use weirdnet_agent::{Authorize, Caller, CancelToken, RemoteError, Role};
 use weirdnet_device_link::Pairing;
-use weirdnet_net::WEIRDNET;
+use weirdnet_net::{Keypair, WEIRDNET};
+use weirdnet_sync::Roster;
 
 use crate::core::{CONTINUE_PROMPT, Config, Core, PairState, SCHEME, Transport};
 use crate::error::{CoreError, ErrorKind, Result};
@@ -24,6 +27,59 @@ use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 /// The demo's models: one warm, one that would have to load.
 pub const WARM_MODEL: &str = "gemma-4-e4b";
 pub const COLD_MODEL: &str = "qwen3-32b";
+/// A second node's own model (the cloud demo).
+pub const BIG_MODEL: &str = "llama-3.3-70b";
+
+/// What a demo node serves.
+#[derive(Debug, Clone)]
+pub struct NodeSpec {
+    pub label: String,
+    pub models: Vec<(String, ModelState)>,
+    pub embedding: bool,
+}
+
+impl NodeSpec {
+    /// The first node: [`WARM_MODEL`] warm, [`COLD_MODEL`] to load, and an embedding model.
+    pub fn primary() -> Self {
+        Self {
+            label: "demo inference node".into(),
+            models: vec![(WARM_MODEL.into(), ModelState::Warm), (COLD_MODEL.into(), ModelState::Loadable)],
+            embedding: true,
+        }
+    }
+
+    /// The second node: [`BIG_MODEL`] warm, and [`WARM_MODEL`] too (so that one has two nodes).
+    pub fn secondary() -> Self {
+        Self { label: "demo inference node 2".into(), models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)], embedding: false }
+    }
+}
+
+/// Trouble to arrange on demand. Each applies once, to whichever node gets there first.
+#[derive(Default)]
+pub struct Faults {
+    refuse: AtomicU32,
+    die_after: Mutex<Option<usize>>,
+}
+
+impl Faults {
+    /// The next `n` requests are refused before any text (as if the node were gone).
+    pub fn refuse_next(&self, n: u32) {
+        self.refuse.store(n, Ordering::SeqCst);
+    }
+
+    /// The next answer's node dies after `words` words; another node must finish it.
+    pub fn die_next_answer_after(&self, words: usize) {
+        *self.die_after.lock().unwrap_or_else(|e| e.into_inner()) = Some(words);
+    }
+
+    fn take_refusal(&self) -> bool {
+        self.refuse.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
+    }
+
+    fn take_death(&self) -> Option<usize> {
+        self.die_after.lock().unwrap_or_else(|e| e.into_inner()).take()
+    }
+}
 
 /// The canned answer `model` gives to `prompt`.
 pub fn answer_for(model: &str, prompt: &str) -> String {
@@ -35,10 +91,16 @@ pub fn answer_for(model: &str, prompt: &str) -> String {
     )
 }
 
-/// Answers with [`answer_for`], one word every `delay`, honouring cancel.
+/// Answers with [`answer_for`], one word every `delay`, honouring cancel, resume and the
+/// scripted [`Faults`]. A repeated prompt is a cache hit; a model that isn't warm here is
+/// answered by a stand-in, flagged.
 struct FakeBackend {
     model: String,
+    /// The model that actually answers, when it isn't `model`.
+    standin: Option<String>,
     delay: Duration,
+    cache_hit: bool,
+    faults: Arc<Faults>,
 }
 
 fn last_user(req: &Request) -> String {
@@ -48,31 +110,54 @@ fn last_user(req: &Request) -> String {
 #[async_trait]
 impl InferBackend for FakeBackend {
     fn name(&self) -> String {
-        self.model.clone()
+        self.standin.clone().unwrap_or_else(|| self.model.clone())
+    }
+
+    fn resumes(&self) -> bool {
+        true
     }
 
     async fn infer(&self, request: &Request, out: &Output, cancel: &CancelToken) -> std::result::Result<Finish, RemoteError> {
         let msgs = request.inline_messages().unwrap_or_default();
         let prompt = last_user(request);
+        let answering = self.standin.clone().unwrap_or_else(|| self.model.clone());
         // "Continue": the rest of the answer to the prompt before it, after what was shown.
-        let text = if prompt == CONTINUE_PROMPT {
+        let mut text = if prompt == CONTINUE_PROMPT {
             let shown = msgs.iter().rev().find(|m| m.role == Role::Assistant).map(|m| m.content.clone()).unwrap_or_default();
             let asked = msgs.iter().rev().filter(|m| m.role == Role::User).nth(1).map(|m| m.content.clone()).unwrap_or_default();
-            let full = answer_for(&self.model, &asked);
+            let full = answer_for(&answering, &asked);
             full.strip_prefix(shown.as_str()).unwrap_or(&full).to_string()
         } else {
-            answer_for(&self.model, &prompt)
+            answer_for(&answering, &prompt)
         };
+        // A resumed attempt generates only what comes after the prefix already shown.
+        if let Some(p) = &request.assistant_prefix {
+            text = text.chars().skip(p.text.chars().count()).collect();
+        }
+        let mut meta = Meta::default();
+        meta.cache_hit = self.cache_hit;
+        meta.standin = self.standin.clone();
+        if self.cache_hit || self.standin.is_some() {
+            out.meta(meta.clone());
+        }
+        let die_after = self.faults.take_death();
         let mut sent = 0u64;
         for piece in text.split_inclusive(' ') {
             if cancel.is_cancelled() {
                 return Err(RemoteError::Cancelled);
             }
-            tokio::time::sleep(self.delay).await;
+            if die_after == Some(sent as usize) {
+                return Err(RemoteError::Failed { message: "the demo node died mid-answer".into() });
+            }
+            if !self.cache_hit {
+                tokio::time::sleep(self.delay).await;
+            }
             out.text(piece);
             sent += 1;
         }
-        Ok(Finish::new("stop").with_usage(Usage::new(prompt.split_whitespace().count() as u64, sent)))
+        let mut f = Finish::new("stop").with_usage(Usage::new(prompt.split_whitespace().count() as u64, sent));
+        f.meta = meta;
+        Ok(f)
     }
 }
 
@@ -80,6 +165,10 @@ impl InferBackend for FakeBackend {
 pub struct FakeHost {
     auth: Arc<dyn Authorize>,
     delay: Duration,
+    spec: NodeSpec,
+    faults: Arc<Faults>,
+    /// (model, prompt) pairs answered before: the demo's exact-match answer cache.
+    seen: Mutex<HashSet<(String, String)>>,
 }
 
 impl InferHost for FakeHost {
@@ -92,11 +181,20 @@ impl InferHost for FakeHost {
     }
 
     fn open_request(&self, _: &Caller, request: &Request) -> std::result::Result<Arc<dyn InferBackend>, RemoteError> {
-        let model = request.model.clone().unwrap_or_else(|| WARM_MODEL.to_string());
-        if model != WARM_MODEL && model != COLD_MODEL {
+        if self.faults.take_refusal() {
+            return Err(RemoteError::Unavailable { message: "the demo node is not taking requests".into() });
+        }
+        let warm = |m: &str| self.spec.models.iter().any(|(id, s)| id == m && *s == ModelState::Warm);
+        let model = request.model.clone().unwrap_or_else(|| self.spec.models.first().map(|(m, _)| m.clone()).unwrap_or_default());
+        if !self.spec.models.iter().any(|(id, _)| *id == model) {
             return Err(RemoteError::Unavailable { message: format!("unknown model `{model}`") });
         }
-        Ok(Arc::new(FakeBackend { model, delay: self.delay }))
+        let standin = if warm(&model) { None } else { self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone()) };
+        let prompt = last_user(request);
+        let cache_hit = request.assistant_prefix.is_none()
+            && prompt != CONTINUE_PROMPT
+            && !self.seen.lock().unwrap_or_else(|e| e.into_inner()).insert((model.clone(), prompt));
+        Ok(Arc::new(FakeBackend { model, standin, delay: self.delay, cache_hit, faults: self.faults.clone() }))
     }
 }
 
@@ -105,7 +203,10 @@ pub struct DemoNode {
     pub identity: Arc<Identity>,
     pub node: Arc<SyncNode>,
     pub feed: Arc<CatalogFeed>,
-    _server: Server,
+    pub faults: Arc<Faults>,
+    server: Mutex<Option<Server>>,
+    /// The other nodes of the cloud demo, which share this one's identity.
+    siblings: Mutex<Vec<Arc<DemoNode>>>,
 }
 
 fn other(e: impl std::fmt::Display) -> CoreError {
@@ -116,6 +217,32 @@ impl DemoNode {
     /// Starts it with a fresh test identity in `dir`, streaming a word every `delay`.
     pub async fn start(dir: &Path, delay: Duration) -> Result<Self> {
         let identity = Arc::new(Identity::create(&dir.join("identity"), "demo inference node")?);
+        Self::serve(identity, delay, NodeSpec::primary(), Arc::default()).await
+    }
+
+    /// The cloud demo: a first node ([`NodeSpec::primary`]) and a second one of the same user
+    /// ([`NodeSpec::secondary`]) in `dir/second`, sharing [`Faults`]. An app that links to the
+    /// first (through [`accept`](Self::accept)) is admitted by both, and `app_config` dials both.
+    pub async fn start_cloud(dir: &Path, delay: Duration) -> Result<Arc<Self>> {
+        let first = Arc::new(Self::start(dir, delay).await?);
+        let second = first.add_sibling(&dir.join("second"), delay, NodeSpec::secondary()).await?;
+        lock(&first.siblings).push(second);
+        Ok(first)
+    }
+
+    /// Another inference node of the same user: its identity is certified by this one's.
+    pub async fn add_sibling(&self, dir: &Path, delay: Duration, spec: NodeSpec) -> Result<Arc<Self>> {
+        let key = Keypair::generate_ed25519();
+        let mut seed = self.identity.seed()?.0;
+        let user = Keypair::ed25519_from_bytes(&mut seed).map_err(other)?;
+        let cert = Roster::self_certify(&WEIRDNET, &user, &key.public().to_peer_id().to_string(), &spec.label, 1).map_err(other)?;
+        self.identity.approve(cert.clone())?;
+        let identity = Arc::new(Identity::adopt(&dir.join("identity"), key, &self.identity.seed()?.0, cert, &self.identity.link_settings())?);
+        let node = Self::serve(identity, delay, spec, self.faults.clone()).await?;
+        Ok(Arc::new(node))
+    }
+
+    async fn serve(identity: Arc<Identity>, delay: Duration, spec: NodeSpec, faults: Arc<Faults>) -> Result<Self> {
         let (key, st) = (identity.node_key().clone(), identity.state());
         let node = tokio::task::spawn_blocking(move || weirdnet_sync::start_node(key, weirdnet_sync::node_config(true), st))
             .await
@@ -124,15 +251,34 @@ impl DemoNode {
         let node = Arc::new(node);
         let auth: Arc<dyn Authorize> = Arc::new(RosterAuth::new(&WEIRDNET, identity.user_key(), identity.roster_view()));
         let feed = Arc::new(CatalogFeed::new(auth.clone()));
-        feed.publish(vec![
-            CatalogModel::new(WARM_MODEL, Purpose::Chat, ModelState::Warm).with_replicas(1).with_speed(48.0).with_context(32768),
-            CatalogModel::new(COLD_MODEL, Purpose::Chat, ModelState::Loadable).with_speed(14.0).with_context(32768),
-            CatalogModel::new("nomic-embed", Purpose::Embedding, ModelState::Warm),
-        ]);
-        let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay });
+        let mut models: Vec<CatalogModel> = spec
+            .models
+            .iter()
+            .map(|(id, state)| {
+                let warm = *state == ModelState::Warm;
+                let m = CatalogModel::new(id.clone(), Purpose::Chat, state.clone()).with_context(32768);
+                if warm { m.with_replicas(1).with_speed(if id == BIG_MODEL { 22.0 } else { 48.0 }) } else { m.with_speed(14.0) }
+            })
+            .collect();
+        if spec.embedding {
+            models.push(CatalogModel::new("nomic-embed", Purpose::Embedding, ModelState::Warm));
+        }
+        feed.publish(models);
+        let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone(), seen: Mutex::default() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
-        Ok(Self { identity, node, feed, _server: server })
+        Ok(Self { identity, node, feed, faults, server: Mutex::new(Some(server)), siblings: Mutex::default() })
+    }
+
+    /// Takes this node off the network (a node that went away).
+    pub fn stop(&self) {
+        lock(&self.server).take();
+        self.node.halt();
+    }
+
+    /// The other nodes of the cloud demo.
+    pub fn siblings(&self) -> Vec<Arc<DemoNode>> {
+        lock(&self.siblings).clone()
     }
 
     /// Where an app device dials it: `/memory/N/p2p/PEER`.
@@ -148,7 +294,9 @@ impl DemoNode {
 
     /// An app config that reaches this node over the memory transport.
     pub fn app_config(&self, dir: &Path, label: &str) -> Config {
-        Config { dir: dir.to_path_buf(), label: label.into(), transport: Transport::Memory, peers: vec![self.address()] }
+        let mut peers = vec![self.address()];
+        peers.extend(self.siblings().iter().map(|s| s.address()));
+        Config { dir: dir.to_path_buf(), label: label.into(), transport: Transport::Memory, peers }
     }
 
     /// Links the device showing `link`, as the user's existing device would once both screens
@@ -165,7 +313,10 @@ impl DemoNode {
             .await
             .map_err(other)?
             .map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string()))?;
-        self.identity.approve(cert)?;
+        self.identity.approve(cert.clone())?;
+        for s in self.siblings() {
+            s.identity.approve(cert.clone())?;
+        }
         Ok(sas)
     }
 
@@ -197,4 +348,8 @@ impl DemoNode {
             }
         });
     }
+}
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|e| e.into_inner())
 }

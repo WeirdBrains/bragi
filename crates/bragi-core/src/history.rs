@@ -38,7 +38,20 @@ pub struct ChatMessage {
     /// The inference node that answered.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub node: Option<String>,
+    /// Served from the pool's answer cache.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cache_hit: bool,
+    /// The model that answered while the requested one loaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub standin: Option<String>,
+    /// Times the answer moved to another node mid-stream.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub resumes: u32,
     pub at_ms: i64,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

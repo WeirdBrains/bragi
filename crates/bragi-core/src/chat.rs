@@ -30,6 +30,17 @@ pub enum ChatEvent {
         offset: u64,
         text: String,
     },
+    /// The attempt failed before any text and is being tried again.
+    Retry {
+        attempt: u32,
+        message: String,
+    },
+    /// What the pool knew about the answer: served from the cache, or by a stand-in.
+    Meta {
+        cache_hit: bool,
+        standin: Option<String>,
+        served_by: Option<String>,
+    },
     /// The answer continues on another node.
     Resumed {
         node: String,
@@ -97,6 +108,9 @@ pub async fn coalesce(mut rx: mpsc::UnboundedReceiver<PoolEvent>, out: mpsc::Unb
                             PoolEvent::Queued { position, .. } => Some(ChatEvent::Queued { position }),
                             PoolEvent::Accepted { node, model, resume } => Some(ChatEvent::Started { node, model, resumed: resume }),
                             PoolEvent::Resumed { node, offset } => Some(ChatEvent::Resumed { node, offset }),
+                            PoolEvent::Meta(m) => {
+                                Some(ChatEvent::Meta { cache_hit: m.cache_hit, standin: m.standin, served_by: m.served_by })
+                            }
                             PoolEvent::Usage(u) => Some(ChatEvent::Usage { prompt_tokens: u.prompt_tokens, completion_tokens: u.completion_tokens }),
                             _ => None,
                         };

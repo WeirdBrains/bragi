@@ -1,7 +1,7 @@
 //! [`Core`]: the one client core. Both shells call these actions and draw [`AppState`] and the
 //! [`ChatEvent`]s; nothing else decides behaviour.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -10,8 +10,10 @@ use serde::{Deserialize, Serialize};
 use tokio::runtime::{Handle, Runtime};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
-use weirdnet_agent::pool::{Interrupted, LinkedNodes, NetDialer, Pool, PoolEvent, PoolOptions, encode_cert};
+use weirdnet_agent::pool::{Interrupted, LinkedNodes, NetDialer, NodeSource, Pool, PoolEvent, PoolOptions, encode_cert};
+use weirdnet_agent::remote::catalog::Catalog;
 use weirdnet_agent::remote::infer::v2::Request;
+use weirdnet_agent::remote::{Dialer, RemoteError};
 use weirdnet_agent::{CancelToken, Message};
 use weirdnet_device_link::{HostNode, HostStatus, Pairing};
 use weirdnet_net::{Keypair, Multiaddr, NodeConfig, PeerHint, PeerId};
@@ -113,7 +115,10 @@ pub struct LinkCheck {
 struct Net {
     identity: Arc<Identity>,
     node: Arc<SyncNode>,
-    pool: Pool,
+    /// Finds and calls inference nodes: a catalog follower per node, a pool per request.
+    nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>,
+    dialer: Arc<dyn Dialer>,
+    opts: PoolOptions,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -275,18 +280,13 @@ impl Core {
             dialer.hint(*peer, addrs.clone());
             nodes = nodes.with_hint(*peer, addrs.clone());
         }
-        let pool = Pool::new(Arc::new(dialer), nodes).with_options(PoolOptions::default().with_cert(Some(encode_cert(&identity.our_cert()))));
+        let nodes = Arc::new(nodes);
+        let dialer: Arc<dyn Dialer> = Arc::new(dialer);
+        let opts = PoolOptions::default().with_cert(Some(encode_cert(&identity.our_cert())));
 
         let mut tasks = Vec::new();
-        // The catalog: one inference node's, followed.
-        let (state, p) = (self.inner.state.clone(), pool.clone());
-        tasks.push(tokio::spawn(async move {
-            let mut w = p.subscribe();
-            while let Some((node, c)) = w.changed().await {
-                let view = CatalogView::from_catalog(&node, &c);
-                state.send_modify(|s| s.catalog = view);
-            }
-        }));
+        // The catalog: every inference node's, followed, and merged.
+        tasks.push(tokio::spawn(follow_catalogs(self.inner.state.clone(), nodes.clone(), dialer.clone(), opts.clone())));
         // The roster: devices linked or revoked elsewhere.
         let (i, n, h) = (identity.clone(), node.clone(), hints.clone());
         tasks.push(tokio::spawn(async move {
@@ -300,7 +300,7 @@ impl Core {
             }
         }));
         let (user, device) = (identity.user_id(), identity.our_cert().label);
-        *lock(&self.inner.net) = Some(Arc::new(Net { identity, node, pool, tasks }));
+        *lock(&self.inner.net) = Some(Arc::new(Net { identity, node, nodes, dialer, opts, tasks }));
         self.inner.state.send_modify(|s| {
             s.online = true;
             s.pair = PairState::Linked { user, device };
@@ -458,7 +458,17 @@ impl Core {
             Some(id) => self.inner.history.load(id)?,
             None => Conversation { id: random_id("c"), title: title_for(prompt), created_ms: now, updated_ms: now, messages: Vec::new() },
         };
-        c.messages.push(ChatMessage { role: Role::User, text: prompt.into(), state: MessageState::Complete, model: None, node: None, at_ms: now });
+        c.messages.push(ChatMessage {
+            role: Role::User,
+            text: prompt.into(),
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            at_ms: now,
+        });
         let messages = agent_messages(&c.messages);
         c.messages.push(ChatMessage {
             role: Role::Assistant,
@@ -466,6 +476,9 @@ impl Core {
             state: MessageState::Streaming,
             model: Some(model.clone()),
             node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
             at_ms: now,
         });
         c.updated_ms = now;
@@ -511,28 +524,38 @@ impl Core {
         let (out, events) = mpsc::unbounded_channel();
         let (core, rid, conv) = (self.clone(), request_id.clone(), conversation.clone());
         self.inner.handle.spawn(async move {
-            let (result, text) = stream(&net.pool, req, &out, &cancel, &shown).await;
-            let (state, node, model, last) = match &result {
+            let order = |model: &str| core.nodes_for(model);
+            let (result, text) = stream(&net, &order, req, &out, &cancel, &shown).await;
+            let (state, node, model, last, flags) = match &result {
                 Ok(a) => (
                     MessageState::Complete,
                     Some(a.node.clone()),
-                    Some(a.model.clone()).filter(|m| !m.is_empty()),
+                    // A stand-in answered: the message stays the requested model's, flagged.
+                    Some(a.model.clone()).filter(|m| !m.is_empty() && a.meta.standin.is_none()),
                     ChatEvent::Done { finish_reason: a.finish_reason.clone() },
+                    Flags::of(&a.meta),
                 ),
                 Err(i) => {
                     let e = CoreError::from(&i.error);
                     let state = if e.kind == ErrorKind::Cancelled { MessageState::Stopped } else { MessageState::Failed };
-                    (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() })
+                    (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() }, Flags::of(&i.partial.meta))
                 }
             };
-            core.finish(&conv, text, state, node, model);
+            core.finish(&conv, text, state, node, model, flags);
             let _ = out.send(last);
             lock(&core.inner.requests).remove(&rid);
         });
         ChatHandle { request_id, conversation_id: conversation, events }
     }
 
-    fn finish(&self, conversation: &str, text: String, state: MessageState, node: Option<String>, model: Option<String>) {
+    /// The nodes to ask for `model`, best first; every known node when the catalog doesn't list it.
+    fn nodes_for(&self, model: &str) -> Vec<String> {
+        let c = self.state().catalog;
+        let n = c.nodes_for(model);
+        if n.is_empty() { c.nodes.iter().map(|n| n.id.clone()).collect() } else { n }
+    }
+
+    fn finish(&self, conversation: &str, text: String, state: MessageState, node: Option<String>, model: Option<String>, flags: Flags) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
         if let Some(m) = c.messages.last_mut().filter(|m| m.role == Role::Assistant) {
             m.text = text;
@@ -543,6 +566,9 @@ impl Core {
             if model.is_some() {
                 m.model = model;
             }
+            m.cache_hit = flags.cache_hit;
+            m.standin = flags.standin;
+            m.resumes = flags.resumes;
         }
         c.updated_ms = now_ms();
         if let Err(e) = self.inner.history.save(&c) {
@@ -622,20 +648,141 @@ fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
         .collect()
 }
 
-/// One pool call, its events coalesced onto `out`. Returns the result and the full text shown
-/// (`shown` plus what streamed).
+/// What the pool said about an answer, kept with the message.
+struct Flags {
+    cache_hit: bool,
+    standin: Option<String>,
+    resumes: u32,
+}
+
+impl Flags {
+    fn of(m: &weirdnet_agent::remote::infer::v2::Meta) -> Self {
+        Flags { cache_hit: m.cache_hit, standin: m.standin.clone(), resumes: m.resumes.len() as u32 }
+    }
+}
+
+/// How often the pool is asked again after an attempt fails before any text, and the waits.
+const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(400), Duration::from_millis(1200)];
+
+/// Whether another try could work: the nodes were unreachable, busy or failed, not "no such model"
+/// or a refusal.
+fn worth_retrying(e: &RemoteError) -> bool {
+    matches!(
+        e,
+        RemoteError::Unreachable { .. }
+            | RemoteError::Busy
+            | RemoteError::Failed { .. }
+            | RemoteError::Closed
+            | RemoteError::Timeout
+            | RemoteError::Stalled { .. }
+            | RemoteError::Unavailable { .. }
+    )
+}
+
+/// One answer: a pool over the nodes that serve the model (best first), which fails over between
+/// them and resumes mid-answer; if every node fails before any text, tries again after a short
+/// wait with a fresh node order. Events are coalesced onto `out`. Returns the result and the full
+/// text shown (`shown` plus what streamed).
 async fn stream(
-    pool: &Pool,
+    net: &Net,
+    order: &(dyn Fn(&str) -> Vec<String> + Send + Sync),
     req: Request,
     out: &mpsc::UnboundedSender<ChatEvent>,
     cancel: &CancelToken,
     shown: &str,
 ) -> (std::result::Result<weirdnet_agent::pool::Answer, Interrupted>, String) {
-    let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
     let offset = shown.chars().count() as u64;
-    let co = tokio::spawn(coalesce(rx, out.clone(), offset));
-    let result = pool.infer(req, &tx, cancel).await;
-    drop(tx);
-    let (streamed, _) = co.await.unwrap_or_default();
-    (result, format!("{shown}{streamed}"))
+    let mut attempt = 0usize;
+    loop {
+        let candidates = req.model.as_deref().map(order).unwrap_or_default();
+        let pool = if candidates.is_empty() {
+            Pool::new(net.dialer.clone(), SharedNodes(net.nodes.clone()))
+        } else {
+            Pool::new(net.dialer.clone(), candidates)
+        }
+        .with_options(net.opts.clone());
+        let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
+        let co = tokio::spawn(coalesce(rx, out.clone(), offset));
+        let result = pool.infer(req.clone(), &tx, cancel).await;
+        drop(tx);
+        let (streamed, _) = co.await.unwrap_or_default();
+        match &result {
+            Err(i) if !i.streamed() && attempt < RETRY_WAITS.len() && worth_retrying(&i.error) && !cancel.is_cancelled() => {
+                attempt += 1;
+                let _ = out.send(ChatEvent::Retry { attempt: attempt as u32, message: i.error.to_string() });
+                tokio::select! {
+                    _ = tokio::time::sleep(RETRY_WAITS[attempt - 1]) => {}
+                    _ = cancel.cancelled() => {}
+                }
+            }
+            _ => return (result, format!("{shown}{streamed}")),
+        }
+    }
 }
+
+/// Follows every inference node's catalog: a watcher per node that the roster lists and that
+/// answers, merged into [`AppState::catalog`]. Nodes that go away drop out within a few seconds.
+async fn follow_catalogs(
+    state: watch::Sender<AppState>,
+    nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>,
+    dialer: Arc<dyn Dialer>,
+    opts: PoolOptions,
+) {
+    let feeds: Arc<Mutex<BTreeMap<String, Catalog>>> = Arc::default();
+    let mut watchers: HashMap<String, JoinHandle<()>> = HashMap::new();
+    let publish = {
+        let (feeds, state) = (feeds.clone(), state.clone());
+        move || {
+            let all: Vec<(String, Catalog)> = lock(&feeds).iter().map(|(n, c)| (n.clone(), c.clone())).collect();
+            let view = CatalogView::merge(&all);
+            state.send_if_modified(|s| {
+                let changed = s.catalog != view;
+                if changed {
+                    s.catalog = view;
+                }
+                changed
+            });
+        }
+    };
+    loop {
+        let listed = nodes.nodes().await;
+        for gone in watchers.keys().filter(|n| !listed.contains(n)).cloned().collect::<Vec<_>>() {
+            if let Some(w) = watchers.remove(&gone) {
+                w.abort();
+            }
+            lock(&feeds).remove(&gone);
+        }
+        for node in listed {
+            if watchers.contains_key(&node) {
+                continue;
+            }
+            let (feeds, publish, n) = (feeds.clone(), publish.clone(), node.clone());
+            let pool = Pool::new(dialer.clone(), vec![node.clone()]).with_options(opts.clone());
+            watchers.insert(
+                node,
+                tokio::spawn(async move {
+                    let mut w = pool.subscribe();
+                    while let Some((_, c)) = w.changed().await {
+                        lock(&feeds).insert(n.clone(), c);
+                        publish();
+                    }
+                }),
+            );
+        }
+        publish();
+        tokio::time::sleep(NODE_POLL).await;
+    }
+}
+
+/// The roster's inference nodes as a pool's node source.
+struct SharedNodes(Arc<LinkedNodes<Vec<u8>, Vec<u8>>>);
+
+#[async_trait::async_trait]
+impl weirdnet_agent::pool::NodeSource for SharedNodes {
+    async fn nodes(&self) -> Vec<String> {
+        self.0.nodes().await
+    }
+}
+
+/// How often the roster is checked for inference nodes that came or went.
+const NODE_POLL: Duration = Duration::from_secs(2);

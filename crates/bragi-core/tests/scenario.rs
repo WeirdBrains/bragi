@@ -89,7 +89,7 @@ async fn pair_list_chat_cancel_continue() {
 
     // 2. List models: the demo node's chat models, warm first.
     let s = until(&core, "the catalog", |s| s.catalog.models.len() == 2).await;
-    assert_eq!(s.catalog.node.as_deref(), Some(demo.node.peer_id().to_string().as_str()));
+    assert_eq!(s.catalog.nodes.iter().map(|n| n.id.as_str()).collect::<Vec<_>>(), [demo.node.peer_id().to_string().as_str()]);
     assert_eq!(s.catalog.models[0].id, WARM_MODEL);
     assert_eq!(s.catalog.models[0].status, ModelStatus::Warm);
     assert_eq!(s.catalog.models[1].id, COLD_MODEL);
