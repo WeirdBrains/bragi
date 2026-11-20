@@ -109,7 +109,32 @@ pub const OTHER_DEVICE_QUESTION: &str = "A question typed on the other laptop";
 /// mentions this makes the demo's other laptop start one and sync it over.
 pub const OTHER_DEVICE_TRIGGER: &str = "other laptop";
 
+/// The files attached to a prompt (`[attached file: NAME]` blocks, see `attach::render`) as
+/// (name, lines), and the question after them.
+fn split_attachments(prompt: &str) -> (Vec<(String, usize)>, &str) {
+    let mut files = Vec::new();
+    let mut rest = prompt;
+    while let Some(r) = rest.strip_prefix("[attached file: ") {
+        let Some((name, body)) = r.split_once("]\n") else { break };
+        let fence_len = body.chars().take_while(|c| *c == '`').count();
+        let fence = "`".repeat(fence_len);
+        let inner_start = fence_len + 1;
+        let Some(end) = body[inner_start.min(body.len())..].find(&format!("\n{fence}\n\n")) else { break };
+        let inner = &body[inner_start..inner_start + end];
+        files.push((name.to_string(), inner.lines().count()));
+        rest = &body[inner_start + end + fence_len + 3..];
+    }
+    (files, rest)
+}
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
+    let (files, question) = split_attachments(prompt);
+    if !files.is_empty() {
+        let list = files.iter().map(|(n, l)| format!("{n} ({l} lines)")).collect::<Vec<_>>().join(", ");
+        return format!(
+            "{model} here. I read {list}, then your question \"{question}\". The files travelled inline in your message, so any node can read them."
+        );
+    }
     format!(
         "{model} here, answering \"{prompt}\". Bragi asks the inference nodes among your own devices, \
          which pick a model node and stream the answer back over Weirdnet, token by token. Nothing \

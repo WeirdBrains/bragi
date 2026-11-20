@@ -7,6 +7,7 @@
 //! - Streaming chat with cancel and continue, over the pool (infer/2).
 //! - History on the shared context store, so conversations follow the user between devices.
 
+pub mod attach;
 pub mod catalog;
 pub mod chat;
 pub mod context;
@@ -16,6 +17,7 @@ pub mod error;
 pub mod history;
 pub mod identity;
 
+pub use crate::attach::Attachment;
 pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;
 pub use crate::core::{AppState, ChatHandle, Config, Core, LinkCheck, PairState, SCHEME, Transport, node_config};

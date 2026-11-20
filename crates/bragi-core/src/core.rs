@@ -18,6 +18,7 @@ use weirdnet_agent::{CancelToken, Message};
 use weirdnet_device_link::{HostNode, HostStatus, Pairing};
 use weirdnet_net::{Keypair, Multiaddr, NodeConfig, PeerHint, PeerId};
 
+use crate::attach::Attachment;
 use crate::catalog::CatalogView;
 use crate::chat::{ChatEvent, coalesce};
 use crate::error::{CoreError, ErrorKind, Result};
@@ -480,6 +481,13 @@ impl Core {
     /// Sends `prompt` in `conversation` (a new one when `None`) to `model` (the default when
     /// `None`), streaming the answer.
     pub fn send(&self, conversation: Option<&str>, prompt: &str, model: Option<String>) -> Result<ChatHandle> {
+        self.send_with(conversation, prompt, model, Vec::new())
+    }
+
+    /// [`send`](Self::send) with text files attached (see [`Attachment`]): the model gets each as
+    /// a named block ahead of the prompt, and the message keeps them for later turns and other devices.
+    pub fn send_with(&self, conversation: Option<&str>, prompt: &str, model: Option<String>, attachments: Vec<Attachment>) -> Result<ChatHandle> {
+        crate::attach::check(&attachments)?;
         let net = self.net()?;
         let model = self.pick_model(model)?;
         let prompt = prompt.trim();
@@ -501,6 +509,7 @@ impl Core {
             cache_hit: false,
             standin: None,
             resumes: 0,
+            attachments,
             at_ms: now,
         });
         let messages = agent_messages(&c.messages);
@@ -514,6 +523,7 @@ impl Core {
             cache_hit: false,
             standin: None,
             resumes: 0,
+            attachments: Vec::new(),
             at_ms: now,
         });
         c.updated_ms = now;
@@ -572,8 +582,9 @@ impl Core {
                 }
             };
             core.finish(&conv, text, state, node, model, flags);
-            let _ = out.send(last);
+            // Over before the shell hears it: a `cancel` after the last event must say so.
             lock(&core.inner.requests).remove(&rid);
+            let _ = out.send(last);
         });
         ChatHandle { request_id, conversation_id: conversation, events }
     }
@@ -702,7 +713,7 @@ fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     msgs.iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
         .map(|m| match m.role {
-            Role::User => Message::user(m.text.clone()),
+            Role::User => Message::user(crate::attach::render(&m.text, &m.attachments)),
             Role::Assistant => Message::assistant(m.text.clone(), Vec::new()),
         })
         .collect()

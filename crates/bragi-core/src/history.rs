@@ -54,6 +54,9 @@ pub struct ChatMessage {
     /// Times the answer moved to another node mid-stream.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub resumes: u32,
+    /// Text files attached to a user message.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<crate::attach::Attachment>,
     pub at_ms: i64,
 }
 
@@ -147,6 +150,9 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if m.resumes > 0 {
         ext.insert("resumes".into(), m.resumes.into());
     }
+    if !m.attachments.is_empty() {
+        ext.insert("attachments".into(), serde_json::to_value(&m.attachments).unwrap_or_default());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
@@ -163,6 +169,7 @@ fn from_stored(m: &Stored) -> ChatMessage {
         cache_hit: get("cache_hit").and_then(|v| v.as_bool()).unwrap_or(false),
         standin: get("standin").and_then(|v| v.as_str()).map(str::to_string),
         resumes: get("resumes").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+        attachments: get("attachments").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         at_ms: m.at_ms,
     }
 }
@@ -321,6 +328,7 @@ mod tests {
                 cache_hit: false,
                 standin: None,
                 resumes: 0,
+                attachments: Vec::new(),
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })
