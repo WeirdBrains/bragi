@@ -542,6 +542,26 @@ impl Core {
         Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new()))
     }
 
+    /// One answer to `messages` that is kept out of history (code suggestions and rewrites):
+    /// the same streaming, routing and cancel as a chat, with an empty `conversation_id`.
+    pub fn complete(&self, messages: Vec<crate::code::PromptMessage>, model: Option<String>) -> Result<ChatHandle> {
+        use crate::code::PromptRole;
+        if !messages.iter().any(|m| m.role == PromptRole::User && !m.content.trim().is_empty()) {
+            return Err(CoreError::new(ErrorKind::BadRequest, "nothing to answer"));
+        }
+        let net = self.net()?;
+        let model = self.pick_model(model)?;
+        let messages = messages
+            .into_iter()
+            .map(|m| match m.role {
+                PromptRole::System => Message::system(m.content),
+                PromptRole::User => Message::user(m.content),
+                PromptRole::Assistant => Message::assistant(m.content, Vec::new()),
+            })
+            .collect();
+        Ok(self.run(net, String::new(), Request::messages(messages).with_model(model), String::new()))
+    }
+
     /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
     /// `None`), and returns its id and the messages the model gets (the new user message last).
     pub(crate) fn begin_turn(
@@ -647,7 +667,9 @@ impl Core {
                     (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() }, Flags::of(&i.partial.meta))
                 }
             };
-            core.finish(&conv, text, state, node, model, flags);
+            if !conv.is_empty() {
+                core.finish(&conv, text, state, node, model, flags);
+            }
             // Over before the shell hears it: a `cancel` after the last event must say so.
             lock(&core.inner.requests).remove(&rid);
             let _ = out.send(last);
