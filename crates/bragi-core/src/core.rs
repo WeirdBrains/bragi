@@ -27,8 +27,6 @@ use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
 pub const SCHEME: &str = "weirdnet-bragi://";
 
-/// The turn that asks the model to go on with a cut-off answer.
-
 /// How often the roster is synced with the user's other devices.
 const SYNC_EVERY: Duration = Duration::from_secs(30);
 

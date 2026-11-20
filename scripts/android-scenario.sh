@@ -130,7 +130,7 @@ swipe_chips() {
 import re,sys
 for m in re.finditer(r'<node [^>]*>', sys.stdin.read()):
     n=m.group(0)
-    if re.search(r'(text|content-desc)=\"gemma-4-e4b[^\"]*\"', n):
+    if re.search(r'(text|content-desc)=\"(gemma-4-e4b|qwen3-32b)[^\"]*\"', n):
         b=re.search(r'bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"', n); a=list(map(int,b.groups())); print((a[1]+a[3])//2); break
 ")
   if [ "${1:-left}" = left ]; then adb shell input swipe 1000 "$y" 100 "$y" 200; else adb shell input swipe 100 "$y" 1000 "$y" 200; fi

@@ -7,7 +7,6 @@
 
 use std::ops::Range;
 
-use weirdnet_text::TextField;
 use crate::theme::Theme;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
@@ -16,6 +15,7 @@ use gpui::{
     size,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use weirdnet_text::TextField;
 
 actions!(
     text_input,
