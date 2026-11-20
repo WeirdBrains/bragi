@@ -3,6 +3,9 @@
 //! (pair, list models, chat, cancel, continue) through the view's own actions and exits 0 when
 //! it passes.
 
+// Release builds on Windows are GUI-subsystem apps: no console window opens beside Bragi.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 // Copied whole from Morph and kept in step until they move to a shared weirdnet-* UI crate.
 #[allow(dead_code)]
 mod text_input;
