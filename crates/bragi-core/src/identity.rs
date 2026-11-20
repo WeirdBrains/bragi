@@ -101,7 +101,19 @@ pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<(
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
-    let tmp = path.with_extension("tmp");
+    // A temp name of its own for every write, so two saves at once never rename each other's file.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let tmp = path.with_file_name(format!(".{name}.{}.{n}.tmp", std::process::id()));
+    let r = write_then_rename(&tmp, path, bytes);
+    if r.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    r
+}
+
+fn write_then_rename(tmp: &Path, path: &Path, bytes: &[u8]) -> Result<()> {
     {
         let mut o = std::fs::OpenOptions::new();
         o.write(true).create(true).truncate(true);
@@ -110,11 +122,11 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
             use std::os::unix::fs::OpenOptionsExt;
             o.mode(0o600);
         }
-        let mut f = o.open(&tmp).with_context(|| format!("writing {}", tmp.display()))?;
+        let mut f = o.open(tmp).with_context(|| format!("writing {}", tmp.display()))?;
         f.write_all(bytes)?;
         f.sync_all()?;
     }
-    std::fs::rename(&tmp, path).with_context(|| format!("writing {}", path.display()))?;
+    std::fs::rename(tmp, path).with_context(|| format!("writing {}", path.display()))?;
     Ok(())
 }
 
@@ -380,6 +392,26 @@ impl Identity {
 mod tests {
     use super::*;
     use weirdnet_sync::CallerCheck;
+
+    #[test]
+    fn concurrent_writes_to_one_file_all_succeed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("roster.json");
+        std::thread::scope(|s| {
+            for i in 0..8u8 {
+                let path = &path;
+                s.spawn(move || {
+                    for _ in 0..50 {
+                        write_private(path, &[i; 64]).unwrap();
+                    }
+                });
+            }
+        });
+        let b = std::fs::read(&path).unwrap();
+        assert!(b.len() == 64 && b.iter().all(|x| *x == b[0]), "one whole write wins");
+        let left: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(left, vec![std::ffi::OsString::from("roster.json")], "no temp files left");
+    }
 
     #[test]
     fn create_open_link_and_revoke() {
