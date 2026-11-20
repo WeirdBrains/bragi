@@ -36,21 +36,29 @@ pub struct NodeSpec {
     pub label: String,
     pub models: Vec<(String, ModelState)>,
     pub embedding: bool,
+    /// A model that isn't warm here is answered by a warm one, flagged (else it just answers).
+    pub standins: bool,
 }
 
 impl NodeSpec {
+    /// The single-node demo: like [`primary`](Self::primary), where the cold model answers itself.
+    pub fn single() -> Self {
+        Self { standins: false, ..Self::primary() }
+    }
+
     /// The first node: [`WARM_MODEL`] warm, [`COLD_MODEL`] to load, and an embedding model.
     pub fn primary() -> Self {
         Self {
             label: "demo inference node".into(),
             models: vec![(WARM_MODEL.into(), ModelState::Warm), (COLD_MODEL.into(), ModelState::Loadable)],
             embedding: true,
+            standins: true,
         }
     }
 
     /// The second node: [`BIG_MODEL`] warm, and [`WARM_MODEL`] too (so that one has two nodes).
     pub fn secondary() -> Self {
-        Self { label: "demo inference node 2".into(), models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)], embedding: false }
+        Self { label: "demo inference node 2".into(), models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)], embedding: false, standins: true }
     }
 }
 
@@ -189,7 +197,7 @@ impl InferHost for FakeHost {
         if !self.spec.models.iter().any(|(id, _)| *id == model) {
             return Err(RemoteError::Unavailable { message: format!("unknown model `{model}`") });
         }
-        let standin = if warm(&model) { None } else { self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone()) };
+        let standin = if warm(&model) || !self.spec.standins { None } else { self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone()) };
         let prompt = last_user(request);
         let cache_hit = request.assistant_prefix.is_none()
             && prompt != CONTINUE_PROMPT
@@ -217,14 +225,15 @@ impl DemoNode {
     /// Starts it with a fresh test identity in `dir`, streaming a word every `delay`.
     pub async fn start(dir: &Path, delay: Duration) -> Result<Self> {
         let identity = Arc::new(Identity::create(&dir.join("identity"), "demo inference node")?);
-        Self::serve(identity, delay, NodeSpec::primary(), Arc::default()).await
+        Self::serve(identity, delay, NodeSpec::single(), Arc::default()).await
     }
 
     /// The cloud demo: a first node ([`NodeSpec::primary`]) and a second one of the same user
     /// ([`NodeSpec::secondary`]) in `dir/second`, sharing [`Faults`]. An app that links to the
     /// first (through [`accept`](Self::accept)) is admitted by both, and `app_config` dials both.
     pub async fn start_cloud(dir: &Path, delay: Duration) -> Result<Arc<Self>> {
-        let first = Arc::new(Self::start(dir, delay).await?);
+        let identity = Arc::new(Identity::create(&dir.join("identity"), "demo inference node")?);
+        let first = Arc::new(Self::serve(identity, delay, NodeSpec::primary(), Arc::default()).await?);
         let second = first.add_sibling(&dir.join("second"), delay, NodeSpec::secondary()).await?;
         lock(&first.siblings).push(second);
         Ok(first)
