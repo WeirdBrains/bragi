@@ -45,7 +45,7 @@ pub enum Transport {
 pub struct Config {
     /// This device's Bragi data: `identity/` and `history/`.
     pub dir: PathBuf,
-    /// What the other device calls this one while linking (`Bragi on the dev box`).
+    /// What the other device calls this one while linking (`Bragi on dev-box`).
     pub label: String,
     pub transport: Transport,
     /// Devices to dial directly: `/ip4/…/tcp/…/p2p/PEER` (or `/memory/…/p2p/PEER`). Dialing
