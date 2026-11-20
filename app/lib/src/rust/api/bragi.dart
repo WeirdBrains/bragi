@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `conversation_view`, `core`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -78,6 +78,53 @@ Future<ChatStarted> send({
   model: model,
 );
 
+/// Reads a text file as an attachment (`path` on this device). Binary and big files are refused.
+AttachmentView attachFile({required String path}) =>
+    RustLib.instance.api.crateApiBragiAttachFile(path: path);
+
+/// An attachment from bytes the picker returned (`name` is shown; the bytes must be UTF-8 text).
+AttachmentView attachBytes({required String name, required List<int> bytes}) =>
+    RustLib.instance.api.crateApiBragiAttachBytes(name: name, bytes: bytes);
+
+/// [`send`] with text files attached.
+Future<ChatStarted> sendWith({
+  String? conversation,
+  required String prompt,
+  String? model,
+  required List<AttachmentView> files,
+}) => RustLib.instance.api.crateApiBragiSendWith(
+  conversation: conversation,
+  prompt: prompt,
+  model: model,
+  files: files,
+);
+
+/// Agent mode: runs `prompt` as a task on `node` (the first inference node when none); stream it
+/// with `follow_chat`, which also carries `tool`, `approval` and `notice` events.
+Future<ChatStarted> sendAgent({
+  String? conversation,
+  required String prompt,
+  String? node,
+  required List<AttachmentView> files,
+}) => RustLib.instance.api.crateApiBragiSendAgent(
+  conversation: conversation,
+  prompt: prompt,
+  node: node,
+  files: files,
+);
+
+/// Answers an agent task's approval card: `choice` is `deny`, `once` or `task`. False when the
+/// card isn't waiting.
+bool approve({
+  required String requestId,
+  required BigInt ask,
+  required String choice,
+}) => RustLib.instance.api.crateApiBragiApprove(
+  requestId: requestId,
+  ask: ask,
+  choice: choice,
+);
+
 /// Continues the stopped or cut-off last answer in `conversation`.
 Future<ChatStarted> continueAnswer({
   required String conversation,
@@ -109,6 +156,25 @@ Future<ConversationView> conversation({required String id}) =>
 Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
 
+/// A text file attached to a message.
+class AttachmentView {
+  final String name;
+  final String text;
+
+  const AttachmentView({required this.name, required this.text});
+
+  @override
+  int get hashCode => name.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AttachmentView &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          text == other.text;
+}
+
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
 /// `done`, `error`, `retry` or `meta`. A delta's text goes at `offset` (characters), replacing what was there.
 class ChatEventView {
@@ -137,6 +203,16 @@ class ChatEventView {
   /// `retry`: which try this is.
   final int attempt;
 
+  /// `tool`: the call, the tool and `started`, `done` or `failed`. `approval`: the tool too.
+  final String callId;
+  final String? tool;
+  final String? toolState;
+
+  /// `approval`: the card's id (answer with `approve`), its tier and site. The summary is in `text`.
+  final BigInt ask;
+  final String? tier;
+  final String? site;
+
   const ChatEventView({
     required this.kind,
     required this.offset,
@@ -152,6 +228,12 @@ class ChatEventView {
     required this.cacheHit,
     this.standin,
     required this.attempt,
+    required this.callId,
+    this.tool,
+    this.toolState,
+    required this.ask,
+    this.tier,
+    this.site,
   });
 
   static Future<ChatEventView> default_() =>
@@ -172,7 +254,13 @@ class ChatEventView {
       partial.hashCode ^
       cacheHit.hashCode ^
       standin.hashCode ^
-      attempt.hashCode;
+      attempt.hashCode ^
+      callId.hashCode ^
+      tool.hashCode ^
+      toolState.hashCode ^
+      ask.hashCode ^
+      tier.hashCode ^
+      site.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -192,7 +280,13 @@ class ChatEventView {
           partial == other.partial &&
           cacheHit == other.cacheHit &&
           standin == other.standin &&
-          attempt == other.attempt;
+          attempt == other.attempt &&
+          callId == other.callId &&
+          tool == other.tool &&
+          toolState == other.toolState &&
+          ask == other.ask &&
+          tier == other.tier &&
+          site == other.site;
 }
 
 class ChatStarted {
@@ -282,6 +376,13 @@ class MessageView {
 
   /// Times the answer moved to another node mid-stream.
   final int resumes;
+  final List<AttachmentView> attachments;
+
+  /// Agent mode: the tools the task used, in order.
+  final List<String> tools;
+
+  /// The answer came from an agent task on a node.
+  final bool agent;
   final PlatformInt64 atMs;
 
   const MessageView({
@@ -293,6 +394,9 @@ class MessageView {
     required this.cacheHit,
     this.standin,
     required this.resumes,
+    required this.attachments,
+    required this.tools,
+    required this.agent,
     required this.atMs,
   });
 
@@ -306,6 +410,9 @@ class MessageView {
       cacheHit.hashCode ^
       standin.hashCode ^
       resumes.hashCode ^
+      attachments.hashCode ^
+      tools.hashCode ^
+      agent.hashCode ^
       atMs.hashCode;
 
   @override
@@ -321,6 +428,9 @@ class MessageView {
           cacheHit == other.cacheHit &&
           standin == other.standin &&
           resumes == other.resumes &&
+          attachments == other.attachments &&
+          tools == other.tools &&
+          agent == other.agent &&
           atMs == other.atMs;
 }
 

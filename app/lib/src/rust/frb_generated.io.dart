@@ -36,6 +36,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AttachmentView dco_decode_attachment_view(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
 
   @protected
@@ -66,10 +69,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LinkCheckView dco_decode_link_check_view(dynamic raw);
 
   @protected
+  List<String> dco_decode_list_String(dynamic raw);
+
+  @protected
+  List<AttachmentView> dco_decode_list_attachment_view(dynamic raw);
+
+  @protected
   List<MessageView> dco_decode_list_message_view(dynamic raw);
 
   @protected
   List<ModelView> dco_decode_list_model_view(dynamic raw);
+
+  @protected
+  List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
@@ -133,6 +145,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AttachmentView sse_decode_attachment_view(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
 
   @protected
@@ -163,10 +178,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   LinkCheckView sse_decode_link_check_view(SseDeserializer deserializer);
 
   @protected
+  List<String> sse_decode_list_String(SseDeserializer deserializer);
+
+  @protected
+  List<AttachmentView> sse_decode_list_attachment_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<MessageView> sse_decode_list_message_view(SseDeserializer deserializer);
 
   @protected
   List<ModelView> sse_decode_list_model_view(SseDeserializer deserializer);
+
+  @protected
+  List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
@@ -238,6 +264,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_attachment_view(
+    AttachmentView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
 
   @protected
@@ -274,6 +306,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_link_check_view(LinkCheckView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_String(List<String> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_attachment_view(
+    List<AttachmentView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_message_view(
     List<MessageView> self,
     SseSerializer serializer,
@@ -284,6 +325,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<ModelView> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_strict(

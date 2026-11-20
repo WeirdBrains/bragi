@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use bragi_core::demo::DemoNode;
 use bragi_core::{
-    AppState, ChatEvent, ChatHandle, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus, PairState, Role,
+    AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus,
+    PairState, Role, ToolState,
 };
 use flutter_rust_bridge::frb;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -102,6 +103,21 @@ pub struct ChatEventView {
     pub standin: Option<String>,
     /// `retry`: which try this is.
     pub attempt: u32,
+    /// `tool`: the call, the tool and `started`, `done` or `failed`. `approval`: the tool too.
+    pub call_id: String,
+    pub tool: Option<String>,
+    pub tool_state: Option<String>,
+    /// `approval`: the card's id (answer with `approve`), its tier and site. The summary is in `text`.
+    pub ask: u64,
+    pub tier: Option<String>,
+    pub site: Option<String>,
+}
+
+/// A text file attached to a message.
+#[derive(Debug, Clone)]
+pub struct AttachmentView {
+    pub name: String,
+    pub text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -123,6 +139,11 @@ pub struct MessageView {
     pub standin: Option<String>,
     /// Times the answer moved to another node mid-stream.
     pub resumes: u32,
+    pub attachments: Vec<AttachmentView>,
+    /// Agent mode: the tools the task used, in order.
+    pub tools: Vec<String>,
+    /// The answer came from an agent task on a node.
+    pub agent: bool,
     pub at_ms: i64,
 }
 
@@ -285,6 +306,31 @@ fn event_view(e: ChatEvent) -> ChatEventView {
             v.kind = "done".into();
             v.finish_reason = finish_reason;
         }
+        ChatEvent::Tool { call_id, tool, state } => {
+            v.kind = "tool".into();
+            v.call_id = call_id;
+            v.tool = Some(tool);
+            v.tool_state = Some(
+                match state {
+                    ToolState::Started => "started",
+                    ToolState::Done => "done",
+                    ToolState::Failed => "failed",
+                }
+                .into(),
+            );
+        }
+        ChatEvent::Approval { ask, tool, tier, site, summary } => {
+            v.kind = "approval".into();
+            v.ask = ask;
+            v.tool = Some(tool);
+            v.tier = Some(tier);
+            v.site = site;
+            v.text = summary;
+        }
+        ChatEvent::Notice { text } => {
+            v.kind = "notice".into();
+            v.text = text;
+        }
         ChatEvent::Error { kind, message, partial } => {
             v.kind = "error".into();
             v.error_kind = Some(error_kind_name(kind));
@@ -313,10 +359,21 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 cache_hit: m.cache_hit,
                 standin: m.standin.clone(),
                 resumes: m.resumes,
+                attachments: m.attachments.iter().map(attachment_view).collect(),
+                tools: m.tools.clone(),
+                agent: m.agent,
                 at_ms: m.at_ms,
             })
             .collect(),
     }
+}
+
+fn attachment_view(a: &Attachment) -> AttachmentView {
+    AttachmentView { name: a.name.clone(), text: a.text.clone() }
+}
+
+fn attachments(v: Vec<AttachmentView>) -> Vec<Attachment> {
+    v.into_iter().map(|a| Attachment { name: a.name, text: a.text }).collect()
 }
 
 fn summary_view(s: &ConversationSummary) -> SummaryView {
@@ -481,6 +538,41 @@ pub async fn pair_accept_confirm(matches: bool) -> Result<(), String> {
 /// Asks `prompt` in `conversation` (a new one when none); stream it with `follow_chat`.
 pub fn send(conversation: Option<String>, prompt: String, model: Option<String>) -> Result<ChatStarted, String> {
     core()?.send(conversation.as_deref(), &prompt, model).map(started).map_err(err)
+}
+
+/// Reads a text file as an attachment (`path` on this device). Binary and big files are refused.
+#[frb(sync)]
+pub fn attach_file(path: String) -> Result<AttachmentView, String> {
+    Attachment::from_path(std::path::Path::new(&path)).map(|a| attachment_view(&a)).map_err(err)
+}
+
+/// An attachment from bytes the picker returned (`name` is shown; the bytes must be UTF-8 text).
+#[frb(sync)]
+pub fn attach_bytes(name: String, bytes: Vec<u8>) -> Result<AttachmentView, String> {
+    Attachment::from_bytes(&name, &bytes).map(|a| attachment_view(&a)).map_err(err)
+}
+
+/// [`send`] with text files attached.
+pub fn send_with(conversation: Option<String>, prompt: String, model: Option<String>, files: Vec<AttachmentView>) -> Result<ChatStarted, String> {
+    core()?.send_with(conversation.as_deref(), &prompt, model, attachments(files)).map(started).map_err(err)
+}
+
+/// Agent mode: runs `prompt` as a task on `node` (the first inference node when none); stream it
+/// with `follow_chat`, which also carries `tool`, `approval` and `notice` events.
+pub fn send_agent(conversation: Option<String>, prompt: String, node: Option<String>, files: Vec<AttachmentView>) -> Result<ChatStarted, String> {
+    core()?.send_agent(conversation.as_deref(), &prompt, node, None, attachments(files)).map(started).map_err(err)
+}
+
+/// Answers an agent task's approval card: `choice` is `deny`, `once` or `task`. False when the
+/// card isn't waiting.
+#[frb(sync)]
+pub fn approve(request_id: String, ask: u64, choice: String) -> bool {
+    let choice = match choice.as_str() {
+        "once" => Choice::Once,
+        "task" => Choice::ThisTask,
+        _ => Choice::Deny,
+    };
+    core().map(|c| c.approve(&request_id, ask, choice)).unwrap_or(false)
 }
 
 /// Continues the stopped or cut-off last answer in `conversation`.
