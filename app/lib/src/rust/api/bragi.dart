@@ -29,6 +29,10 @@ Future<void> startDemo({
   wordDelayMs: wordDelayMs,
 );
 
+/// Demo only: the next answer's node dies after `words` words, and the other node finishes it.
+Future<void> demoFailNextAnswerAfter({required int words}) =>
+    RustLib.instance.api.crateApiBragiDemoFailNextAnswerAfter(words: words);
+
 /// The demo node's answer to `prompt`, which a test compares a continued answer with.
 Future<String> demoAnswer({required String model, required String prompt}) =>
     RustLib.instance.api.crateApiBragiDemoAnswer(model: model, prompt: prompt);
@@ -106,7 +110,7 @@ Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
 
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
-/// `done` or `error`. A delta's text goes at `offset` (characters), replacing what was there.
+/// `done`, `error`, `retry` or `meta`. A delta's text goes at `offset` (characters), replacing what was there.
 class ChatEventView {
   final String kind;
   final BigInt offset;
@@ -124,6 +128,15 @@ class ChatEventView {
   /// For errors: the text that streamed before it.
   final String partial;
 
+  /// `meta`: served from the cache.
+  final bool cacheHit;
+
+  /// `meta`: the stand-in that answers.
+  final String? standin;
+
+  /// `retry`: which try this is.
+  final int attempt;
+
   const ChatEventView({
     required this.kind,
     required this.offset,
@@ -136,6 +149,9 @@ class ChatEventView {
     this.finishReason,
     this.errorKind,
     required this.partial,
+    required this.cacheHit,
+    this.standin,
+    required this.attempt,
   });
 
   static Future<ChatEventView> default_() =>
@@ -153,7 +169,10 @@ class ChatEventView {
       completionTokens.hashCode ^
       finishReason.hashCode ^
       errorKind.hashCode ^
-      partial.hashCode;
+      partial.hashCode ^
+      cacheHit.hashCode ^
+      standin.hashCode ^
+      attempt.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -170,7 +189,10 @@ class ChatEventView {
           completionTokens == other.completionTokens &&
           finishReason == other.finishReason &&
           errorKind == other.errorKind &&
-          partial == other.partial;
+          partial == other.partial &&
+          cacheHit == other.cacheHit &&
+          standin == other.standin &&
+          attempt == other.attempt;
 }
 
 class ChatStarted {
@@ -255,6 +277,11 @@ class MessageView {
   final String state;
   final String? model;
   final String? node;
+  final bool cacheHit;
+  final String? standin;
+
+  /// Times the answer moved to another node mid-stream.
+  final int resumes;
   final PlatformInt64 atMs;
 
   const MessageView({
@@ -263,6 +290,9 @@ class MessageView {
     required this.state,
     this.model,
     this.node,
+    required this.cacheHit,
+    this.standin,
+    required this.resumes,
     required this.atMs,
   });
 
@@ -273,6 +303,9 @@ class MessageView {
       state.hashCode ^
       model.hashCode ^
       node.hashCode ^
+      cacheHit.hashCode ^
+      standin.hashCode ^
+      resumes.hashCode ^
       atMs.hashCode;
 
   @override
@@ -285,6 +318,9 @@ class MessageView {
           state == other.state &&
           model == other.model &&
           node == other.node &&
+          cacheHit == other.cacheHit &&
+          standin == other.standin &&
+          resumes == other.resumes &&
           atMs == other.atMs;
 }
 
@@ -297,12 +333,20 @@ class ModelView {
   final double? tokensPerSec;
   final int? context;
 
+  /// Inference nodes that serve it.
+  final int nodes;
+
+  /// The model that answers while this one loads, if a node names one.
+  final String? standin;
+
   const ModelView({
     required this.id,
     required this.status,
     required this.replicas,
     this.tokensPerSec,
     this.context,
+    required this.nodes,
+    this.standin,
   });
 
   @override
@@ -311,7 +355,9 @@ class ModelView {
       status.hashCode ^
       replicas.hashCode ^
       tokensPerSec.hashCode ^
-      context.hashCode;
+      context.hashCode ^
+      nodes.hashCode ^
+      standin.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -322,7 +368,9 @@ class ModelView {
           status == other.status &&
           replicas == other.replicas &&
           tokensPerSec == other.tokensPerSec &&
-          context == other.context;
+          context == other.context &&
+          nodes == other.nodes &&
+          standin == other.standin;
 }
 
 /// [`PairState`] flattened: `state` is `unpaired`, `offering`, `confirm`, `waiting`, `linked`
@@ -376,14 +424,16 @@ class PairView {
 class StateView {
   final PairView pair;
   final bool online;
-  final String? node;
+
+  /// Inference nodes found among the user's devices.
+  final int nodeCount;
   final List<ModelView> models;
   final String? defaultModel;
 
   const StateView({
     required this.pair,
     required this.online,
-    this.node,
+    required this.nodeCount,
     required this.models,
     this.defaultModel,
   });
@@ -392,7 +442,7 @@ class StateView {
   int get hashCode =>
       pair.hashCode ^
       online.hashCode ^
-      node.hashCode ^
+      nodeCount.hashCode ^
       models.hashCode ^
       defaultModel.hashCode;
 
@@ -403,7 +453,7 @@ class StateView {
           runtimeType == other.runtimeType &&
           pair == other.pair &&
           online == other.online &&
-          node == other.node &&
+          nodeCount == other.nodeCount &&
           models == other.models &&
           defaultModel == other.defaultModel;
 }

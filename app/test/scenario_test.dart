@@ -90,6 +90,49 @@ void main() {
     expect(last().text, want2);
     expect(last().text.startsWith(partial), isTrue);
     expect(c.conversations, hasLength(1));
+
+    // B2: two inference nodes behind one model list.
+    expect(c.state!.nodeCount, 2);
+    expect(c.models.map((m) => m.id), containsAll(['gemma-4-e4b', 'llama-3.3-70b', 'qwen3-32b']));
+    expect(c.models.firstWhere((m) => m.id == 'gemma-4-e4b').nodes, 2, reason: 'one row for a model on two nodes');
+    expect(c.models.firstWhere((m) => m.id == 'llama-3.3-70b').nodes, 1);
+
+    Future<void> ask(String text, int messages) async {
+      await tester.enterText(find.byKey(const Key('prompt')), text);
+      await tester.tap(find.byKey(const Key('send')));
+      await until('the answer', () => !c.streaming && c.messages.length == messages && last().state == 'complete');
+    }
+
+    // A model that is not warm anywhere is answered by a stand-in, flagged.
+    c.newChat();
+    c.pickModel('qwen3-32b');
+    await tester.pump();
+    await ask('Why a stand-in?', 2);
+    expect(last().standin, 'gemma-4-e4b');
+    expect(last().model, 'qwen3-32b');
+    expect(find.textContaining('stand-in gemma-4-e4b'), findsOneWidget);
+
+    // The same question again is a cache hit.
+    c.newChat();
+    c.pickModel('gemma-4-e4b');
+    await tester.pump();
+    await ask('Same question?', 2);
+    expect(last().cacheHit, isFalse);
+    c.newChat();
+    await tester.pump();
+    await ask('Same question?', 2);
+    expect(last().cacheHit, isTrue);
+    expect(find.textContaining('cached'), findsOneWidget);
+
+    // A node dies mid-answer; the other finishes it, exactly.
+    c.newChat();
+    await tester.pump();
+    const dies = 'Keep going even if a node dies.';
+    await ask(dies, 2);
+    expect(last().resumes, 1);
+    final wantDies = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: dies)))!;
+    expect(last().text, wantDies);
+    expect(find.textContaining('moved to another node'), findsOneWidget);
   });
 
   test('splice puts a delta at its offset', () {

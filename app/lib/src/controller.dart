@@ -138,19 +138,29 @@ class BragiController extends ChangeNotifier {
   void _apply(ChatEventView e) {
     if (messages.isEmpty || messages.last.role != 'assistant') return;
     final last = messages.last;
-    MessageView with_({String? text, String? model, String? node}) => MessageView(
+    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes}) => MessageView(
           role: last.role,
           text: text ?? last.text,
           state: last.state,
           model: model ?? last.model,
           node: node ?? last.node,
+          cacheHit: cacheHit ?? last.cacheHit,
+          standin: standin ?? last.standin,
+          resumes: resumes ?? last.resumes,
           atMs: last.atMs,
         );
+    void replace(MessageView m) => messages = [...messages.take(messages.length - 1), m];
     switch (e.kind) {
       case 'delta':
         messages = [...messages.take(messages.length - 1), with_(text: splice(last.text, e.offset.toInt(), e.text))];
       case 'started':
         messages = [...messages.take(messages.length - 1), with_(model: e.model, node: e.node)];
+      case 'meta':
+        replace(with_(cacheHit: e.cacheHit, standin: e.standin));
+      case 'resumed':
+        replace(with_(node: e.node, resumes: last.resumes + 1));
+      case 'retry':
+        notice = 'No node answered; trying again (${e.attempt})…';
       case 'error':
         if (e.errorKind != 'cancelled') notice = e.text;
     }

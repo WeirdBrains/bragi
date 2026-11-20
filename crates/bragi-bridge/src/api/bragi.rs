@@ -63,19 +63,24 @@ pub struct ModelView {
     pub replicas: u32,
     pub tokens_per_sec: Option<f64>,
     pub context: Option<u32>,
+    /// Inference nodes that serve it.
+    pub nodes: u32,
+    /// The model that answers while this one loads, if a node names one.
+    pub standin: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 pub struct StateView {
     pub pair: PairView,
     pub online: bool,
-    pub node: Option<String>,
+    /// Inference nodes found among the user's devices.
+    pub node_count: u32,
     pub models: Vec<ModelView>,
     pub default_model: Option<String>,
 }
 
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
-/// `done` or `error`. A delta's text goes at `offset` (characters), replacing what was there.
+/// `done`, `error`, `retry` or `meta`. A delta's text goes at `offset` (characters), replacing what was there.
 #[derive(Debug, Clone, Default)]
 pub struct ChatEventView {
     pub kind: String,
@@ -91,6 +96,12 @@ pub struct ChatEventView {
     pub error_kind: Option<String>,
     /// For errors: the text that streamed before it.
     pub partial: String,
+    /// `meta`: served from the cache.
+    pub cache_hit: bool,
+    /// `meta`: the stand-in that answers.
+    pub standin: Option<String>,
+    /// `retry`: which try this is.
+    pub attempt: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -108,6 +119,10 @@ pub struct MessageView {
     pub state: String,
     pub model: Option<String>,
     pub node: Option<String>,
+    pub cache_hit: bool,
+    pub standin: Option<String>,
+    /// Times the answer moved to another node mid-stream.
+    pub resumes: u32,
     pub at_ms: i64,
 }
 
@@ -204,7 +219,7 @@ fn state_view(s: &AppState) -> StateView {
     StateView {
         pair: pair_view(&s.pair),
         online: s.online,
-        node: s.catalog.node.clone(),
+        node_count: s.catalog.nodes.len() as u32,
         models: s
             .catalog
             .models
@@ -215,6 +230,8 @@ fn state_view(s: &AppState) -> StateView {
                 replicas: m.replicas,
                 tokens_per_sec: m.tokens_per_sec.map(f64::from),
                 context: m.context,
+                nodes: m.nodes.len() as u32,
+                standin: m.standin.clone(),
             })
             .collect(),
         default_model: s.catalog.default_model().map(str::to_string),
@@ -242,6 +259,17 @@ fn event_view(e: ChatEvent) -> ChatEventView {
             v.kind = "reasoning".into();
             v.offset = offset;
             v.text = text;
+        }
+        ChatEvent::Retry { attempt, message } => {
+            v.kind = "retry".into();
+            v.attempt = attempt;
+            v.text = message;
+        }
+        ChatEvent::Meta { cache_hit, standin, served_by } => {
+            v.kind = "meta".into();
+            v.cache_hit = cache_hit;
+            v.standin = standin;
+            v.node = served_by;
         }
         ChatEvent::Resumed { node, offset } => {
             v.kind = "resumed".into();
@@ -282,6 +310,9 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 state: message_state_name(m.state),
                 model: m.model.clone(),
                 node: m.node.clone(),
+                cache_hit: m.cache_hit,
+                standin: m.standin.clone(),
+                resumes: m.resumes,
                 at_ms: m.at_ms,
             })
             .collect(),
@@ -325,13 +356,22 @@ pub fn start_demo(dir: String, label: String, accept_after_ms: u32, word_delay_m
     }
     let dir = PathBuf::from(dir);
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().map_err(|e| e.to_string())?;
-    let node = Arc::new(rt.block_on(DemoNode::start(&dir.join("demo"), Duration::from_millis(word_delay_ms.into()))).map_err(err)?);
+    // Two inference nodes of one user, so the pool has something to merge and fail over.
+    let node = rt.block_on(DemoNode::start_cloud(&dir.join("demo"), Duration::from_millis(word_delay_ms.into()))).map_err(err)?;
     let core = {
         let _g = rt.enter();
         Core::start(node.app_config(&dir.join("app"), &label)).map_err(err)?
     };
     node.auto_accept_after(&core, Duration::from_millis(accept_after_ms.into()));
     *s = Some(Running { core, _demo: Some(node), _runtime: Some(rt) });
+    Ok(())
+}
+
+/// Demo only: the next answer's node dies after `words` words, and the other node finishes it.
+pub fn demo_fail_next_answer_after(words: u32) -> Result<(), String> {
+    let s = slot().lock().unwrap_or_else(|e| e.into_inner());
+    let demo = s.as_ref().and_then(|r| r._demo.clone()).ok_or("not the demo profile")?;
+    demo.faults.die_next_answer_after(words as usize);
     Ok(())
 }
 

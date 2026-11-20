@@ -169,7 +169,11 @@ async fn the_cache_and_stand_in_flags_reach_the_shells_and_history() {
     done(&a);
     assert_eq!(a.meta(), Some((false, Some(WARM_MODEL.to_string()))), "{:?}", a.events);
     let m = core.conversation(&id).unwrap().messages.pop().unwrap();
-    assert_eq!((m.standin.as_deref(), m.model.as_deref()), (Some(WARM_MODEL), Some(COLD_MODEL)), "answered by the stand-in, kept as the requested model's");
+    assert_eq!(
+        (m.standin.as_deref(), m.model.as_deref()),
+        (Some(WARM_MODEL), Some(COLD_MODEL)),
+        "answered by the stand-in, kept as the requested model's"
+    );
     assert_eq!(a.text, answer_for(WARM_MODEL, "load slowly"));
 
     // The same question again is a cache hit.

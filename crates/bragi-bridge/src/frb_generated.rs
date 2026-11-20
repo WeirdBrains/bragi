@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 944492322;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -625465386;
 
 // Section: executor
 
@@ -222,6 +222,32 @@ fn wire__crate__api__bragi__demo_answer_impl(
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Ok::<_, ()>(crate::api::bragi::demo_answer(api_model, api_prompt))?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__demo_fail_next_answer_after_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "demo_fail_next_answer_after",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_words = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::demo_fail_next_answer_after(api_words)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -731,6 +757,9 @@ impl SseDecode for crate::api::bragi::ChatEventView {
         let mut var_finishReason = <Option<String>>::sse_decode(deserializer);
         let mut var_errorKind = <Option<String>>::sse_decode(deserializer);
         let mut var_partial = <String>::sse_decode(deserializer);
+        let mut var_cacheHit = <bool>::sse_decode(deserializer);
+        let mut var_standin = <Option<String>>::sse_decode(deserializer);
+        let mut var_attempt = <u32>::sse_decode(deserializer);
         return crate::api::bragi::ChatEventView {
             kind: var_kind,
             offset: var_offset,
@@ -743,6 +772,9 @@ impl SseDecode for crate::api::bragi::ChatEventView {
             finish_reason: var_finishReason,
             error_kind: var_errorKind,
             partial: var_partial,
+            cache_hit: var_cacheHit,
+            standin: var_standin,
+            attempt: var_attempt,
         };
     }
 }
@@ -853,6 +885,9 @@ impl SseDecode for crate::api::bragi::MessageView {
         let mut var_state = <String>::sse_decode(deserializer);
         let mut var_model = <Option<String>>::sse_decode(deserializer);
         let mut var_node = <Option<String>>::sse_decode(deserializer);
+        let mut var_cacheHit = <bool>::sse_decode(deserializer);
+        let mut var_standin = <Option<String>>::sse_decode(deserializer);
+        let mut var_resumes = <u32>::sse_decode(deserializer);
         let mut var_atMs = <i64>::sse_decode(deserializer);
         return crate::api::bragi::MessageView {
             role: var_role,
@@ -860,6 +895,9 @@ impl SseDecode for crate::api::bragi::MessageView {
             state: var_state,
             model: var_model,
             node: var_node,
+            cache_hit: var_cacheHit,
+            standin: var_standin,
+            resumes: var_resumes,
             at_ms: var_atMs,
         };
     }
@@ -873,12 +911,16 @@ impl SseDecode for crate::api::bragi::ModelView {
         let mut var_replicas = <u32>::sse_decode(deserializer);
         let mut var_tokensPerSec = <Option<f64>>::sse_decode(deserializer);
         let mut var_context = <Option<u32>>::sse_decode(deserializer);
+        let mut var_nodes = <u32>::sse_decode(deserializer);
+        let mut var_standin = <Option<String>>::sse_decode(deserializer);
         return crate::api::bragi::ModelView {
             id: var_id,
             status: var_status,
             replicas: var_replicas,
             tokens_per_sec: var_tokensPerSec,
             context: var_context,
+            nodes: var_nodes,
+            standin: var_standin,
         };
     }
 }
@@ -954,13 +996,13 @@ impl SseDecode for crate::api::bragi::StateView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_pair = <crate::api::bragi::PairView>::sse_decode(deserializer);
         let mut var_online = <bool>::sse_decode(deserializer);
-        let mut var_node = <Option<String>>::sse_decode(deserializer);
+        let mut var_nodeCount = <u32>::sse_decode(deserializer);
         let mut var_models = <Vec<crate::api::bragi::ModelView>>::sse_decode(deserializer);
         let mut var_defaultModel = <Option<String>>::sse_decode(deserializer);
         return crate::api::bragi::StateView {
             pair: var_pair,
             online: var_online,
-            node: var_node,
+            node_count: var_nodeCount,
             models: var_models,
             default_model: var_defaultModel,
         };
@@ -1025,22 +1067,23 @@ fn pde_ffi_dispatcher_primary_impl(
         5 => wire__crate__api__bragi__conversations_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__bragi__delete_conversation_impl(port, ptr, rust_vec_len, data_len),
         7 => wire__crate__api__bragi__demo_answer_impl(port, ptr, rust_vec_len, data_len),
-        8 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        8 => wire__crate__api__bragi__demo_fail_next_answer_after_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1054,7 +1097,7 @@ fn pde_ffi_dispatcher_sync_impl(
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
         1 => wire__crate__api__bragi__cancel_impl(ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1076,6 +1119,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ChatEventView {
             self.finish_reason.into_into_dart().into_dart(),
             self.error_kind.into_into_dart().into_dart(),
             self.partial.into_into_dart().into_dart(),
+            self.cache_hit.into_into_dart().into_dart(),
+            self.standin.into_into_dart().into_dart(),
+            self.attempt.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1138,6 +1184,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
             self.state.into_into_dart().into_dart(),
             self.model.into_into_dart().into_dart(),
             self.node.into_into_dart().into_dart(),
+            self.cache_hit.into_into_dart().into_dart(),
+            self.standin.into_into_dart().into_dart(),
+            self.resumes.into_into_dart().into_dart(),
             self.at_ms.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -1158,6 +1207,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ModelView {
             self.replicas.into_into_dart().into_dart(),
             self.tokens_per_sec.into_into_dart().into_dart(),
             self.context.into_into_dart().into_dart(),
+            self.nodes.into_into_dart().into_dart(),
+            self.standin.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1195,7 +1246,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::StateView {
         [
             self.pair.into_into_dart().into_dart(),
             self.online.into_into_dart().into_dart(),
-            self.node.into_into_dart().into_dart(),
+            self.node_count.into_into_dart().into_dart(),
             self.models.into_into_dart().into_dart(),
             self.default_model.into_into_dart().into_dart(),
         ]
@@ -1270,6 +1321,9 @@ impl SseEncode for crate::api::bragi::ChatEventView {
         <Option<String>>::sse_encode(self.finish_reason, serializer);
         <Option<String>>::sse_encode(self.error_kind, serializer);
         <String>::sse_encode(self.partial, serializer);
+        <bool>::sse_encode(self.cache_hit, serializer);
+        <Option<String>>::sse_encode(self.standin, serializer);
+        <u32>::sse_encode(self.attempt, serializer);
     }
 }
 
@@ -1362,6 +1416,9 @@ impl SseEncode for crate::api::bragi::MessageView {
         <String>::sse_encode(self.state, serializer);
         <Option<String>>::sse_encode(self.model, serializer);
         <Option<String>>::sse_encode(self.node, serializer);
+        <bool>::sse_encode(self.cache_hit, serializer);
+        <Option<String>>::sse_encode(self.standin, serializer);
+        <u32>::sse_encode(self.resumes, serializer);
         <i64>::sse_encode(self.at_ms, serializer);
     }
 }
@@ -1374,6 +1431,8 @@ impl SseEncode for crate::api::bragi::ModelView {
         <u32>::sse_encode(self.replicas, serializer);
         <Option<f64>>::sse_encode(self.tokens_per_sec, serializer);
         <Option<u32>>::sse_encode(self.context, serializer);
+        <u32>::sse_encode(self.nodes, serializer);
+        <Option<String>>::sse_encode(self.standin, serializer);
     }
 }
 
@@ -1435,7 +1494,7 @@ impl SseEncode for crate::api::bragi::StateView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::bragi::PairView>::sse_encode(self.pair, serializer);
         <bool>::sse_encode(self.online, serializer);
-        <Option<String>>::sse_encode(self.node, serializer);
+        <u32>::sse_encode(self.node_count, serializer);
         <Vec<crate::api::bragi::ModelView>>::sse_encode(self.models, serializer);
         <Option<String>>::sse_encode(self.default_model, serializer);
     }

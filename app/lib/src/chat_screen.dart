@@ -128,7 +128,7 @@ class _Models extends StatelessWidget {
                 selected: c.model == m.id,
                 onSelected: (_) => c.pickModel(m.id),
                 avatar: CircleAvatar(radius: 4, backgroundColor: _dot(m.status)),
-                label: Text('${m.id} · ${_label(m)}'),
+                label: Text('${m.id} · ${_label(m)}${c.state!.nodeCount > 1 ? ' · ${m.nodes} of ${c.state!.nodeCount} nodes' : ''}'),
               ),
             ),
         ]),
@@ -168,6 +168,13 @@ class _Bubble extends StatelessWidget {
             'failed' => '$model · cut off',
             _ => model,
           };
+    // What the pool did: served from the cache, answered by a stand-in, moved between nodes.
+    final flags = [
+      if (message.cacheHit) 'cached',
+      if (message.standin != null) 'stand-in ${message.standin}',
+      if (message.resumes == 1) 'moved to another node' else if (message.resumes > 1) 'moved nodes ${message.resumes}×',
+    ];
+    final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -176,7 +183,8 @@ class _Bubble extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         decoration: BoxDecoration(color: mine ? BragiColors.selection : BragiColors.surface, borderRadius: BorderRadius.circular(12)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          if (meta != null && meta.isNotEmpty) Text(meta, style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+          if (line != null && line.isNotEmpty)
+            Text(line, key: const Key('bubble-meta'), style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
           Text(message.text.isEmpty ? '…' : message.text, style: const TextStyle(fontSize: 15, height: 1.4)),
         ]),
       ),

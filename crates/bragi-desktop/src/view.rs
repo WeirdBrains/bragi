@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
-use bragi_core::demo::DemoNode;
+use bragi_core::demo::{DemoNode, Faults};
 use bragi_core::{
     AppState, ChatEvent, ChatMessage, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus, PairState, Role,
     Transport,
@@ -265,6 +265,7 @@ impl BragiView {
             let _ = this.update(cx, |v, cx| {
                 v.streaming = None;
                 v.reload();
+                v.scroll.scroll_to_bottom();
                 cx.notify();
             });
         })
@@ -283,6 +284,15 @@ impl BragiView {
                 last.node = Some(node);
                 last.model = Some(model);
             }
+            ChatEvent::Meta { cache_hit, standin, .. } => {
+                last.cache_hit = cache_hit;
+                last.standin = standin;
+            }
+            ChatEvent::Resumed { node, .. } => {
+                last.node = Some(node);
+                last.resumes += 1;
+            }
+            ChatEvent::Retry { attempt, .. } => self.notice = Some(format!("No node answered; trying again ({attempt})…")),
             ChatEvent::Error { kind, message, .. } if kind != bragi_core::ErrorKind::Cancelled => self.notice = Some(message),
             _ => {}
         }
@@ -483,6 +493,11 @@ impl BragiView {
                 ModelStatus::Loadable => (t.text_secondary, "loads on use"),
             };
             let speed = m.tokens_per_sec.map(|s| format!(" · {s:.0} tok/s")).unwrap_or_default();
+            let on = if self.state.catalog.nodes.len() > 1 {
+                format!(" · {} of {} nodes", m.nodes.len(), self.state.catalog.nodes.len())
+            } else {
+                String::new()
+            };
             let id = m.id.clone();
             row = row.child(
                 div()
@@ -501,7 +516,7 @@ impl BragiView {
                     .on_click(cx.listener(move |v, _, _, cx| v.pick_model(&id, cx)))
                     .child(div().w(px(8.)).h(px(8.)).rounded(px(4.)).bg(rgb(dot)))
                     .child(div().text_size(px(13.)).text_color(rgb(t.text_primary)).child(m.id.clone()))
-                    .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(format!("{label}{speed}"))),
+                    .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(format!("{label}{speed}{on}"))),
             );
         }
         row
@@ -516,6 +531,20 @@ impl BragiView {
             (_, MessageState::Stopped) => Some(format!("{} · stopped", m.model.clone().unwrap_or_default())),
             (_, MessageState::Failed) => Some(format!("{} · cut off", m.model.clone().unwrap_or_default())),
             (_, MessageState::Complete) => m.model.clone(),
+        };
+        // What the pool did: served from the cache, answered by a stand-in, moved between nodes.
+        let flags: Vec<String> = [
+            m.cache_hit.then(|| "cached".to_string()),
+            m.standin.as_ref().map(|s| format!("stand-in {s}")),
+            (m.resumes > 0).then(|| if m.resumes == 1 { "moved to another node".to_string() } else { format!("moved nodes {}×", m.resumes) }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let meta = match (meta, flags.is_empty()) {
+            (Some(s), false) => Some(format!("{s} · {}", flags.join(" · "))),
+            (None, false) if m.role == Role::Assistant => Some(flags.join(" · ")),
+            (meta, _) => meta,
         };
         div().flex().flex_row().when(mine, |d| d.justify_end()).child(
             div()
@@ -620,6 +649,9 @@ async fn wait_for(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, what: &
     }
 }
 
+/// The demo nodes' scripted trouble, for the scenario.
+static FAULTS: std::sync::OnceLock<Arc<Faults>> = std::sync::OnceLock::new();
+
 fn last_assistant(v: &BragiView) -> Option<ChatMessage> {
     v.current.as_ref().and_then(|c| c.messages.last().cloned()).filter(|m| m.role == Role::Assistant)
 }
@@ -668,6 +700,56 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("continued");
     shot(cx, "08-continued").await;
+
+    // B2: a model that is not warm anywhere (a stand-in answers), the same question twice (the
+    // second is a cache hit), and a node dying mid-answer (another finishes it).
+    let faults = FAULTS.get().ok_or("no demo nodes")?.clone();
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.pick_model(bragi_core::demo::COLD_MODEL, cx);
+        v.set_prompt("Why is the first answer from a stand-in?", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the stand-in's answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete))
+        .await?;
+    if this.read_with(cx, |v, _| last_assistant(v).and_then(|m| m.standin)).map_err(|e| e.to_string())?.is_none() {
+        return Err("the stand-in's answer is not flagged".into());
+    }
+    step("stand-in");
+    shot(cx, "09-standin").await;
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.set_prompt("What does a pool of nodes give me?", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    for round in 0..2 {
+        press_send(&this, cx)?;
+        wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+        if round == 0 {
+            this.update(cx, |v, cx| v.set_prompt("What does a pool of nodes give me?", cx)).map_err(|e| e.to_string())?;
+        }
+    }
+    if !this.read_with(cx, |v, _| last_assistant(v).is_some_and(|m| m.cache_hit)).map_err(|e| e.to_string())? {
+        return Err("the repeated question is not a cache hit".into());
+    }
+    step("cache hit");
+    shot(cx, "10-cached").await;
+    faults.die_next_answer_after(14);
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.set_prompt("Keep going even if a node dies.", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let (text, moved) = this.read_with(cx, |v, _| last_assistant(v).map(|m| (m.text, m.resumes)).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if moved != 1 || text != bragi_core::demo::answer_for(bragi_core::demo::WARM_MODEL, "Keep going even if a node dies.") {
+        return Err(format!("failover: moved {moved} times, text {text:?}"));
+    }
+    step("failover");
+    shot(cx, "11-failover").await;
     Ok(())
 }
 
@@ -714,8 +796,9 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
             }
         };
         let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().expect("a runtime");
-        let node = rt.block_on(DemoNode::start(&home.join("demo"), Duration::from_millis(45))).expect("the demo node");
-        let node = Arc::new(node);
+        // Two inference nodes of one user, so the pool has something to merge and fail over.
+        let node = rt.block_on(DemoNode::start_cloud(&home.join("demo"), Duration::from_millis(45))).expect("the demo nodes");
+        let _ = FAULTS.set(node.faults.clone());
         let core = {
             let _g = rt.enter();
             Core::start(node.app_config(&home.join("app"), "Bragi desktop (demo)")).expect("bragi-core")

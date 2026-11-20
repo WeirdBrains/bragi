@@ -722,12 +722,7 @@ async fn stream(
 
 /// Follows every inference node's catalog: a watcher per node that the roster lists and that
 /// answers, merged into [`AppState::catalog`]. Nodes that go away drop out within a few seconds.
-async fn follow_catalogs(
-    state: watch::Sender<AppState>,
-    nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>,
-    dialer: Arc<dyn Dialer>,
-    opts: PoolOptions,
-) {
+async fn follow_catalogs(state: watch::Sender<AppState>, nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>, dialer: Arc<dyn Dialer>, opts: PoolOptions) {
     let feeds: Arc<Mutex<BTreeMap<String, Catalog>>> = Arc::default();
     let mut watchers: HashMap<String, JoinHandle<()>> = HashMap::new();
     let publish = {

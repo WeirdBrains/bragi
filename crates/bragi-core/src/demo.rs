@@ -58,7 +58,12 @@ impl NodeSpec {
 
     /// The second node: [`BIG_MODEL`] warm, and [`WARM_MODEL`] too (so that one has two nodes).
     pub fn secondary() -> Self {
-        Self { label: "demo inference node 2".into(), models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)], embedding: false, standins: true }
+        Self {
+            label: "demo inference node 2".into(),
+            models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)],
+            embedding: false,
+            standins: true,
+        }
     }
 }
 
@@ -67,6 +72,8 @@ impl NodeSpec {
 pub struct Faults {
     refuse: AtomicU32,
     die_after: Mutex<Option<usize>>,
+    /// (model, prompt) pairs answered before: the pool's exact-match answer cache.
+    seen: Mutex<HashSet<(String, String)>>,
 }
 
 impl Faults {
@@ -80,8 +87,13 @@ impl Faults {
         *self.die_after.lock().unwrap_or_else(|e| e.into_inner()) = Some(words);
     }
 
+    /// Whether this question was answered before (and notes it).
+    fn seen_before(&self, model: &str, prompt: &str) -> bool {
+        !self.seen.lock().unwrap_or_else(|e| e.into_inner()).insert((model.to_string(), prompt.to_string()))
+    }
+
     fn take_refusal(&self) -> bool {
-        self.refuse.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
+        self.refuse.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
     }
 
     fn take_death(&self) -> Option<usize> {
@@ -175,8 +187,6 @@ pub struct FakeHost {
     delay: Duration,
     spec: NodeSpec,
     faults: Arc<Faults>,
-    /// (model, prompt) pairs answered before: the demo's exact-match answer cache.
-    seen: Mutex<HashSet<(String, String)>>,
 }
 
 impl InferHost for FakeHost {
@@ -197,11 +207,18 @@ impl InferHost for FakeHost {
         if !self.spec.models.iter().any(|(id, _)| *id == model) {
             return Err(RemoteError::Unavailable { message: format!("unknown model `{model}`") });
         }
-        let standin = if warm(&model) || !self.spec.standins { None } else { self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone()) };
+        // The demo's way to show a node dying: this prompt makes the node that takes it die
+        // partway, once, and another node finishes the answer.
+        if self.spec.standins && request.assistant_prefix.is_none() && last_user(request).contains("even if a node dies") {
+            self.faults.die_next_answer_after(14);
+        }
+        let standin = if warm(&model) || !self.spec.standins {
+            None
+        } else {
+            self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone())
+        };
         let prompt = last_user(request);
-        let cache_hit = request.assistant_prefix.is_none()
-            && prompt != CONTINUE_PROMPT
-            && !self.seen.lock().unwrap_or_else(|e| e.into_inner()).insert((model.clone(), prompt));
+        let cache_hit = request.assistant_prefix.is_none() && prompt != CONTINUE_PROMPT && self.faults.seen_before(&model, &prompt);
         Ok(Arc::new(FakeBackend { model, standin, delay: self.delay, cache_hit, faults: self.faults.clone() }))
     }
 }
@@ -265,7 +282,7 @@ impl DemoNode {
             .iter()
             .map(|(id, state)| {
                 let warm = *state == ModelState::Warm;
-                let m = CatalogModel::new(id.clone(), Purpose::Chat, state.clone()).with_context(32768);
+                let m = CatalogModel::new(id.clone(), Purpose::Chat, *state).with_context(32768);
                 if warm { m.with_replicas(1).with_speed(if id == BIG_MODEL { 22.0 } else { 48.0 }) } else { m.with_speed(14.0) }
             })
             .collect();
@@ -273,7 +290,7 @@ impl DemoNode {
             models.push(CatalogModel::new("nomic-embed", Purpose::Embedding, ModelState::Warm));
         }
         feed.publish(models);
-        let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone(), seen: Mutex::default() });
+        let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
         Ok(Self { identity, node, feed, faults, server: Mutex::new(Some(server)), siblings: Mutex::default() })
