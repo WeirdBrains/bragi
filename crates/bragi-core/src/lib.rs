@@ -5,10 +5,11 @@
 //! - Pairing: `weirdnet-device-link` with `weirdnet-bragi://` codes and the 6-digit check.
 //! - The catalog from one inference node, followed, through `weirdnet-agent`'s pool.
 //! - Streaming chat with cancel and continue, over the pool (infer/2).
-//! - Local history (B4 moves it to the synced context store).
+//! - History on the shared context store, so conversations follow the user between devices.
 
 pub mod catalog;
 pub mod chat;
+pub mod context;
 mod core;
 pub mod demo;
 pub mod error;

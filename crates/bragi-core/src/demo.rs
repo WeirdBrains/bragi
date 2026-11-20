@@ -337,6 +337,18 @@ impl DemoNode {
         Ok(sas)
     }
 
+    /// One sync pass from this node to the app devices at `addresses` (what [`Core::address`]
+    /// gives): the user's other devices pull from each other, and the one with the lowest peer
+    /// id has to start the key chain, which only a device that pulls can do.
+    pub async fn sync_with(&self, addresses: &[String]) {
+        let hints = crate::core::peer_hints(addresses).unwrap_or_default();
+        let (identity, node) = (self.identity.clone(), self.node.clone());
+        let _ = tokio::task::spawn_blocking(move || {
+            identity.tick(&node, &|c| hints.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default())
+        })
+        .await;
+    }
+
     /// Plays the existing device for `core`: when it shows a code, accept it.
     pub fn auto_accept(self: &Arc<Self>, core: &Core) {
         self.auto_accept_after(core, Duration::ZERO);

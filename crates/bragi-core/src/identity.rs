@@ -22,11 +22,14 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use weirdnet_net::user::NodeCert;
 use weirdnet_net::{Keypair, Multiaddr, Node, PeerId, PublicKey, WEIRDNET};
-use weirdnet_sync::{Device, EpochKeys, Roster, SyncState};
+use weirdnet_sync::{Device, EpochKeys, LogEntry, LogPage, RecordOptions, RecordValue, Roster, SyncState};
 
-/// The sync type Bragi announces. It carries no records yet; the roster rides along with every
-/// pass.
+/// The sync type Bragi announces; the roster rides along with every pass.
 pub const SYNC_TYPE: &str = "bragi.app";
+
+/// The sync type of conversations, shared with Ymir (`ymir.context`): sealed under the roster's
+/// key, so only the user's own devices can read it. See [`crate::context`].
+pub const CONTEXT_TYPE: &str = "ymir.context";
 
 /// What a link transfer carries besides the identity: the roster, in Morph's format, so a Morph
 /// device and a Bragi device can link each other.
@@ -53,6 +56,48 @@ fn user_from_seed(seed: &[u8]) -> Result<Keypair> {
     let mut bytes: [u8; 32] = seed.try_into().map_err(|_| anyhow!("the identity seed is not 32 bytes"))?;
     let key = Keypair::ed25519_from_bytes(&mut bytes).map_err(|e| anyhow!("identity seed: {e}"))?;
     Ok(key)
+}
+
+/// Why a record couldn't be written.
+#[derive(Debug)]
+pub enum WriteError {
+    /// Sealing needs an epoch key and this device hasn't got one yet (a sync pass brings it).
+    NoKeyYet,
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for WriteError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WriteError::NoKeyYet => write!(f, "waiting for the first key from your other devices"),
+            WriteError::Other(e) => write!(f, "{e:#}"),
+        }
+    }
+}
+
+/// Reloads the op log saved by [`Identity::save`], so our sequence numbers carry on and history
+/// survives a restart.
+fn load_log(dir: &Path, st: &mut SyncState) {
+    let Ok(bytes) = std::fs::read(dir.join("log.json")) else { return };
+    let Ok(entries) = serde_json::from_slice::<Vec<LogEntry>>(&bytes) else {
+        tracing::warn!("log.json is unreadable; starting the op log empty");
+        return;
+    };
+    let mut by_node: std::collections::BTreeMap<String, Vec<LogEntry>> = Default::default();
+    for e in entries {
+        by_node.entry(e.node_id.0.clone()).or_default().push(e);
+    }
+    for (node, ops) in by_node {
+        let (from_seq, to_seq) = (ops.iter().map(|e| e.seq).min().unwrap_or(0), ops.iter().map(|e| e.seq).max().unwrap_or(0));
+        let node_id = weirdnet_sync::NodeId::new(node);
+        st.log.integrate(&LogPage { node_id: node_id.clone(), from_seq, to_seq, ops });
+        let c = st.log.contiguous(&node_id);
+        st.log.set_cursor(&node_id, c);
+    }
+}
+
+pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_private(path, bytes).map_err(std::io::Error::other)
 }
 
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -165,6 +210,8 @@ impl Identity {
             auto_first_rotation: true,
             records: Default::default(),
         };
+        st.configure(CONTEXT_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("context records: {e}"))?;
+        load_log(dir, &mut st);
         st.publish_device_key(now_ms()).map_err(|e| anyhow!("device key: {e}"))?;
         st.refresh_keys();
         Ok(Self { dir: dir.to_path_buf(), node_key, state: Arc::new(Mutex::new(st)) })
@@ -177,9 +224,10 @@ impl Identity {
     /// Writes the roster and keys (and, the first time, the seed and node key).
     pub fn save(&self) -> Result<()> {
         ensure_dir(&self.dir)?;
-        let (seed, roster, keys) = {
+        let (seed, roster, keys, log) = {
             let st = self.lock();
-            (st.seed.clone(), serde_json::to_vec_pretty(&st.roster)?, st.keys.export())
+            let entries: Vec<&LogEntry> = st.log.iter().collect();
+            (st.seed.clone(), serde_json::to_vec_pretty(&st.roster)?, st.keys.export(), serde_json::to_vec(&entries)?)
         };
         if !self.dir.join("seed").is_file() {
             write_private(&self.dir.join("seed"), &seed)?;
@@ -189,7 +237,47 @@ impl Identity {
         }
         write_private(&self.dir.join("roster.json"), &roster)?;
         write_private(&self.dir.join("keys"), &keys)?;
+        write_private(&self.dir.join("log.json"), &log)?;
         Ok(())
+    }
+
+    /// Writes one record of `typ` (sealed for [`CONTEXT_TYPE`]) and saves. With other devices
+    /// the first sealed write has to wait for the first key rotation, which a sync pass brings:
+    /// that is an error here with [`WriteError::NoKeyYet`], and the caller keeps the write and
+    /// tries again later.
+    pub fn write_record(&self, typ: &str, record_id: &str, value: &[u8]) -> std::result::Result<(), WriteError> {
+        {
+            let mut st = self.lock();
+            let mut r = st.write(now_ms() as u64, typ, record_id, value);
+            if matches!(&r, Err(weirdnet_sync::SyncError::Refused(m)) if m == "no-epoch-key") {
+                // A lone device starts the key chain itself.
+                if st.roster.active().count() == 1 {
+                    st.rotate(now_ms()).map_err(|e| WriteError::Other(anyhow!("starting the key chain: {e}")))?;
+                    r = st.write(now_ms() as u64, typ, record_id, value);
+                } else {
+                    return Err(WriteError::NoKeyYet);
+                }
+            }
+            r.map_err(|e| WriteError::Other(anyhow!("writing {typ}/{record_id}: {e}")))?;
+        }
+        self.save().map_err(WriteError::Other)
+    }
+
+    /// The latest value of every record of `typ` this device can read, by record id.
+    pub fn records(&self, typ: &str) -> Vec<(String, Vec<u8>)> {
+        let st = self.lock();
+        st.latest_entries(typ)
+            .into_iter()
+            .filter_map(|e| match st.read(e) {
+                Ok(RecordValue::Ready(v)) => Some((e.record_id.clone(), v.to_vec())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The directory this identity is stored in.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     pub fn node_key(&self) -> &Keypair {
@@ -273,6 +361,12 @@ impl Identity {
             match &out.error {
                 None => reached += 1,
                 Some(e) => tracing::debug!(peer = %cert.peer_id, applied = out.applied, "sync pass: {e}"),
+            }
+            if out.error.is_none() {
+                let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, CONTEXT_TYPE);
+                if let Some(e) = &out.error {
+                    tracing::debug!(peer = %cert.peer_id, applied = out.applied, "context pass: {e}");
+                }
             }
         }
         if let Err(e) = self.save() {

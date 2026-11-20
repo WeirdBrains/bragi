@@ -131,7 +131,9 @@ impl Drop for Net {
 struct Inner {
     cfg: Config,
     handle: Handle,
-    history: History,
+    history: Arc<History>,
+    /// `cfg.peers`, and what [`Core::add_peer`] adds: where sync passes dial the other devices.
+    peers: Arc<Mutex<Vec<String>>>,
     state: watch::Sender<AppState>,
     net: Mutex<Option<Arc<Net>>>,
     offer: Mutex<Option<Arc<HostNode>>>,
@@ -155,6 +157,29 @@ fn random_id(prefix: &str) -> String {
     let _ = getrandom::fill(&mut b);
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
     format!("{prefix}-{hex}")
+}
+
+/// One pass against the other devices: pulls the roster and history, writes what was waiting
+/// for the first key, and wakes the shells' watchers when history changed.
+async fn sync_pass(identity: Arc<Identity>, node: Arc<SyncNode>, peers: Arc<Mutex<Vec<String>>>, history: Arc<History>, state: watch::Sender<AppState>) {
+    let hints = hints(&lock(&peers)).unwrap_or_default();
+    let h = history.clone();
+    let changed = tokio::task::spawn_blocking(move || {
+        let before = h.fingerprint();
+        identity.tick(&node, &|c| hints.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default());
+        h.flush();
+        h.fingerprint() != before
+    })
+    .await
+    .unwrap_or(false);
+    if changed {
+        // Wakes the watchers; the state itself is the same.
+        state.send_modify(|_| {});
+    }
+}
+
+pub(crate) fn peer_hints(peers: &[String]) -> Result<Vec<(PeerId, Vec<Multiaddr>)>> {
+    hints(peers)
 }
 
 fn hints(peers: &[String]) -> Result<Vec<(PeerId, Vec<Multiaddr>)>> {
@@ -206,11 +231,13 @@ impl Core {
         };
         hints(&cfg.peers)?;
         std::fs::create_dir_all(&cfg.dir)?;
-        let history = History::open(&cfg.dir)?;
+        let history = Arc::new(History::open(&cfg.dir)?);
         let (state, _) = watch::channel(AppState::default());
+        let peers = Arc::new(Mutex::new(cfg.peers.clone()));
         let core = Core {
             inner: Arc::new(Inner {
                 cfg,
+                peers,
                 handle,
                 history,
                 state,
@@ -285,15 +312,18 @@ impl Core {
         // The catalog: every inference node's, followed, and merged.
         tasks.push(tokio::spawn(follow_catalogs(self.inner.state.clone(), nodes.clone(), dialer.clone(), opts.clone())));
         // The roster: devices linked or revoked elsewhere.
-        let (i, n, h) = (identity.clone(), node.clone(), hints.clone());
+        // History rides along: the first pass after linking brings the key that seals it, and
+        // what other devices wrote comes in; a shell is told to redraw when it did.
+        let imported = self.inner.history.attach(identity.clone());
+        if imported > 0 {
+            tracing::info!("imported {imported} conversations from this device's earlier history");
+        }
+        let (net_for_loop, hist, state, peers) = (identity.clone(), self.inner.history.clone(), self.inner.state.clone(), self.inner.peers.clone());
+        let node_for_loop = node.clone();
         tasks.push(tokio::spawn(async move {
             loop {
+                sync_pass(net_for_loop.clone(), node_for_loop.clone(), peers.clone(), hist.clone(), state.clone()).await;
                 tokio::time::sleep(SYNC_EVERY).await;
-                let (i, n, h) = (i.clone(), n.clone(), h.clone());
-                let _ = tokio::task::spawn_blocking(move || {
-                    i.tick(&n, &|c| h.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default())
-                })
-                .await;
             }
         }));
         let (user, device) = (identity.user_id(), identity.our_cert().label);
@@ -456,6 +486,7 @@ impl Core {
             None => Conversation { id: random_id("c"), title: title_for(prompt), created_ms: now, updated_ms: now, messages: Vec::new() },
         };
         c.messages.push(ChatMessage {
+            id: String::new(),
             role: Role::User,
             text: prompt.into(),
             state: MessageState::Complete,
@@ -468,6 +499,7 @@ impl Core {
         });
         let messages = agent_messages(&c.messages);
         c.messages.push(ChatMessage {
+            id: String::new(),
             role: Role::Assistant,
             text: String::new(),
             state: MessageState::Streaming,
@@ -596,6 +628,32 @@ impl Core {
     // ---- lifecycle -------------------------------------------------------------------------
 
     /// The OS backgrounded or suspended the app.
+    /// One sync pass with the user's other devices now (history, the roster), instead of
+    /// waiting for the next one. Shells call it on resume; it returns when the pass is over.
+    pub async fn sync_now(&self) -> Result<()> {
+        let net = self.net()?;
+        sync_pass(net.identity.clone(), net.node.clone(), self.inner.peers.clone(), self.inner.history.clone(), self.inner.state.clone()).await;
+        Ok(())
+    }
+
+    /// Where other devices can dial this one (`/ip4/…/p2p/PEER`), once the node listens.
+    pub fn address(&self) -> Option<String> {
+        let net = self.net().ok()?;
+        let a = net.node.status().listening.first()?.clone();
+        Some(format!("{}/p2p/{}", a.split("/p2p/").next().unwrap_or(&a), net.node.peer_id()))
+    }
+
+    /// Tells sync passes where another of the user's devices can be dialed, for networks where
+    /// finding it by id doesn't work (a LAN without mDNS, the memory transport in tests).
+    pub fn add_peer(&self, address: &str) -> Result<()> {
+        hints(&[address.to_string()])?;
+        let mut p = lock(&self.inner.peers);
+        if !p.iter().any(|x| x == address) {
+            p.push(address.to_string());
+        }
+        Ok(())
+    }
+
     pub fn paused(&self) {
         if let Ok(n) = self.net() {
             let _ = n.node.pause();
@@ -605,6 +663,10 @@ impl Core {
     pub fn resumed(&self) {
         if let Ok(n) = self.net() {
             let _ = n.node.resume();
+            let core = self.clone();
+            self.inner.handle.spawn(async move {
+                let _ = core.sync_now().await;
+            });
         }
     }
 
