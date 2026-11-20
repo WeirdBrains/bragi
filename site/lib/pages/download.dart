@@ -4,18 +4,86 @@ import 'package:jaspr/jaspr.dart';
 import '../components/layout.dart';
 import '../site.dart';
 
-const _rows = [
+/// One row of the download table: platform, app, the files (label and asset name), and a note.
+typedef _Row = (String, String, List<(String, String)>, String);
+
+final List<_Row> _rows = [
   (
-    'Linux (x86_64, ARM64)',
+    'Linux x86_64',
     'Desktop, GPUI',
-    'tar.gz, deb, rpm, Arch (TAUR), Nix',
-    'Planned. The debug build runs from source.',
+    [
+      ('tar.gz', 'bragi-$latestVersion-x86_64-unknown-linux-gnu.tar.gz'),
+      ('zip', 'bragi-$latestVersion-x86_64-unknown-linux-gnu.zip'),
+      ('deb', 'bragi_$latestVersion-1_amd64.deb'),
+      ('rpm', 'bragi-$latestVersion-1.x86_64.rpm'),
+      ('Arch', 'bragi-$latestVersion-1-x86_64.pkg.tar.zst'),
+    ],
+    'Debian, Ubuntu, Fedora, Arch and others. Standalone packages without the desktop entry: bragi-standalone.',
   ),
-  ('Android', 'Phone, Flutter', 'apk, aab, F-Droid, Google Play', 'Planned. A debug APK builds from source.'),
-  ('iOS', 'Phone, Flutter', 'TestFlight, App Store, AltStore', 'Planned (B3)'),
-  ('macOS', 'Desktop, GPUI', 'zip, dmg', 'Planned (B3)'),
-  ('Windows', 'Desktop, GPUI', 'zip, exe, installer', 'Planned (B3)'),
-  ('FreeBSD and other BSDs', 'Desktop, GPUI', 'pkg, tar.gz', 'Planned where the toolkit builds (B5)'),
+  (
+    'Linux ARM64',
+    'Desktop, GPUI',
+    [
+      ('tar.gz', 'bragi-$latestVersion-aarch64-unknown-linux-gnu.tar.gz'),
+      ('zip', 'bragi-$latestVersion-aarch64-unknown-linux-gnu.zip'),
+      ('deb', 'bragi_$latestVersion-1_arm64.deb'),
+      ('rpm', 'bragi-$latestVersion-1.aarch64.rpm'),
+      ('Arch', 'bragi-$latestVersion-1-aarch64.pkg.tar.zst'),
+    ],
+    'Standalone packages without the desktop entry: bragi-standalone.',
+  ),
+  (
+    'macOS (Apple silicon and Intel)',
+    'Desktop, GPUI',
+    [
+      ('dmg', 'bragi-$latestVersion-universal-apple-darwin.dmg'),
+      ('zip', 'bragi-$latestVersion-universal-apple-darwin.zip'),
+      ('binary, tar.gz', 'bragi-$latestVersion-universal-apple-darwin.tar.gz'),
+    ],
+    'Not notarized yet: the first time, right-click Bragi and choose Open.',
+  ),
+  (
+    'Windows x86_64',
+    'Desktop, GPUI',
+    [
+      ('Installer', 'bragi-$latestVersion-x86_64-pc-windows-msvc-setup.exe'),
+      ('msi', 'bragi-$latestVersion-x86_64-pc-windows-msvc.msi'),
+      ('Standalone exe', 'bragi-$latestVersion-x86_64-pc-windows-msvc.exe'),
+      ('zip', 'bragi-$latestVersion-x86_64-pc-windows-msvc.zip'),
+    ],
+    'Installs for your user only, no admin needed. Not code-signed yet, so SmartScreen may warn.',
+  ),
+  (
+    'Windows ARM64',
+    'Desktop, GPUI',
+    [
+      ('Installer', 'bragi-$latestVersion-aarch64-pc-windows-msvc-setup.exe'),
+      ('msi', 'bragi-$latestVersion-aarch64-pc-windows-msvc.msi'),
+      ('Standalone exe', 'bragi-$latestVersion-aarch64-pc-windows-msvc.exe'),
+      ('zip', 'bragi-$latestVersion-aarch64-pc-windows-msvc.zip'),
+    ],
+    'Not code-signed yet.',
+  ),
+  (
+    'Android',
+    'Phone, Flutter',
+    [
+      ('apk, arm64', 'bragi-$latestVersion-android-arm64-v8a$androidSuffix.apk'),
+      ('apk, armv7', 'bragi-$latestVersion-android-armeabi-v7a$androidSuffix.apk'),
+      ('apk, x86_64', 'bragi-$latestVersion-android-x86_64$androidSuffix.apk'),
+    ],
+    'Sideload: most phones need the arm64 apk. Signed with a test key for now, so uninstall before installing a newer '
+        'version. F-Droid and Google Play come later.',
+  ),
+  (
+    'iOS',
+    'Phone, Flutter',
+    [
+      ('ipa, unsigned', 'bragi-$latestVersion-ios-unsigned.ipa'),
+    ],
+    'Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. TestFlight and the App '
+        'Store come later.',
+  ),
 ];
 
 class DownloadPage extends StatelessComponent {
@@ -26,8 +94,8 @@ class DownloadPage extends StatelessComponent {
     return Component.fragment([
       pageHero(
         eyebrow: 'Download',
-        title: 'Coming soon',
-        lede: 'Nothing is released yet. These are the platforms and formats planned; none has a download.',
+        title: 'Bragi $latestVersion',
+        lede: 'Released $latestDate. Pick your platform. Bragi needs a Ymir cloud to talk to.',
       ),
       div(classes: 'doc wrap', [
         table(classes: 'downloads', [
@@ -35,26 +103,44 @@ class DownloadPage extends StatelessComponent {
             tr([
               th([Component.text('Platform')]),
               th([Component.text('App')]),
-              th([Component.text('Formats')]),
-              th([Component.text('Status')]),
+              th([Component.text('Files')]),
+              th([Component.text('Notes')]),
             ]),
           ]),
           tbody([
-            for (final (os, app, formats, status) in _rows)
+            for (final (os, app, files, note) in _rows)
               tr([
                 td([Component.text(os)]),
                 td([Component.text(app)]),
-                td([Component.text(formats)]),
                 td([
-                  span(classes: 'badge planned', [Component.text(status)]),
+                  for (final (i, (label, name)) in files.indexed) ...[
+                    if (i > 0) Component.text(' · '),
+                    a(href: releaseAsset(name), [Component.text(label)]),
+                  ],
                 ]),
+                td([Component.text(note)]),
               ]),
           ]),
         ]),
         p([
-          Component.text('Build from source in the meantime: see the '),
+          Component.text('Arch Linux, from '),
+          a(href: '$taurUrl/packages/bragi-bin', [Component.text('TAUR')]),
+          Component.text(': '),
+          code([Component.text('yay --aururl $taurUrl -S bragi-bin')]),
+          Component.text('. Nix: '),
+          code([Component.text('nix run github:WeirdBrains/bragi')]),
+          Component.text(' (or '),
+          code([Component.text('.#bragi-standalone')]),
+          Component.text('). Every file and its SHA-256 is on the '),
+          a(href: releaseUrl, [Component.text('release page')]),
+          Component.text('.'),
+        ]),
+        p([
+          Component.text('Next: get Bragi linked to your cloud with the '),
+          a(href: siteLink('/docs/guides/getting-started'), [Component.text('getting-started guide')]),
+          Component.text('. Build from source instead: see the '),
           a(href: '$repoUrl#building', [Component.text('README')]),
-          Component.text('. Bragi needs a Ymir cloud to talk to; get that from '),
+          Component.text('. Ymir itself comes from '),
           a(href: ymirSiteUrl, [Component.text('Ymir')]),
           Component.text('.'),
         ]),

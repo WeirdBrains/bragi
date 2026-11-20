@@ -98,7 +98,7 @@ class Home extends StatelessComponent {
             a(href: repoUrl, classes: 'button', [Component.text('Source')]),
           ]),
           p(classes: 'roadmap-meta', [
-            Component.text('Milestones done: $done. Nothing is released yet. '),
+            Component.text('Milestones done: $done. Bragi $latestVersion is out for Linux, macOS, Windows, Android and iOS. '),
             a(href: siteLink('/roadmap'), [Component.text('See the roadmap.')]),
           ]),
         ]),

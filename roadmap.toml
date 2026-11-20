@@ -19,7 +19,7 @@ summary = "Pair with your own devices, list the models your cloud offers, stream
 crates = ["weirdnet-agent", "weirdnet-device-link", "weirdnet-sync", "weirdnet-net", "weirdnet-relay"]
 gaps = [
   "Tested against a simulated inference node, not yet a real Ymir node or across real machines.",
-  "Link codes are pasted, with no QR scanner yet. Nothing is released or on a store.",
+  "Link codes are pasted, with no QR scanner yet. Not on a store yet.",
 ]
 
 [[milestone]]

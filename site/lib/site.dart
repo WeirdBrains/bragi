@@ -16,6 +16,16 @@ const siteDescription =
     'Weirdnet and streams answers from models on your own machines. Open source, BSD-3-Clause.';
 
 const repoUrl = 'https://github.com/WeirdBrains/bragi';
+
+/// The latest release; bump with each release (docs/RELEASES.md).
+const latestVersion = '0.1.0';
+const latestDate = 'November 20, 2026';
+const releaseUrl = '$repoUrl/releases/tag/v$latestVersion';
+String releaseAsset(String name) => '$repoUrl/releases/download/v$latestVersion/$name';
+
+/// The Android apks' name suffix: `-debug-signed` until a release key signs them.
+const androidSuffix = '-debug-signed';
+const taurUrl = 'https://pkg.taur.weirdbrains.com';
 const orgUrl = 'https://github.com/WeirdBrains';
 const weirdnetUrl = 'https://net.weirdbrains.com';
 const mainSiteUrl = 'https://weirdbrains.com';

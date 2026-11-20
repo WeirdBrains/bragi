@@ -7,20 +7,21 @@ const _html = r'''
 <p>Bragi is the chat app for your own <a href="${ymirSite}">Ymir</a> cloud. This guide covers getting the app, linking it to
 your Weirdnet identity, and chatting. You need a running Ymir pool first: follow the
 <a href="${ymirGuide}">Ymir deployment guide</a>, steps 1 and 2.</p>
-<p><strong>What is released.</strong> Nothing in Bragi is released yet: no store listing and no signed downloads. You
-build the apps from source. Bragi has so far run against a built-in demo inference node, not yet against a Ymir pool
-on separate real machines.</p>
+<p><strong>What is released.</strong> Bragi ${version} has downloads for Linux, macOS, Windows, Android and iOS on the
+<a href="${download}">Download</a> page. None is store-listed or code-signed yet: the Android apks use a test key and the
+iOS ipa is unsigned, for sideloading. Bragi has so far run against Ymir nodes on one computer, not yet across separate
+real machines.</p>
 
 <h2 id="install">Install Bragi</h2>
-<p>Build from source (see the <a href="${repo}#building">README</a> for the dependencies):</p>
-<pre><code>git clone https://github.com/WeirdBrains/bragi && cd bragi
-cargo run --release -p bragi-desktop             # the Linux desktop app (GPUI)
-cargo run -p bragi-desktop -- --demo             # try it against a built-in demo node, no Ymir needed
-
-cd app &amp;&amp; flutter build apk                      # the Android app (needs the Android SDK and NDK)</code></pre>
+<p>Download the file for your platform from the <a href="${download}">Download</a> page: a deb, rpm, Arch package or
+tarball on Linux, the dmg on macOS, the installer on Windows (for your user only, no admin needed), the apk on Android,
+and the ipa on iOS (sideload it with AltStore, SideStore or Sideloadly). Or build from source (see the
+<a href="${repo}#building">README</a>):</p>
+<pre><code>git clone https://github.com/WeirdBrains/bragi &amp;&amp; cd bragi
+cargo run --release -p bragi-desktop             # the desktop app (GPUI)
+cargo run -p bragi-desktop -- --demo             # try it against a built-in demo node, no Ymir needed</code></pre>
 <p>The desktop app keeps its identity and history in a folder you can move with <code>--home DIR</code> or the
-<code>BRAGI_HOME</code> environment variable. The planned formats and platforms are on the
-<a href="${download}">Download</a> page.</p>
+<code>BRAGI_HOME</code> environment variable.</p>
 
 <h2 id="link">Link Bragi to your Weirdnet</h2>
 <p>Bragi joins your Weirdnet identity like any of your devices, and it needs a device that is already linked (Ymir
@@ -68,6 +69,7 @@ class GettingStartedPage extends StatelessComponent {
             .replaceAll(r'${ymirSite}', ymirSiteUrl)
             .replaceAll(r'${ymirGuide}', '${ymirSiteUrl}docs/guides/deployment')
             .replaceAll(r'${repo}', repoUrl)
+            .replaceAll(r'${version}', latestVersion)
             .replaceAll(r'${download}', siteLink('/download'))
             .replaceAll(r'${features}', siteLink('/features'))
             .replaceAll(r'${roadmap}', siteLink('/roadmap'))
