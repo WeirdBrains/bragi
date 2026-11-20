@@ -6,7 +6,8 @@
 //! - The catalog from one inference node, followed, through `weirdnet-agent`'s pool.
 //! - Streaming chat with cancel and continue, over the pool (infer/2).
 //! - History on the shared context store, so conversations follow the user between devices.
-//! - Code suggestions and rewrites ([`code`]): prompts from an editor's context and the diff to preview.
+//! - Code suggestions and rewrites ([`code`]): prompts from an editor's context or from files and folders,
+//!   reviewable hunk diffs and an undo journal, shared by the editor extension and the terminal app.
 
 pub mod agent;
 pub mod attach;
