@@ -58,5 +58,5 @@ Weirdnet crates: `weirdnet-agent`.
 
 Known gaps:
 - BSDs: GPUI covers FreeBSD, but it cannot be cross-built from Linux. The `freebsd` CI job (manual) has never run; OpenBSD and DragonFly are not GPUI targets.
-- Real Ymir nodes do not serve agent tasks (task/1) yet, so agent mode only ran against the demo node.
+- Ymir M9 now serves agent tasks (task/1), tested with a task client, but Bragi's agent mode was only run against the demo node, not a real `ymird`.
 - Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.
