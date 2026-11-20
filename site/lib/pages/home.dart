@@ -29,6 +29,7 @@ class Home extends StatelessComponent {
         ]),
         div(classes: 'actions', [
           a(href: siteLink('/features'), classes: 'button solid', [Component.text('What it does')]),
+          a(href: siteLink('/docs/guides/getting-started'), classes: 'button', [Component.text('Get started')]),
           a(href: siteLink('/download'), classes: 'button', [Component.text('Download')]),
           a(href: siteLink('/roadmap'), classes: 'button', [Component.text('Roadmap')]),
         ]),
