@@ -12,20 +12,11 @@ Pair with your own devices, list the models your cloud offers, stream a chat, st
 
 Weirdnet crates: `weirdnet-agent`, `weirdnet-device-link`, `weirdnet-sync`, `weirdnet-net`, `weirdnet-relay`.
 
-Known gaps:
-- Tested against a simulated inference node, not yet a real Ymir node or across real machines.
-- Link codes are pasted, with no QR scanner yet. Nothing is released or on a store.
-
 ## B2 Pool client (Done)
 
 Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells.
 
 Weirdnet crates: `weirdnet-agent`.
-
-Known gaps:
-- Run against two simulated inference nodes only, not yet against real Ymir nodes or across machines.
-- Ymir M5 nodes now resume from text already shown, but that has only been tried against a mock engine on one computer.
-- Nodes are tried warm first. Speed and distance are not weighed, and you can't pick a node yourself.
 
 ## B3 Platforms (In progress)
 
@@ -33,31 +24,14 @@ iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and 
 
 Weirdnet crates: none new.
 
-Known gaps:
-- macOS, Windows and iOS build and test in GitHub Actions (unsigned), but were never run: no scenario on macOS or Windows, and the iOS app was never launched.
-- Nothing is signed with a real key or uploaded. Play, F-Droid and TestFlight need a keystore, a tagged release and Apple developer access from m3talsmith.
-- The F-Droid recipe is a draft that was never run through fdroid build.
-
 ## B4 Sync and optional extras (In progress)
 
 Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells with test identities. Optional on-device model and push wake-ups are not built.
 
 Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 
-Known gaps:
-- History sync was only run between simulated devices (test identities, memory transport), not between two real devices or with Morph or Ymir as the other end.
-- Push wake-ups wait on the Weirdnet lead: `weirdnet-push` is planned and does not exist yet.
-- The on-device model is not started: it needs a llama.cpp build and packaging on both platforms.
-- Requests still send whole messages; Bragi does not yet hand a Ymir node a conversation id.
-
 ## B5 Breadth (In progress)
 
 Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is blocked: the FreeBSD CI job ran and the desktop app does not build there (a GPUI bug).
 
 Weirdnet crates: `weirdnet-agent`.
-
-Known gaps:
-- BSDs: the desktop app does not build on FreeBSD. GPUI compiles gpui_linux for FreeBSD but gates `layer_shell` and the priority queue to linux/windows/wasm, at the pinned rev and on Zed main (a Zed bug, found by the `freebsd` CI job). bragi-core is tested there by the job; OpenBSD and DragonFly are not GPUI targets.
-- Ymir M9 now serves agent tasks (task/1), tested with a task client, but Bragi's agent mode was only run against the demo node, not a real `ymird`.
-- m3talsmith approved weirdnet-agent 0.4.3 and weirdnet-device-link 0.3.1 on 2026-11-20 and the Weirdnet lead is releasing them. Bragi moves to them (and net 0.8.1 with `android_context_init!`) once they are on crates.io.
-- Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.

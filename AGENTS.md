@@ -22,7 +22,7 @@ current in the same change as the code here.
   virtual workspace: `scripts/desktop-scenario.sh` (Xvfb, `env -i`, a private `XDG_RUNTIME_DIR`, no
   inherited `DISPLAY` or `WAYLAND_DISPLAY`), and check the process's `/proc/<pid>/environ`.
 - Desktop windows are frameless with in-app controls (close only under tiling window managers).
-- On the dev box, build with `CARGO_TARGET_DIR` under a scratch directory, at `nice`/`ionice`, and clean
+- On the dev box, build with `CARGO_TARGET_DIR` under a scratch disk, at `nice`/`ionice`, and clean
   `target/`, `app/build/` and `app/.dart_tool/` afterwards.
 - Before committing: `cargo fmt`, `cargo clippy --workspace --all-targets -- -D warnings`,
   `cargo test --workspace`, `flutter analyze` and `flutter test` in `app/`.

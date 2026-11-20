@@ -18,7 +18,7 @@ const siteDescription =
 const repoUrl = 'https://github.com/WeirdBrains/bragi';
 const orgUrl = 'https://github.com/WeirdBrains';
 const weirdnetUrl = 'https://net.weirdbrains.com';
-const mainSiteUrl = 'https://www.weirdbrains.com';
+const mainSiteUrl = 'https://weirdbrains.com';
 // Sibling site. Until both custom domains are live this is its GitHub Pages address; the Pages
 // workflow passes SIBLING_URL=https://ymir.weirdbrains.com/ when the CUSTOM_DOMAIN variable is set.
 const ymirSiteUrl = String.fromEnvironment('SIBLING_URL', defaultValue: 'https://weirdbrains.github.io/ymir/');
