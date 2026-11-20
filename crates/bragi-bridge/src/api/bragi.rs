@@ -377,7 +377,7 @@ pub fn start_demo(dir: String, label: String, accept_after_ms: u32, word_delay_m
                     .any(|c| c.title.to_lowercase().contains(bragi_core::demo::OTHER_DEVICE_TRIGGER));
                 if asked {
                     if let Err(e) = node.play_other_device(&core).await {
-                        eprintln!("the demo's other laptop: {e}");
+                        tracing::warn!("the demo's other laptop: {e}");
                     }
                     return;
                 }

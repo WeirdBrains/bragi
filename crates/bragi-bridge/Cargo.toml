@@ -17,6 +17,7 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 bragi-core.workspace = true
 flutter_rust_bridge.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 
 # hickory-resolver (libp2p DNS inside weirdnet-net) reads the system DNS servers through
 # ndk-context on Android; see src/android.rs.

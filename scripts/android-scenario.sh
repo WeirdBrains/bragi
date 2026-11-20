@@ -156,8 +156,10 @@ adb shell cat /sdcard/ui.xml | grep -q 'moved to another node' && adb shell cat 
 tap_text "New chat"
 type_prompt "What did I ask on my other laptop?"; tap_text "Send"
 wait_text "another one\."
-adb shell input swipe 2 600 800 600 300
-wait_text "A question typed on the other laptop"; shot 12-other-device 0.5
+adb shell input keyevent 111
+tap_like "navigation menu"
+wait_text "A question typed on the other laptop" || { adb logcat -d | grep -i 'other laptop' | tail -5; exit 1; }
+shot 12-other-device 0.5
 tap_text "A question typed on the other laptop"
 wait_text "Bragi is\|another one\."; shot 13-other-device-opened 0.8
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null

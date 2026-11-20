@@ -935,6 +935,7 @@ dependencies = [
  "ndk-context",
  "tempfile",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

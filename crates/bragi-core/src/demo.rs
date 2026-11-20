@@ -386,6 +386,7 @@ impl DemoNode {
         let mut salt = [0u8; 4];
         let _ = getrandom::fill(&mut salt);
         let dir = Scratch(std::env::temp_dir().join(format!("bragi-other-laptop-{:08x}", u32::from_le_bytes(salt))));
+        tracing::info!("demo: the other laptop starts");
         let laptop = Core::start(self.app_config(&dir.0, "Bragi on the laptop"))?;
         self.auto_accept(&laptop);
         laptop.pair_offer().await?;
@@ -406,6 +407,7 @@ impl DemoNode {
         let deadline = std::time::Instant::now() + Duration::from_secs(60);
         loop {
             if core.conversation(&id).is_ok_and(|c| c.messages.len() == 2) {
+                tracing::info!("demo: the other laptop's conversation arrived");
                 return Ok(id);
             }
             if std::time::Instant::now() > deadline {
