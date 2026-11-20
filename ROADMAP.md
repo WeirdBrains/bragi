@@ -38,14 +38,17 @@ Known gaps:
 - Nothing is signed with a real key or uploaded. Play, F-Droid and TestFlight need a keystore, a tagged release and Apple developer access from m3talsmith.
 - The F-Droid recipe is a draft that was never run through fdroid build.
 
-## B4 Sync and optional extras (Planned)
+## B4 Sync and optional extras (In progress)
 
-Chat history on the shared context store, so a conversation follows you between devices. Optional: an on-device model and push wake-ups.
+Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells with test identities. Optional on-device model and push wake-ups are not built.
 
 Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 
 Known gaps:
-- Waits on Ymir's context sync (M5). `weirdnet-push` is planned and does not exist yet.
+- History sync was only run between simulated devices (test identities, memory transport), not between two real devices or with Morph or Ymir as the other end.
+- Push wake-ups wait on the Weirdnet lead: `weirdnet-push` is planned and does not exist yet.
+- The on-device model is not started: it needs a llama.cpp build and packaging on both platforms.
+- Requests still send whole messages; Bragi does not yet hand a Ymir node a conversation id.
 
 ## B5 Breadth (Planned)
 

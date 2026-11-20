@@ -49,10 +49,15 @@ gaps = [
 [[milestone]]
 id = "B4"
 title = "Sync and optional extras"
-status = "planned"
-summary = "Chat history on the shared context store, so a conversation follows you between devices. Optional: an on-device model and push wake-ups."
+status = "in-progress"
+summary = "Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells with test identities. Optional on-device model and push wake-ups are not built."
 crates = ["weirdnet-sync", "weirdnet-push"]
-gaps = ["Waits on Ymir's context sync (M5). `weirdnet-push` is planned and does not exist yet."]
+gaps = [
+  "History sync was only run between simulated devices (test identities, memory transport), not between two real devices or with Morph or Ymir as the other end.",
+  "Push wake-ups wait on the Weirdnet lead: `weirdnet-push` is planned and does not exist yet.",
+  "The on-device model is not started: it needs a llama.cpp build and packaging on both platforms.",
+  "Requests still send whole messages; Bragi does not yet hand a Ymir node a conversation id.",
+]
 
 [[milestone]]
 id = "B5"

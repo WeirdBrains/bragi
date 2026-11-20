@@ -11,15 +11,15 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B3 in progress (B1 and B2 done)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
-inference node, streaming chat with stop and continue, and local history, on Linux (GPUI) and
+Status: **B4 in progress (B1 and B2 done, B3 in progress)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
+inference node, streaming chat with stop and continue, and history that syncs between your devices, on Linux (GPUI) and
 Android (Flutter). Nothing is released yet.
 
 ## Layout
 
 | Path | What |
 | --- | --- |
-| `crates/bragi-core` | Everything Bragi does: identity and pairing (`weirdnet-device-link`), the `weirdnet-agent` pool client, chat events, history. Also `demo`, an in-process inference node with a test identity for tests and demos. |
+| `crates/bragi-core` | Everything Bragi does: identity and pairing (`weirdnet-device-link`), the `weirdnet-agent` pool client, chat events, history on the shared context store. Also `demo`, an in-process inference node with a test identity for tests and demos. |
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
 | `app/` | The Flutter app (Android in B1). |
