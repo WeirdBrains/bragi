@@ -52,11 +52,12 @@ Known gaps:
 
 ## B5 Breadth (In progress)
 
-Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is not built or run: a FreeBSD CI job is written but never ran.
+Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is blocked: the FreeBSD CI job ran and the desktop app does not build there (a GPUI bug).
 
 Weirdnet crates: `weirdnet-agent`.
 
 Known gaps:
 - BSDs: the desktop app does not build on FreeBSD. GPUI compiles gpui_linux for FreeBSD but gates `layer_shell` and the priority queue to linux/windows/wasm, at the pinned rev and on Zed main (a Zed bug, found by the `freebsd` CI job). bragi-core is tested there by the job; OpenBSD and DragonFly are not GPUI targets.
 - Ymir M9 now serves agent tasks (task/1), tested with a task client, but Bragi's agent mode was only run against the demo node, not a real `ymird`.
+- m3talsmith approved weirdnet-agent 0.4.3 and weirdnet-device-link 0.3.1 on 2026-11-20 and the Weirdnet lead is releasing them. Bragi moves to them (and net 0.8.1 with `android_context_init!`) once they are on crates.io.
 - Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.
