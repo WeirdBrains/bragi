@@ -34,7 +34,11 @@ pub struct Meta {
 impl Meta {
     /// Whether `other` says the same thing (ignoring when it was written).
     pub fn same(&self, other: &Meta) -> bool {
-        self.title == other.title && self.system == other.system && self.model == other.model && self.deleted == other.deleted && self.ext == other.ext
+        self.title == other.title
+            && self.system == other.system
+            && self.model == other.model
+            && self.deleted == other.deleted
+            && self.ext == other.ext
     }
 }
 
@@ -159,7 +163,8 @@ impl ContextStore {
 
     /// Live conversations, newest first by `updated_ms`.
     pub fn list(&self) -> Vec<StoredConversation> {
-        let mut all: Vec<StoredConversation> = self.read_all().into_values().filter(|c| !c.meta.deleted && (!c.messages.is_empty() || !c.meta.title.is_empty())).collect();
+        let mut all: Vec<StoredConversation> =
+            self.read_all().into_values().filter(|c| !c.meta.deleted && (!c.messages.is_empty() || !c.meta.title.is_empty())).collect();
         all.sort_by(|a, b| updated(b).cmp(&updated(a)).then_with(|| a.id.cmp(&b.id)));
         all
     }
@@ -179,7 +184,11 @@ impl ContextStore {
         for (id, value) in records {
             let mut parts = id.splitn(3, '/');
             let (Some(conv), Some(kind)) = (parts.next(), parts.next()) else { continue };
-            let c = all.entry(conv.to_string()).or_insert_with(|| StoredConversation { id: conv.to_string(), meta: Meta::default(), messages: Vec::new() });
+            let c = all.entry(conv.to_string()).or_insert_with(|| StoredConversation {
+                id: conv.to_string(),
+                meta: Meta::default(),
+                messages: Vec::new(),
+            });
             match (kind, parts.next()) {
                 ("meta", None) => {
                     if let Ok(m) = serde_json::from_slice(&value) {

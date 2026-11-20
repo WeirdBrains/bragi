@@ -349,8 +349,9 @@ impl DemoNode {
     /// id has to start the key chain, which only a device that pulls can do.
     pub async fn sync_with(&self, addresses: &[String]) {
         let hints = crate::core::peer_hints(addresses).unwrap_or_default();
-        let nodes: Vec<(Arc<Identity>, Arc<SyncNode>)> =
-            std::iter::once((self.identity.clone(), self.node.clone())).chain(self.siblings().iter().map(|s| (s.identity.clone(), s.node.clone()))).collect();
+        let nodes: Vec<(Arc<Identity>, Arc<SyncNode>)> = std::iter::once((self.identity.clone(), self.node.clone()))
+            .chain(self.siblings().iter().map(|s| (s.identity.clone(), s.node.clone())))
+            .collect();
         for (identity, node) in nodes {
             let hints = hints.clone();
             let _ = tokio::task::spawn_blocking(move || {

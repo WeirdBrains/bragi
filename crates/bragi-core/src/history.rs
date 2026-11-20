@@ -193,7 +193,11 @@ impl History {
     }
 
     fn store(&self) -> Result<Arc<ContextStore>> {
-        self.store.read().unwrap_or_else(|e| e.into_inner()).clone().ok_or_else(|| CoreError::new(ErrorKind::NotPaired, "link this device to your Weirdnet first"))
+        self.store
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .ok_or_else(|| CoreError::new(ErrorKind::NotPaired, "link this device to your Weirdnet first"))
     }
 
     /// Reads B1's per-conversation files into the store and moves the directory aside.

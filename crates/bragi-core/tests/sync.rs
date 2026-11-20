@@ -69,7 +69,8 @@ async fn a_conversation_follows_the_user_to_another_device() {
     assert_eq!(a.conversation(&conv).unwrap().messages.len(), 2);
     assert!(b.conversations(0, 10).unwrap().is_empty());
 
-    sync_until(&demo, &[&a, &b], "the conversation on the second device", || b.conversation(&conv).map(|c| c.messages.len() == 2).unwrap_or(false)).await;
+    sync_until(&demo, &[&a, &b], "the conversation on the second device", || b.conversation(&conv).map(|c| c.messages.len() == 2).unwrap_or(false))
+        .await;
     let seen = b.conversation(&conv).unwrap();
     assert_eq!(seen.messages[0].text, "hello from the first device");
     assert_eq!(seen.messages[1].text, a.conversation(&conv).unwrap().messages[1].text);

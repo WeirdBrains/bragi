@@ -161,7 +161,13 @@ fn random_id(prefix: &str) -> String {
 
 /// One pass against the other devices: pulls the roster and history, writes what was waiting
 /// for the first key, and wakes the shells' watchers when history changed.
-async fn sync_pass(identity: Arc<Identity>, node: Arc<SyncNode>, peers: Arc<Mutex<Vec<String>>>, history: Arc<History>, state: watch::Sender<AppState>) {
+async fn sync_pass(
+    identity: Arc<Identity>,
+    node: Arc<SyncNode>,
+    peers: Arc<Mutex<Vec<String>>>,
+    history: Arc<History>,
+    state: watch::Sender<AppState>,
+) {
     let hints = hints(&lock(&peers)).unwrap_or_default();
     let h = history.clone();
     let changed = tokio::task::spawn_blocking(move || {
