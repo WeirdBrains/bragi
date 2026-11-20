@@ -15,9 +15,9 @@ homepage = "https://github.com/WeirdBrains/bragi"
 bragi-core = { path = "crates/bragi-core", version = "0.1.0" }
 
 # Published Weirdnet crates, used as they are.
-weirdnet-agent = { version = "0.4.2", features = ["pool", "serve"] }
-weirdnet-device-link = "=0.3.0"
-weirdnet-net = "=0.8.0"
+weirdnet-agent = { version = "0.4.3", features = ["pool", "serve"] }
+weirdnet-device-link = "=0.3.1"
+weirdnet-net = "=0.8.1"
 weirdnet-sync = "0.5.2"
 weirdnet-text = "0.1"
 

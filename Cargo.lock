@@ -931,11 +931,10 @@ version = "0.1.0"
 dependencies = [
  "bragi-core",
  "flutter_rust_bridge",
- "jni-sys 0.4.1",
- "ndk-context",
  "tempfile",
  "tokio",
  "tracing",
+ "weirdnet-net",
 ]
 
 [[package]]
@@ -2681,7 +2680,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.62.2",
+ "windows 0.57.0",
 ]
 
 [[package]]
@@ -2710,7 +2709,7 @@ dependencies = [
  "icu_segmenter",
  "image",
  "inventory",
- "itertools 0.14.0",
+ "itertools",
  "libc",
  "log",
  "lyon_path",
@@ -2875,7 +2874,7 @@ dependencies = [
  "gpui_apple",
  "gpui_util",
  "image",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -2982,7 +2981,7 @@ dependencies = [
  "etagere",
  "gpui",
  "gpui_util",
- "itertools 0.14.0",
+ "itertools",
  "js-sys",
  "log",
  "parking_lot",
@@ -3012,7 +3011,7 @@ dependencies = [
  "gpui",
  "gpui_util",
  "image",
- "itertools 0.14.0",
+ "itertools",
  "log",
  "parking_lot",
  "rand 0.9.5",
@@ -3470,7 +3469,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.62.2",
+ "windows-core 0.57.0",
 ]
 
 [[package]]
@@ -3843,15 +3842,6 @@ name = "itertools"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b192c782037fadd9cfa75548310488aabdbf3d2da73885b31bd0abd03351285"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4baf93f58d4425749ca49a51c50ebab072c5df6994d08fed93541c331481dc"
 dependencies = [
  "either",
 ]
@@ -6000,7 +5990,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ad9c5423459fa2f729b8d9235fab810aa29628b171467744fc86d21460ad70d"
 dependencies = [
  "anyhow",
- "itertools 0.15.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
@@ -6241,7 +6231,7 @@ dependencies = [
  "built",
  "cfg-if",
  "interpolate_name",
- "itertools 0.14.0",
+ "itertools",
  "libc",
  "libfuzzer-sys",
  "log",
@@ -8342,9 +8332,9 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weirdnet-agent"
-version = "0.4.2"
+version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a91b950c6f8920ef67516374d05a382cd9fbc2cd764b735251570d977c348381"
+checksum = "f4f7ad8290ef685cb7183cc3448995e6ae815f950cfaa8c5e3da4301830186bc"
 dependencies = [
  "async-trait",
  "cbor4ii",
@@ -8353,15 +8343,16 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
  "weirdnet-net",
  "weirdnet-sync",
 ]
 
 [[package]]
 name = "weirdnet-device-link"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b898943c727395e7996c5687cac277c69f3c2fef0ff841b31b87bbd936d0189e"
+checksum = "13d8da2680b690e2061aeba19ef59d7eb2adda6c4a3e313b1b4cc5fba16334d8"
 dependencies = [
  "base64 0.22.1",
  "cbor4ii",
@@ -8404,9 +8395,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-net"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df77cf3385bdf7eebef2770a3f3a46c660d83a6be73feac04a61a88a16f471cf"
+checksum = "24bacdd9fd2af8a0f609bfddf0c5cc0116e094d498adf7fadfce6ebd3f8c24b8"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -8415,7 +8406,9 @@ dependencies = [
  "futures",
  "hex",
  "hickory-resolver",
+ "jni-sys 0.4.1",
  "libp2p",
+ "ndk-context",
  "rustls-pki-types",
  "serde",
  "serde_json",

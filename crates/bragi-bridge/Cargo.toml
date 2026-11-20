@@ -18,12 +18,9 @@ bragi-core.workspace = true
 flutter_rust_bridge.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+weirdnet-net.workspace = true
 
-# hickory-resolver (libp2p DNS inside weirdnet-net) reads the system DNS servers through
-# ndk-context on Android; see src/android.rs.
-[target.'cfg(target_os = "android")'.dependencies]
-jni-sys = "0.4.1"
-ndk-context = "0.1.1"
+# The Android JNI init (ndk-context for hickory-resolver) comes from weirdnet-net; see src/android.rs.
 
 [dev-dependencies]
 tempfile.workspace = true
