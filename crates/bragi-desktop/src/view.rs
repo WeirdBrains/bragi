@@ -322,9 +322,9 @@ impl BragiView {
         let link = self.link_input.read(cx).text().to_string();
         // A node address (`/ip4/…/tcp/4848/p2p/…`, from `ymirctl pool addresses`) rather than a code:
         // dial that node from now on.
-        if link.trim().starts_with('/') {
-            self.notice = Some(match self.core.add_peer(&link) {
-                Ok(()) => "Added the node's address; looking for it…".into(),
+        if bragi_core::is_node_address(&link) {
+            self.notice = Some(match self.core.add_node(&link) {
+                Ok(line) => line,
                 Err(e) => e.message,
             });
             self.link_input.update(cx, |i, cx| i.set_text("", cx));

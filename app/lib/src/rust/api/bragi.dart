@@ -64,6 +64,19 @@ Future<void> pairCancel() => RustLib.instance.api.crateApiBragiPairCancel();
 Future<LinkCheckView> pairAccept({required String link}) =>
     RustLib.instance.api.crateApiBragiPairAccept(link: link);
 
+/// Whether text from the Link a device box is a node address (`/ip4/…/p2p/…`) rather than a
+/// link code: then call `add_node` instead of `pair_accept`.
+bool isNodeAddress({required String text}) =>
+    RustLib.instance.api.crateApiBragiIsNodeAddress(text: text);
+
+/// Adds a node address pasted into Link a device: kept with the app's data and dialed at once,
+/// no restart. Returns the line to show.
+String addNode({required String address}) =>
+    RustLib.instance.api.crateApiBragiAddNode(address: address);
+
+/// The node addresses this device dials (its links' and the ones added).
+List<String> peers() => RustLib.instance.api.crateApiBragiPeers();
+
 Future<void> pairAcceptConfirm({required bool matches}) =>
     RustLib.instance.api.crateApiBragiPairAcceptConfirm(matches: matches);
 

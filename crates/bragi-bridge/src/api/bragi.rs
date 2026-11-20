@@ -527,6 +527,26 @@ pub async fn pair_accept(link: String) -> Result<LinkCheckView, String> {
     Ok(LinkCheckView { sas: check.sas, device: check.device })
 }
 
+/// Whether text from the Link a device box is a node address (`/ip4/…/p2p/…`) rather than a
+/// link code: then call `add_node` instead of `pair_accept`.
+#[frb(sync)]
+pub fn is_node_address(text: String) -> bool {
+    bragi_core::is_node_address(&text)
+}
+
+/// Adds a node address pasted into Link a device: kept with the app's data and dialed at once,
+/// no restart. Returns the line to show.
+#[frb(sync)]
+pub fn add_node(address: String) -> Result<String, String> {
+    core()?.add_node(&address).map_err(err)
+}
+
+/// The node addresses this device dials (its links' and the ones added).
+#[frb(sync)]
+pub fn peers() -> Vec<String> {
+    core().map(|c| c.peers()).unwrap_or_default()
+}
+
 pub async fn pair_accept_confirm(matches: bool) -> Result<(), String> {
     let core = core()?;
     let c = core.clone();

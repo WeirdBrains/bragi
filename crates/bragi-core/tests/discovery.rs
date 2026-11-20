@@ -84,7 +84,11 @@ async fn without_addresses_an_added_one_finds_the_node_without_a_restart() {
     let e = core.send(None, "hello", None).err().expect("no node to send to");
     assert!(e.message.contains("2 other linked devices") && e.message.contains("ymirctl pool addresses"), "{}", e.message);
 
-    core.add_peer(&demo.address()).unwrap();
+    let address = demo.address();
+    assert!(bragi_core::is_node_address(&format!("  {address}\n")));
+    assert!(!bragi_core::is_node_address("weirdnet-bragi://link/abc"));
+    assert_eq!(core.add_node(&address).unwrap(), bragi_core::NODE_ADDED);
+    assert!(core.peers().contains(&address));
     until(&core, "the added node's catalog", Duration::from_secs(30), |s| !s.catalog.nodes.is_empty()).await.expect("the added node found");
-    assert!(core.add_peer("/ip4/192.0.2.1/tcp/4848").is_err(), "an address without a peer id is refused");
+    assert!(core.add_node("/ip4/192.0.2.1/tcp/4848").is_err(), "an address without a peer id is refused");
 }

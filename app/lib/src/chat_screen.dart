@@ -395,13 +395,19 @@ class _History extends StatelessWidget {
                           key: const Key('link-code'),
                           controller: link,
                           decoration: const InputDecoration(
-                            hintText: 'weirdnet-bragi:// code',
+                            hintText: 'weirdnet-bragi:// code or node address',
                             isDense: true,
                             border: OutlineInputBorder(),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        OutlinedButton(key: const Key('link-go'), onPressed: () => c.linkDevice(link.text), child: const Text('Link')),
+                        OutlinedButton(
+                          key: const Key('link-go'),
+                          onPressed: () async {
+                            if (await c.linkDevice(link.text)) link.clear();
+                          },
+                          child: const Text('Link'),
+                        ),
                       ],
                     ),
             ),

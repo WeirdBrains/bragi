@@ -48,6 +48,15 @@ pub fn normalize_link(code: &str) -> String {
 /// what the user added ([`Core::add_peer`]), dialed on every start.
 pub const PEERS_FILE: &str = "peers.txt";
 
+/// What the shells show once [`Core::add_node`] took an address.
+pub const NODE_ADDED: &str = "Added the node's address; looking for it…";
+
+/// Whether text pasted into Link a device is a node address (`/ip4/…/tcp/4848/p2p/…`, from
+/// `ymirctl pool addresses`) rather than a link code: then it goes to [`Core::add_node`].
+pub fn is_node_address(text: &str) -> bool {
+    text.trim().starts_with('/')
+}
+
 /// The addresses in `dir`'s [`PEERS_FILE`] that parse (blank lines and `#` comments skipped).
 fn load_peers(dir: &std::path::Path) -> Vec<String> {
     let text = std::fs::read_to_string(dir.join(PEERS_FILE)).unwrap_or_default();
@@ -746,6 +755,13 @@ impl Core {
             });
         }
         Ok(())
+    }
+
+    /// The Link a device box on every shell: a node address (see [`is_node_address`]) is added
+    /// with [`add_peer`](Self::add_peer) and dialed at once. Returns the line to show the user.
+    pub fn add_node(&self, address: &str) -> Result<String> {
+        self.add_peer(address)?;
+        Ok(NODE_ADDED.to_string())
     }
 
     /// Adds `addresses` to the ones sync passes and the node dial, and keeps them in

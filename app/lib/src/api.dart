@@ -21,6 +21,9 @@ abstract class BragiApi {
   Future<void> pairConfirm(bool matches);
   Future<void> pairCancel();
   Future<rust.LinkCheckView> pairAccept(String link);
+  bool isNodeAddress(String text);
+  String addNode(String address);
+  List<String> peers();
   Future<void> pairAcceptConfirm(bool matches);
   Future<rust.ChatStarted> send(String? conversation, String prompt, String? model);
   Future<rust.ChatStarted> sendWith(String? conversation, String prompt, String? model, List<rust.AttachmentView> files);
@@ -49,6 +52,12 @@ class RustBragiApi implements BragiApi {
   Future<void> pairCancel() => rust.pairCancel();
   @override
   Future<rust.LinkCheckView> pairAccept(String link) => rust.pairAccept(link: link);
+  @override
+  bool isNodeAddress(String text) => rust.isNodeAddress(text: text);
+  @override
+  String addNode(String address) => rust.addNode(address: address);
+  @override
+  List<String> peers() => rust.peers();
   @override
   Future<void> pairAcceptConfirm(bool matches) => rust.pairAcceptConfirm(matches: matches);
   @override

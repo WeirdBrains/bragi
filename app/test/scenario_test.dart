@@ -172,6 +172,22 @@ void main() {
     expect(last().agent, isTrue);
     expect(find.textContaining('agent task · used notes.search'), findsOneWidget);
     expect(c.card, isNull);
+
+    // A node address pasted into Link a device is kept and dialed (core: add_node), as on the
+    // desktop; one without a peer id is refused in the core's words.
+    const address = '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await until('the drawer', () => shown('link-code'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(find.byKey(const Key('link-code')), '  $address ');
+    await tester.tap(find.byKey(const Key('link-go')));
+    await until('the address added', () => c.notice != null);
+    expect(c.notice, startsWith("Added the node's address"));
+    expect(rust.peers(), contains(address));
+    expect(find.text(address), findsNothing, reason: 'the box is cleared');
+    expect(await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')), isFalse);
+    expect(c.notice, contains('peer'));
+    expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
   });
 
   test('splice puts a delta at its offset', () {

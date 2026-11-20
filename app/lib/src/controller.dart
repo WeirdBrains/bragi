@@ -173,7 +173,21 @@ class BragiController extends ChangeNotifier {
     if (r != null) api.cancel(r);
   }
 
-  Future<void> linkDevice(String link) => _try(() async => linkCheck = await api.pairAccept(link));
+  /// The Link a device box: a link code starts a link; a node address (`/ip4/…/p2p/…`, from
+  /// `ymirctl pool addresses`) is kept and dialed at once, as on the desktop. True when an
+  /// address was added (the box can be cleared).
+  Future<bool> linkDevice(String link) async {
+    if (api.isNodeAddress(link)) {
+      var added = false;
+      await _try(() async {
+        notice = api.addNode(link);
+        added = true;
+      });
+      return added;
+    }
+    await _try(() async => linkCheck = await api.pairAccept(link));
+    return false;
+  }
 
   Future<void> linkConfirm(bool matches) => _try(() async {
     linkCheck = null;
