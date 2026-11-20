@@ -5,6 +5,8 @@ import 'api.dart';
 import 'controller.dart';
 import 'theme.dart';
 
+const _scripted = bool.fromEnvironment('BRAGI_DEMO');
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key, required this.controller});
 
@@ -74,6 +76,10 @@ class _ChatScreenState extends State<ChatScreen> {
                   minLines: 1,
                   maxLines: 4,
                   textInputAction: TextInputAction.send,
+                  // The scripted demo types through `adb input`; the keyboard's autocorrect turned
+                  // "What" into "Chat". Real use keeps the keyboard's own settings.
+                  autocorrect: !_scripted,
+                  enableSuggestions: !_scripted,
                   onSubmitted: (_) => _send(),
                   decoration: const InputDecoration(hintText: 'Ask anything…', isDense: true, border: OutlineInputBorder()),
                 ),
