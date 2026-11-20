@@ -35,6 +35,9 @@ jobs:
             target/release/bragi.exe
           if-no-files-found: ignore
   ios:
+    env:
+      # The Rust objects and the Xcode project must agree on the minimum iOS.
+      IPHONEOS_DEPLOYMENT_TARGET: '15.0'
     if: ${{ github.event.inputs.only == '' || github.event.inputs.only == 'ios' || github.event_name != 'workflow_dispatch' }}
     runs-on: macos-15
     steps:
@@ -45,6 +48,13 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter build ios --release --no-codesign -v 2>&1 | tail -n 400
-        shell: bash
+      - run: flutter build ios --release --no-codesign
         working-directory: app
+        id: build
+        continue-on-error: true
+      - name: The linker's real error, if the build failed
+        if: steps.build.outcome == 'failure'
+        working-directory: app/ios
+        run: |
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -v 'built for newer' | grep -E -i -B2 -A6 'error|undefined|ld:' | head -n 120
+          exit 1
