@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bragi
+Comment=Chat with your private AI cloud
+Exec=bragi
+Icon=bragi
+Terminal=false
+Categories=Network;Chat;
+StartupWMClass=bragi

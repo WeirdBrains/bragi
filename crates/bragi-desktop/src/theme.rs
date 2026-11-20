@@ -1,4 +1,4 @@
-//! Colour roles as `0xRRGGBB`, matching the Flutter app's dark theme (`app/lib/theme.dart`).
+//! Colour roles as `0xRRGGBB`, matching the Flutter app's dark theme (`app/lib/src/theme.dart`) and brand/BRAND.md.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Theme {
@@ -11,20 +11,23 @@ pub struct Theme {
     pub border: u32,
     pub selection: u32,
     pub error: u32,
+    /// Glacier, the colour Bragi shares with Ymir; links.
+    pub link: u32,
 }
 
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            background: 0x0E0F14,
-            surface: 0x16171F,
-            surface_variant: 0x22232E,
-            text_primary: 0xF3F3F8,
-            text_secondary: 0xA6A8B8,
-            accent: 0xF2B544,
-            border: 0x3A3C4C,
+            background: 0x14161B,
+            surface: 0x1C1F26,
+            surface_variant: 0x2A2E37,
+            text_primary: 0xF4F1E8,
+            text_secondary: 0xA9ABB3,
+            accent: 0xF5B83D,
+            border: 0x3A3F4B,
             selection: 0x5A4518,
             error: 0xFF5C70,
+            link: 0x7FD4F5,
         }
     }
 }
