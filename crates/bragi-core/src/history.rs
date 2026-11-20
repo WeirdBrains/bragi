@@ -57,6 +57,12 @@ pub struct ChatMessage {
     /// Text files attached to a user message.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<crate::attach::Attachment>,
+    /// Agent mode: the tools the task used, in order (assistant messages).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
+    /// The answer came from an agent task on a node, not a plain model reply.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub agent: bool,
     pub at_ms: i64,
 }
 
@@ -153,6 +159,12 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if !m.attachments.is_empty() {
         ext.insert("attachments".into(), serde_json::to_value(&m.attachments).unwrap_or_default());
     }
+    if !m.tools.is_empty() {
+        ext.insert("tools".into(), serde_json::to_value(&m.tools).unwrap_or_default());
+    }
+    if m.agent {
+        ext.insert("agent".into(), true.into());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
@@ -170,6 +182,8 @@ fn from_stored(m: &Stored) -> ChatMessage {
         standin: get("standin").and_then(|v| v.as_str()).map(str::to_string),
         resumes: get("resumes").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         attachments: get("attachments").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        tools: get("tools").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        agent: get("agent").and_then(|v| v.as_bool()).unwrap_or(false),
         at_ms: m.at_ms,
     }
 }
@@ -329,6 +343,8 @@ mod tests {
                 standin: None,
                 resumes: 0,
                 attachments: Vec::new(),
+                tools: Vec::new(),
+                agent: false,
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })

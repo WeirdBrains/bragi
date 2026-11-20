@@ -110,14 +110,14 @@ pub struct LinkCheck {
     pub device: String,
 }
 
-struct Net {
-    identity: Arc<Identity>,
-    node: Arc<SyncNode>,
+pub(crate) struct Net {
+    pub(crate) identity: Arc<Identity>,
+    pub(crate) node: Arc<SyncNode>,
     /// Finds and calls inference nodes: a catalog follower per node, a pool per request.
-    nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>,
-    dialer: Arc<dyn Dialer>,
-    opts: PoolOptions,
-    tasks: Vec<JoinHandle<()>>,
+    pub(crate) nodes: Arc<LinkedNodes<Vec<u8>, Vec<u8>>>,
+    pub(crate) dialer: Arc<dyn Dialer>,
+    pub(crate) opts: PoolOptions,
+    pub(crate) tasks: Vec<JoinHandle<()>>,
 }
 
 impl Drop for Net {
@@ -129,31 +129,33 @@ impl Drop for Net {
     }
 }
 
-struct Inner {
-    cfg: Config,
-    handle: Handle,
-    history: Arc<History>,
+pub(crate) struct Inner {
+    pub(crate) cfg: Config,
+    pub(crate) handle: Handle,
+    pub(crate) history: Arc<History>,
     /// `cfg.peers`, and what [`Core::add_peer`] adds: where sync passes dial the other devices.
-    peers: Arc<Mutex<Vec<String>>>,
-    state: watch::Sender<AppState>,
-    net: Mutex<Option<Arc<Net>>>,
-    offer: Mutex<Option<Arc<HostNode>>>,
-    pairing: Mutex<Option<Pairing>>,
-    requests: Mutex<HashMap<String, CancelToken>>,
+    pub(crate) peers: Arc<Mutex<Vec<String>>>,
+    pub(crate) state: watch::Sender<AppState>,
+    pub(crate) net: Mutex<Option<Arc<Net>>>,
+    pub(crate) offer: Mutex<Option<Arc<HostNode>>>,
+    pub(crate) pairing: Mutex<Option<Pairing>>,
+    pub(crate) requests: Mutex<HashMap<String, CancelToken>>,
+    /// Approval cards waiting for an answer, by request id (agent mode).
+    pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
 #[derive(Clone)]
 pub struct Core {
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
     _runtime: Option<Arc<Runtime>>,
 }
 
-fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn random_id(prefix: &str) -> String {
+pub(crate) fn random_id(prefix: &str) -> String {
     let mut b = [0u8; 8];
     let _ = getrandom::fill(&mut b);
     let hex: String = b.iter().map(|x| format!("{x:02x}")).collect();
@@ -252,6 +254,7 @@ impl Core {
                 offer: Mutex::new(None),
                 pairing: Mutex::new(None),
                 requests: Mutex::new(HashMap::new()),
+                cards: Mutex::new(HashMap::new()),
             }),
             _runtime: runtime,
         };
@@ -289,7 +292,7 @@ impl Core {
         self.inner.state.send_modify(|s| s.pair = pair);
     }
 
-    fn net(&self) -> Result<Arc<Net>> {
+    pub(crate) fn net(&self) -> Result<Arc<Net>> {
         lock(&self.inner.net).clone().ok_or_else(|| CoreError::new(ErrorKind::NotPaired, "link this device to your Weirdnet first"))
     }
 
@@ -487,9 +490,22 @@ impl Core {
     /// [`send`](Self::send) with text files attached (see [`Attachment`]): the model gets each as
     /// a named block ahead of the prompt, and the message keeps them for later turns and other devices.
     pub fn send_with(&self, conversation: Option<&str>, prompt: &str, model: Option<String>, attachments: Vec<Attachment>) -> Result<ChatHandle> {
-        crate::attach::check(&attachments)?;
         let net = self.net()?;
         let model = self.pick_model(model)?;
+        let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
+        Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new()))
+    }
+
+    /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
+    /// `None`), and returns its id and the messages the model gets (the new user message last).
+    pub(crate) fn begin_turn(
+        &self,
+        conversation: Option<&str>,
+        prompt: &str,
+        model: &str,
+        attachments: Vec<Attachment>,
+    ) -> Result<(String, Vec<Message>)> {
+        crate::attach::check(&attachments)?;
         let prompt = prompt.trim();
         if prompt.is_empty() {
             return Err(CoreError::new(ErrorKind::BadRequest, "type a message first"));
@@ -510,6 +526,8 @@ impl Core {
             standin: None,
             resumes: 0,
             attachments,
+            tools: Vec::new(),
+            agent: false,
             at_ms: now,
         });
         let messages = agent_messages(&c.messages);
@@ -518,17 +536,19 @@ impl Core {
             role: Role::Assistant,
             text: String::new(),
             state: MessageState::Streaming,
-            model: Some(model.clone()),
+            model: Some(model.to_string()),
             node: None,
             cache_hit: false,
             standin: None,
             resumes: 0,
             attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
             at_ms: now,
         });
         c.updated_ms = now;
         self.inner.history.save(&c)?;
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model), String::new()))
+        Ok((c.id, messages))
     }
 
     /// Continues the cut-off answer at the end of `conversation` from where it stopped: the
@@ -709,7 +729,7 @@ impl Core {
 }
 
 /// Earlier turns as the model sees them: finished and cut-off answers count, empty ones don't.
-fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
+pub(crate) fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     msgs.iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
         .map(|m| match m.role {

@@ -11,10 +11,15 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use weirdnet_agent::model::ModelBackend;
+use weirdnet_agent::policy::Policy;
 use weirdnet_agent::remote::catalog::{CatalogFeed, CatalogModel, ModelState, Purpose};
 use weirdnet_agent::remote::infer::v2::{Finish, InferBackend, Meta, Output, Request, Usage};
 use weirdnet_agent::remote::infer::{Admission, InferHost};
-use weirdnet_agent::serve::{RosterAuth, Server, Serving};
+use weirdnet_agent::remote::task::{self, TaskHost, TaskRequest};
+use weirdnet_agent::serve::{RosterAuth, Server, Serving, channel, stream_limits};
+use weirdnet_agent::session::{AgentConfig, AgentSession, Approver};
+use weirdnet_agent::tool::{CallTarget, LocalTools, Tool, ToolContext, ToolError, ToolOutput, ToolRegistry, ToolSpec};
+use weirdnet_agent::{AgentId, AgentIdentity, AgentKind, DeltaSink, Message, ModelError, ModelTurn, Tier, ToolCall};
 use weirdnet_agent::{Authorize, Caller, CancelToken, RemoteError, Role};
 use weirdnet_device_link::Pairing;
 use weirdnet_net::{Keypair, WEIRDNET};
@@ -204,6 +209,94 @@ impl InferBackend for FakeBackend {
     }
 }
 
+// ---- agent mode: the demo node runs tasks (task/1) ----------------------------------------------
+
+/// The companion the demo node runs tasks for.
+pub const DEMO_COMPANION: &str = crate::agent::DEFAULT_COMPANION;
+/// The demo's one tool: it needs the user's say-so (tier Navigate on `notes.demo`).
+pub const DEMO_TOOL: &str = "notes.search";
+
+struct NotesTool;
+
+#[async_trait]
+impl Tool for NotesTool {
+    fn spec(&self) -> ToolSpec {
+        ToolSpec::new(DEMO_TOOL, "Search the user's notes").tier(Tier::Navigate)
+    }
+
+    fn target(&self, _args: &serde_json::Value) -> CallTarget {
+        CallTarget::url("https://notes.demo/search")
+    }
+
+    async fn call(&self, _ctx: &ToolContext, args: serde_json::Value) -> std::result::Result<ToolOutput, ToolError> {
+        let q = args["query"].as_str().unwrap_or_default();
+        Ok(ToolOutput::text(format!("2 notes mention \"{q}\": \"Groceries\" and \"Roadmap\"")))
+    }
+}
+
+/// A scripted agent: says it will look, calls the tool once, then reports what the tool said.
+struct AgentModel {
+    delay: Duration,
+}
+
+impl AgentModel {
+    async fn say(&self, deltas: &DeltaSink, cancel: &CancelToken, text: &str) -> std::result::Result<(), ModelError> {
+        for piece in text.split_inclusive(' ') {
+            tokio::select! {
+                _ = tokio::time::sleep(self.delay) => {}
+                _ = cancel.cancelled() => return Err(ModelError::Cancelled),
+            }
+            deltas.text(piece);
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl ModelBackend for AgentModel {
+    fn name(&self) -> String {
+        "demo-agent".into()
+    }
+
+    async fn complete(
+        &self,
+        messages: &[Message],
+        _tools: &[ToolSpec],
+        deltas: &DeltaSink,
+        cancel: &CancelToken,
+    ) -> std::result::Result<ModelTurn, ModelError> {
+        match messages.last() {
+            Some(m) if m.role == Role::Tool => {
+                self.say(deltas, cancel, &format!("The notes tool said: {}. That is everything it found.", m.content)).await?;
+                Ok(ModelTurn { text: String::new(), tool_calls: Vec::new() })
+            }
+            other => {
+                let ask: String = other.map(|m| m.content.clone()).unwrap_or_default().chars().take(40).collect();
+                self.say(deltas, cancel, "Let me check your notes. ").await?;
+                let call = ToolCall { id: "call-1".into(), name: DEMO_TOOL.into(), arguments: serde_json::json!({ "query": ask }) };
+                Ok(ModelTurn { text: String::new(), tool_calls: vec![call] })
+            }
+        }
+    }
+}
+
+struct DemoTasks {
+    tools: Arc<ToolRegistry>,
+    label: String,
+    delay: Duration,
+}
+
+impl TaskHost for DemoTasks {
+    fn session(&self, request: &TaskRequest, approver: Arc<dyn Approver>) -> std::result::Result<AgentSession, RemoteError> {
+        if request.companion != AgentId::new(DEMO_COMPANION) {
+            return Err(RemoteError::Refused { message: format!("{} does not run here", request.companion) });
+        }
+        let identity = AgentIdentity::new(DEMO_COMPANION, "Assistant", AgentKind::Node).with_node(self.label.clone());
+        let model: Arc<dyn ModelBackend> = Arc::new(AgentModel { delay: self.delay });
+        Ok(AgentSession::new(AgentConfig::new(identity), model, self.tools.clone(), Policy::new().shared(), approver))
+    }
+}
+
 /// The fake inference host: the demo models, roster-checked.
 pub struct FakeHost {
     auth: Arc<dyn Authorize>,
@@ -253,6 +346,8 @@ pub struct DemoNode {
     pub feed: Arc<CatalogFeed>,
     pub faults: Arc<Faults>,
     server: Mutex<Option<Server>>,
+    /// Accepts task/1 streams (agent mode); the published `Server` doesn't serve them.
+    tasks: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The other nodes of the cloud demo, which share this one's identity.
     siblings: Mutex<Vec<Arc<DemoNode>>>,
 }
@@ -313,15 +408,36 @@ impl DemoNode {
             models.push(CatalogModel::new("nomic-embed", Purpose::Embedding, ModelState::Warm));
         }
         feed.publish(models);
+        let mut registry = ToolRegistry::new();
+        registry.add_source(Arc::new(LocalTools::new("notes").with(NotesTool)));
+        registry.refresh().await.map_err(other)?;
+        let task_host: Arc<dyn TaskHost> = Arc::new(DemoTasks { tools: Arc::new(registry), label: spec.label.clone(), delay });
+        let task_auth = auth.clone();
+        let mut incoming = node.accept_streams(task::PROTOCOL, stream_limits()).map_err(other)?;
+        let tasks = tokio::spawn(async move {
+            while let Some(stream) = incoming.next().await {
+                let caller = Caller::new(stream.peer().to_string());
+                if task_auth.authorize(&caller).is_err() {
+                    continue;
+                }
+                let host = task_host.clone();
+                tokio::spawn(async move {
+                    let _ = task::serve(channel(stream), host.as_ref()).await;
+                });
+            }
+        });
         let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
-        Ok(Self { identity, node, feed, faults, server: Mutex::new(Some(server)), siblings: Mutex::default() })
+        Ok(Self { identity, node, feed, faults, server: Mutex::new(Some(server)), tasks: Mutex::new(Some(tasks)), siblings: Mutex::default() })
     }
 
     /// Takes this node off the network (a node that went away).
     pub fn stop(&self) {
         lock(&self.server).take();
+        if let Some(t) = lock(&self.tasks).take() {
+            t.abort();
+        }
         self.node.halt();
     }
 

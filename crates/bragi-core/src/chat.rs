@@ -53,6 +53,25 @@ pub enum ChatEvent {
     Done {
         finish_reason: Option<String>,
     },
+    /// Agent mode: a tool call on the node started or finished.
+    Tool {
+        call_id: String,
+        tool: String,
+        state: crate::agent::ToolState,
+    },
+    /// Agent mode: the node asks to do something. Answer with `Core::approve(request_id, ask, …)`.
+    Approval {
+        ask: u64,
+        tool: String,
+        /// `read`, `navigate`, `research`, `interact` or `other`.
+        tier: String,
+        site: Option<String>,
+        summary: String,
+    },
+    /// Agent mode: something worth saying that isn't a question (a step blocked or let through).
+    Notice {
+        text: String,
+    },
     /// Stopped (kind `cancelled`) or failed; `partial` is what was shown.
     Error {
         kind: ErrorKind,
