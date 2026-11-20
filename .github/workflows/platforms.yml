@@ -73,11 +73,12 @@ jobs:
           operating_system: freebsd
           version: '14.2'
           run: |
-            sudo pkg install -y curl cmake pkgconf wayland libxkbcommon libxcb vulkan-loader git fontconfig freetype2 libX11 openssl
+            sudo pkg install -y ca_root_nss curl cmake pkgconf wayland libxkbcommon libxcb vulkan-loader git fontconfig freetype2 libX11 openssl
             # The pkg `rust` lags (1.98); the crates need 1.99, so use rustup's stable.
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
             . "$HOME/.cargo/env"
             # gpui is a git dependency on the zed repo; libgit2 cannot fetch that revision, git can.
             export CARGO_NET_GIT_FETCH_WITH_CLI=true
+            export CARGO_HTTP_CAINFO=/usr/local/share/certs/ca-root-nss.crt SSL_CERT_FILE=/usr/local/share/certs/ca-root-nss.crt
             cargo build --release -p bragi-desktop
             cargo test -p bragi-core -p bragi-desktop
