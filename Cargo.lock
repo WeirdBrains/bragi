@@ -968,6 +968,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "unicode-segmentation",
+ "weirdnet-text",
 ]
 
 [[package]]
@@ -8340,9 +8341,9 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weirdnet-agent"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "721259c9004e32b394356e9ef4cc4f81cfccd33f359abdf98ee3c5682b095828"
+checksum = "a91b950c6f8920ef67516374d05a382cd9fbc2cd764b735251570d977c348381"
 dependencies = [
  "async-trait",
  "cbor4ii",
@@ -8429,9 +8430,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-sync"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbf856d3524dffaa5be3641e6dcef5606c12febd74085dad58151edd61dd673f"
+checksum = "5e72069ce49f1186ba44d06dcf6aefdbcb028f0c960ac45ed86796eb83b7317f"
 dependencies = [
  "blake3",
  "cbor4ii",
@@ -8441,6 +8442,15 @@ dependencies = [
  "weirdnet-keys",
  "weirdnet-net",
  "zeroize",
+]
+
+[[package]]
+name = "weirdnet-text"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73dd85cc5aa7cfb64f9ec433e0957334e1f0176b8ab130895c2a32f1f86f6eb3"
+dependencies = [
+ "unicode-segmentation",
 ]
 
 [[package]]

@@ -7,7 +7,7 @@
 
 use std::ops::Range;
 
-use crate::text::TextField;
+use weirdnet_text::TextField;
 use crate::theme::Theme;
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,

@@ -20,7 +20,7 @@ use weirdnet_device_link::Pairing;
 use weirdnet_net::{Keypair, WEIRDNET};
 use weirdnet_sync::Roster;
 
-use crate::core::{CONTINUE_PROMPT, Config, Core, PairState, SCHEME, Transport};
+use crate::core::{Config, Core, PairState, SCHEME, Transport};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 
@@ -138,19 +138,10 @@ impl InferBackend for FakeBackend {
     }
 
     async fn infer(&self, request: &Request, out: &Output, cancel: &CancelToken) -> std::result::Result<Finish, RemoteError> {
-        let msgs = request.inline_messages().unwrap_or_default();
         let prompt = last_user(request);
         let answering = self.standin.clone().unwrap_or_else(|| self.model.clone());
-        // "Continue": the rest of the answer to the prompt before it, after what was shown.
-        let mut text = if prompt == CONTINUE_PROMPT {
-            let shown = msgs.iter().rev().find(|m| m.role == Role::Assistant).map(|m| m.content.clone()).unwrap_or_default();
-            let asked = msgs.iter().rev().filter(|m| m.role == Role::User).nth(1).map(|m| m.content.clone()).unwrap_or_default();
-            let full = answer_for(&answering, &asked);
-            full.strip_prefix(shown.as_str()).unwrap_or(&full).to_string()
-        } else {
-            answer_for(&answering, &prompt)
-        };
-        // A resumed attempt generates only what comes after the prefix already shown.
+        let mut text = answer_for(&answering, &prompt);
+        // A resumed or continued attempt generates only what comes after the prefix already shown.
         if let Some(p) = &request.assistant_prefix {
             text = text.chars().skip(p.text.chars().count()).collect();
         }
@@ -218,7 +209,7 @@ impl InferHost for FakeHost {
             self.spec.models.iter().find(|(_, s)| *s == ModelState::Warm).map(|(m, _)| m.clone())
         };
         let prompt = last_user(request);
-        let cache_hit = request.assistant_prefix.is_none() && prompt != CONTINUE_PROMPT && self.faults.seen_before(&model, &prompt);
+        let cache_hit = request.assistant_prefix.is_none() && self.faults.seen_before(&model, &prompt);
         Ok(Arc::new(FakeBackend { model, standin, delay: self.delay, cache_hit, faults: self.faults.clone() }))
     }
 }

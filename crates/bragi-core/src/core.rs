@@ -28,7 +28,6 @@ use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 pub const SCHEME: &str = "weirdnet-bragi://";
 
 /// The turn that asks the model to go on with a cut-off answer.
-pub const CONTINUE_PROMPT: &str = "Continue your last answer from exactly where it stopped. Don't repeat any of it.";
 
 /// How often the roster is synced with the user's other devices.
 const SYNC_EVERY: Duration = Duration::from_secs(30);
@@ -487,12 +486,9 @@ impl Core {
     }
 
     /// Continues the cut-off answer at the end of `conversation` from where it stopped: the
-    /// model gets the conversation with the partial answer and is asked to go on; the new text
-    /// is appended to it (offsets continue after what was shown).
-    ///
-    /// agent 0.4's `Pool::infer` can't take a caller's `assistant_prefix` (it splices the
-    /// node's offsets onto an empty buffer), so this asks in a turn rather than resuming at the
-    /// node; noted for the Weirdnet lead.
+    /// model gets the conversation with the partial answer as an assistant prefix
+    /// (`Request::continuing`) and carries on from it; the new text is appended to it (offsets
+    /// continue after what was shown). A node that can't continue a prefix is skipped.
     pub fn continue_answer(&self, conversation: &str, model: Option<String>) -> Result<ChatHandle> {
         let net = self.net()?;
         let mut c = self.inner.history.load(conversation)?;
@@ -509,12 +505,10 @@ impl Core {
         last.state = MessageState::Streaming;
         last.model = Some(model.clone());
         c.updated_ms = now_ms();
-        let mut messages = agent_messages(&c.messages);
-        if !shown.is_empty() {
-            messages.push(Message::user(CONTINUE_PROMPT));
-        }
+        let messages = agent_messages(&c.messages);
         self.inner.history.save(&c)?;
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model), shown))
+        // The partial answer is the last message: `continuing` moves it into the prefix.
+        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown))
     }
 
     fn run(&self, net: Arc<Net>, conversation: String, req: Request, shown: String) -> ChatHandle {
