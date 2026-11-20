@@ -1,0 +1,32 @@
+# Maintainer: Weird Brains LLC <m3talsmith@gmail.com>
+# Binary package: installs the prebuilt GPUI desktop shell from the GitHub release
+# (bragi-<ver>-<arch>-unknown-linux-gnu.tar.gz from scripts/dist-linux.sh). No Rust needed.
+# The upstream tarball is not code-signed; this package is likewise unsigned.
+pkgname=bragi-bin
+pkgver=0.1.0
+_ver=0.1.0
+pkgrel=1
+pkgdesc="Chat with your private AI cloud (Ymir) over Weirdnet, desktop app, prebuilt"
+arch=('x86_64' 'aarch64')
+url="https://github.com/WeirdBrains/bragi"
+license=('BSD-3-Clause')
+depends=('libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2'
+         'hicolor-icon-theme' 'glibc' 'gcc-libs')
+optdepends=('vulkan-driver: GPU rendering (mesa or the vendor driver)')
+provides=('bragi')
+conflicts=('bragi' 'bragi-standalone')
+options=('!strip' '!debug')
+source_x86_64=("$url/releases/download/v$_ver/bragi-$_ver-x86_64-unknown-linux-gnu.tar.gz")
+source_aarch64=("$url/releases/download/v$_ver/bragi-$_ver-aarch64-unknown-linux-gnu.tar.gz")
+# From the release's SHA256SUMS.
+sha256sums_x86_64=('0000000000000000000000000000000000000000000000000000000000000000')
+sha256sums_aarch64=('0000000000000000000000000000000000000000000000000000000000000000')
+
+package() {
+  local bundle="$srcdir/bragi-$_ver-$CARCH-unknown-linux-gnu"
+  test -x "$bundle/bin/bragi"
+  install -Dm755 "$bundle/bin/bragi" "$pkgdir/usr/bin/bragi"
+  cp -a "$bundle/share" "$pkgdir/usr/"
+  install -Dm644 "$bundle/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 "$bundle/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"
+}

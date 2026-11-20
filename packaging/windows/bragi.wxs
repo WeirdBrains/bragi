@@ -1,0 +1,52 @@
+<!-- Bragi's per-user Windows installer (WiX Toolset 7): bragi.exe in %LOCALAPPDATA%\Programs\Bragi,
+     a Start menu shortcut, upgrades in place, no admin rights needed. Built by scripts/dist-windows.ps1
+     (wix build -acceptEula wix7 ... -d Source=DIR -d ProductVersion=X.Y.Z -d LicenseRtf=FILE). -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Bragi" Manufacturer="Weird Brains LLC" Version="$(var.ProductVersion)"
+           UpgradeCode="a9cfacdc-099f-4bfa-88db-ff4b997e9e6b" Scope="perUser" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer Bragi is already installed." AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+    <Icon Id="BragiIcon" SourceFile="$(var.Source)\bragi.ico" />
+    <Property Id="ARPPRODUCTICON" Value="BragiIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://bragi.weirdbrains.com" />
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Bragi">
+          <!-- Per-user components key on an HKCU value (ICE38) and remove their folders (ICE64). -->
+          <Component Id="BragiExe">
+            <File Id="BragiExeFile" Source="$(var.Source)\bragi.exe" />
+            <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+            <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+            <RemoveFolder Id="RemoveUserProgramsFolder" Directory="UserProgramsFolder" On="uninstall" />
+          </Component>
+          <Component Id="BragiLicense">
+            <File Id="BragiLicenseFile" Source="$(var.Source)\LICENSE.txt" />
+            <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="License" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+          <Component Id="BragiIconFile">
+            <File Id="BragiIcoFile" Source="$(var.Source)\bragi.ico" />
+            <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Icon" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="BragiShortcut">
+        <Shortcut Id="BragiStartMenu" Name="Bragi" Description="Chat with your private AI cloud"
+                  Target="[INSTALLFOLDER]bragi.exe" WorkingDirectory="INSTALLFOLDER" Icon="BragiIcon" />
+        <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Bragi">
+      <ComponentRef Id="BragiExe" />
+      <ComponentRef Id="BragiLicense" />
+      <ComponentRef Id="BragiIconFile" />
+      <ComponentRef Id="BragiShortcut" />
+    </Feature>
+  </Package>
+</Wix>

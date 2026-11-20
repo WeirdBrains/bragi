@@ -1,0 +1,238 @@
+# Release builds for every platform Bragi ships (docs/RELEASES.md). Runs on v* tags and by hand. It only
+# builds and uploads workflow artifacts; the GitHub release itself is made afterwards with
+# `scripts/weirdnet_release.py github VERSION` from the downloaded artifacts. All jobs run on
+# GitHub-hosted runners. Nothing is code-signed except an Android release key when its secrets exist.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # gpui is a git dependency on the zed repo.
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  FLUTTER_VERSION: "3.50.0"
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Desktop shell build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libxcb1-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev libzstd-dev libdbus-1-dev libasound2-dev
+      - run: python3 scripts/weirdnet_release.py validate
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test -q --locked --workspace
+
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-22.04, nfpm: x86_64, nfpm_sha: 2afaa5ffb5e3493402e31e7c67a5a1fb42133e3f66fc315ca0051934125561c7 }
+          - { arch: aarch64, runner: ubuntu-22.04-arm, nfpm: arm64, nfpm_sha: d4eee71839e92c68cbd3b101640bad32d2856fc551acae0635be9118e48c9d9c }
+    # Ubuntu 22.04 (glibc 2.35), so the binary also runs on Debian 12 and other older distributions.
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-linux-${{ matrix.arch }}
+      - name: Build dependencies and a pinned nfpm 2.49.0
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config zip libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+            libxcb1-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev libzstd-dev libdbus-1-dev libasound2-dev
+          curl -fsSLo nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_Linux_${{ matrix.nfpm }}.tar.gz"
+          echo "${{ matrix.nfpm_sha }}  nfpm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/nfpm" && tar -C "$RUNNER_TEMP/nfpm" -xzf nfpm.tar.gz nfpm && rm nfpm.tar.gz
+          echo "$RUNNER_TEMP/nfpm" >> "$GITHUB_PATH"
+      - run: scripts/dist-linux.sh
+      - name: Check the packages
+        run: |
+          for f in dist/*.deb; do dpkg-deb -I "$f" >/dev/null; dpkg-deb -c "$f"; done
+          ldd target/release/bragi
+          tar -tzf dist/bragi-*-unknown-linux-gnu.tar.gz
+          sudo apt-get install -y ./dist/bragi_*.deb
+          bragi --version
+          sudo apt-get remove -y bragi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-linux-${{ matrix.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.deb
+            dist/*.rpm
+            dist/*.pkg.tar.zst
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-macos
+      - run: scripts/dist-macos.sh
+      - name: The universal binary starts
+        run: cd "$RUNNER_TEMP" && tar -xzf "$GITHUB_WORKSPACE"/dist/bragi-*-universal-apple-darwin.tar.gz && ./bragi-*/bragi --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-macos-universal
+          path: |
+            dist/*.zip
+            dist/*.dmg
+            dist/*.tar.gz
+          if-no-files-found: error
+
+  windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, runner: windows-2025 }
+          - { arch: aarch64, runner: windows-11-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-windows-${{ matrix.arch }}
+      # WiX 7 is used under the Open Source Maintenance Fee EULA v1.1, accepted on 2026-11-12
+      # (docs/RELEASES.md); every wix command passes -acceptEula wix7. The CLI MSI is pinned by hash.
+      - name: Install pinned WiX 7.0.1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msi = Join-Path $env:RUNNER_TEMP "wix-cli-x64.msi"
+          Invoke-WebRequest -Uri "https://github.com/wixtoolset/wix/releases/download/v7.0.1/wix-cli-x64.msi" -OutFile $msi
+          $actual = (Get-FileHash -Algorithm SHA256 -Path $msi).Hash.ToLowerInvariant()
+          if ($actual -ne "93673c89ab33b1fd3f07ad5e609b7cae694bd716b2914259b61a41c02303b64c") { throw "WiX MSI hash mismatch: $actual" }
+          $p = Start-Process msiexec.exe -ArgumentList @("/i", "`"$msi`"", "/qn", "/norestart") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "WiX install failed: $($p.ExitCode)" }
+          $bin = "C:\Program Files\WiX Toolset v7.0\bin"
+          & (Join-Path $bin "wix.exe") extension add -acceptEula wix7 -g WixToolset.UI.wixext/7.0.1 WixToolset.BootstrapperApplications.wixext/7.0.1
+          if ($LASTEXITCODE -ne 0) { throw "wix extension add failed: $LASTEXITCODE" }
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+      - name: exe, zip, msi and setup.exe
+        shell: pwsh
+        run: ./scripts/dist-windows.ps1
+      - name: Install the MSI per user, start, uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msi = (Get-ChildItem dist\*.msi | Select-Object -First 1).FullName
+          $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /l*v msi-install.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content msi-install.log -Tail 50; throw "install failed: $($p.ExitCode)" }
+          $exe = Join-Path $env:LOCALAPPDATA "Programs\Bragi\bragi.exe"
+          if (!(Test-Path $exe)) { throw "bragi.exe not installed at $exe" }
+          $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall failed: $($p.ExitCode)" }
+          if (Test-Path $exe) { throw "bragi.exe left behind" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-windows-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.msi
+          if-no-files-found: error
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-android
+          workspaces: crates/bragi-bridge -> ../../app/.dart_tool/hooks_runner
+      - run: flutter pub get
+        working-directory: app
+      # Release signing only when the BRAGI_ANDROID_* secrets exist; otherwise the debug key signs and the
+      # apks are named *-debug-signed.apk (scripts/dist-android.sh).
+      - name: Release signing key (optional)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.BRAGI_ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.BRAGI_ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.BRAGI_ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.BRAGI_ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::notice::No BRAGI_ANDROID_* secrets: the apks are signed with the debug key (sideload only, no aab)"
+            exit 0
+          fi
+          ks="$RUNNER_TEMP/bragi-release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$ks"
+          {
+            echo "BRAGI_ANDROID_KEYSTORE=$ks"
+            echo "BRAGI_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "BRAGI_ANDROID_KEY_ALIAS=$KEY_ALIAS"
+            echo "BRAGI_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+      - run: scripts/dist-android.sh
+      - name: APK signer
+        run: |
+          apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
+          for f in dist/*.apk; do echo "$f"; "$apksigner" verify --print-certs "$f" | grep -E "certificate (DN|SHA-256 digest)"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-android
+          path: |
+            dist/*.apk
+            dist/*.aab
+          if-no-files-found: error
+
+  ios:
+    runs-on: macos-15
+    env:
+      # The Rust objects and the Xcode project must agree on the minimum iOS.
+      IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios, aarch64-apple-ios-sim
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+      - run: flutter config --enable-swift-package-manager
+      - run: scripts/dist-ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-ios
+          path: dist/*.ipa
+          if-no-files-found: error

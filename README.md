@@ -46,10 +46,9 @@ Flutter app builds `bragi-bridge` through the Native Assets hook (`app/hook/buil
 Android SDK and NDK and the Rust Android targets in `crates/bragi-bridge/rust-toolchain.toml` are
 needed.
 
-Packaging (B3; nothing is published): `scripts/package-android.sh` writes the per-ABI apks and the
-aab to `dist/android` (signed with `app/android/key.properties` if present, else the debug key),
-and `scripts/package-linux.sh` writes a tarball. macOS, Windows and iOS build unsigned in CI only; see
-`.github/workflows/platforms.yml`.
+Packaging: `scripts/dist-linux.sh`, `dist-macos.sh`, `dist-windows.ps1`, `dist-android.sh` and
+`dist-ios.sh` build each platform's release files into `dist/`, and `.github/workflows/release.yml` runs
+them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see `docs/RELEASES.md`.
 
 ## License
 
