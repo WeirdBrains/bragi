@@ -26,7 +26,7 @@ E=(env -i PATH=/usr/bin:/bin HOME="$avd_home/home" XDG_RUNTIME_DIR="$scratch/run
    ANDROID_AVD_HOME="$avd_home" ANDROID_ADB_SERVER_PORT="$port")
 adb() { "${E[@]}" "$sdk/platform-tools/adb" -s emulator-5682 "$@"; }
 
-"${E[@]}" "$sdk/emulator/emulator" -avd "$avd" -port 5682 -no-window -no-audio -no-snapshot -wipe-data -no-boot-anim \
+"${E[@]}" "$sdk/emulator/emulator" -avd "$avd" -port 5682 -no-window -no-audio -no-snapshot -wipe-data -no-boot-anim -no-metrics \
   -gpu swiftshader_indirect -memory 3072 -cores 2 >"$scratch/emulator.log" 2>&1 &
 emu_pid=$!
 sleep 3
@@ -165,4 +165,20 @@ wait_text "Bragi is\|another one\."; shot 13-other-device-opened 0.8
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb shell cat /sdcard/ui.xml | grep -q 'A question typed on the other laptop' \
   || { echo "android-scenario: FAILED (the other device's conversation did not open)"; exit 1; }
-echo "android-scenario: passed (answers complete; stand-in, cache and node failover shown; history from another device)"
+# B5: attach a text file (the demo build adds a sample instead of opening the system picker), then
+# agent mode: the node asks, the card is answered here, the tool runs on the node.
+tap_text "New chat"
+tap_text "Attach a text file"
+wait_text "sample-notes.md"; shot 14-attached 0.5
+type_prompt "What is on my list?"; tap_text "Send"
+wait_text "I read sample-notes.md"; shot 15-attachment-answer 0.5
+tap_text "New chat"
+tap_text "Agent mode: off"
+type_prompt "Find my notes about groceries."; tap_text "Send"
+wait_text "Allow once"; shot 16-approval 0.5
+tap_text "Allow once"
+wait_text "everything it found"; sleep 1; shot 17-agent-answer 0.5
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+adb shell cat /sdcard/ui.xml | grep -q 'agent task' \
+  || { echo "android-scenario: FAILED (the agent task is not marked)"; exit 1; }
+echo "android-scenario: passed (answers complete; stand-in, cache and node failover shown; history from another device; attachment; agent task)"
