@@ -157,7 +157,7 @@ fn head(s: &str, n: usize) -> &str {
 }
 
 /// A fence longer than any run of backticks in `text`.
-fn fence_for(text: &str) -> String {
+pub(crate) fn fence_for(text: &str) -> String {
     let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
     "`".repeat(longest.max(2) + 1)
 }
@@ -273,7 +273,7 @@ pub fn chat_attachments(ctx: &EditorContext) -> Vec<Attachment> {
 }
 
 /// Drops a reasoning model's `<think>…</think>` preamble.
-fn strip_thinking(answer: &str) -> &str {
+pub(crate) fn strip_thinking(answer: &str) -> &str {
     match (answer.find("<think>"), answer.find("</think>")) {
         (Some(s), Some(e)) if s < e && answer[..s].trim().is_empty() => &answer[e + "</think>".len()..],
         (None, Some(e)) => &answer[e + "</think>".len()..],
@@ -354,50 +354,23 @@ pub enum DiffLine {
     Del(String),
 }
 
-/// Most lines diffed line by line between the common start and end; past it the middle is
-/// shown as replaced whole.
-const DIFF_CELLS: usize = 4_000_000;
-
-/// The line diff from `old` to `new` (longest common subsequence after trimming the common
-/// start and end). Lines keep no newline.
+/// The line diff from `old` to `new`, every line (the same diff as [`super::FileDiff`], whose
+/// hunks a shell accepts one by one). Lines keep no newline.
 pub fn diff_lines(old: &str, new: &str) -> Vec<DiffLine> {
-    let a: Vec<&str> = old.lines().collect();
-    let b: Vec<&str> = new.lines().collect();
-    let pre = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
-    let suf = a[pre..].iter().rev().zip(b[pre..].iter().rev()).take_while(|(x, y)| x == y).count();
-    let (am, bm) = (&a[pre..a.len() - suf], &b[pre..b.len() - suf]);
-    let mut out: Vec<DiffLine> = a[..pre].iter().map(|l| DiffLine::Same(l.to_string())).collect();
-    if am.len().saturating_mul(bm.len()) > DIFF_CELLS {
-        out.extend(am.iter().map(|l| DiffLine::Del(l.to_string())));
-        out.extend(bm.iter().map(|l| DiffLine::Add(l.to_string())));
-    } else {
-        let (n, m) = (am.len(), bm.len());
-        // lcs[i][j]: the LCS of am[i..] and bm[j..].
-        let mut lcs = vec![0u32; (n + 1) * (m + 1)];
-        for i in (0..n).rev() {
-            for j in (0..m).rev() {
-                lcs[i * (m + 1) + j] =
-                    if am[i] == bm[j] { lcs[(i + 1) * (m + 1) + j + 1] + 1 } else { lcs[(i + 1) * (m + 1) + j].max(lcs[i * (m + 1) + j + 1]) };
-            }
-        }
-        let (mut i, mut j) = (0, 0);
-        while i < n || j < m {
-            if i < n && j < m && am[i] == bm[j] {
-                out.push(DiffLine::Same(am[i].to_string()));
-                i += 1;
-                j += 1;
-            } else if i < n && (j == m || lcs[(i + 1) * (m + 1) + j] >= lcs[i * (m + 1) + j + 1]) {
-                // Removals before additions, as unified diffs show them.
-                out.push(DiffLine::Del(am[i].to_string()));
-                i += 1;
-            } else {
-                out.push(DiffLine::Add(bm[j].to_string()));
-                j += 1;
-            }
-        }
+    // Context as long as both files: one hunk holding every line.
+    let d = super::FileDiff::compute_with("", old, new, old.lines().count() + new.lines().count() + 1);
+    if d.is_empty() {
+        return old.lines().map(|l| DiffLine::Same(l.to_string())).collect();
     }
-    out.extend(a[a.len() - suf..].iter().map(|l| DiffLine::Same(l.to_string())));
-    out
+    d.hunks
+        .iter()
+        .flat_map(|h| &h.lines)
+        .map(|l| match l.tag {
+            super::LineTag::Context => DiffLine::Same(l.text.clone()),
+            super::LineTag::Added => DiffLine::Add(l.text.clone()),
+            super::LineTag::Removed => DiffLine::Del(l.text.clone()),
+        })
+        .collect()
 }
 
 /// Lines added and removed.
@@ -420,56 +393,9 @@ pub fn diff_stats(diff: &[DiffLine]) -> DiffStats {
 }
 
 /// A unified diff (`---`/`+++` headers, `@@` hunks with `context` lines around each change);
-/// empty when nothing changed.
+/// empty when nothing changed. [`super::FileDiff::unified`] with the given context.
 pub fn unified_diff(old: &str, new: &str, path: &str, context: usize) -> String {
-    let diff = diff_lines(old, new);
-    if diff.iter().all(|l| matches!(l, DiffLine::Same(_))) {
-        return String::new();
-    }
-    // Which lines a hunk shows: every change and `context` lines either side.
-    let changed: Vec<usize> = diff.iter().enumerate().filter(|(_, l)| !matches!(l, DiffLine::Same(_))).map(|(i, _)| i).collect();
-    let mut show = vec![false; diff.len()];
-    for &c in &changed {
-        for s in show.iter_mut().take((c + context + 1).min(diff.len())).skip(c.saturating_sub(context)) {
-            *s = true;
-        }
-    }
-    let mut out = format!("--- a/{path}\n+++ b/{path}\n");
-    let (mut old_line, mut new_line) = (1usize, 1usize);
-    let mut i = 0;
-    while i < diff.len() {
-        if !show[i] {
-            match diff[i] {
-                DiffLine::Same(_) => {
-                    old_line += 1;
-                    new_line += 1;
-                }
-                DiffLine::Add(_) => new_line += 1,
-                DiffLine::Del(_) => old_line += 1,
-            }
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < diff.len() && show[i] {
-            i += 1;
-        }
-        let hunk = &diff[start..i];
-        let olds = hunk.iter().filter(|l| !matches!(l, DiffLine::Add(_))).count();
-        let news = hunk.iter().filter(|l| !matches!(l, DiffLine::Del(_))).count();
-        let at = |line: usize, n: usize| if n == 0 { line - 1 } else { line };
-        out.push_str(&format!("@@ -{},{olds} +{},{news} @@\n", at(old_line, olds), at(new_line, news)));
-        for l in hunk {
-            match l {
-                DiffLine::Same(t) => out.push_str(&format!(" {t}\n")),
-                DiffLine::Add(t) => out.push_str(&format!("+{t}\n")),
-                DiffLine::Del(t) => out.push_str(&format!("-{t}\n")),
-            }
-        }
-        old_line += olds;
-        new_line += news;
-    }
-    out
+    super::FileDiff::compute_with(path, old, new, context).unified()
 }
 
 #[cfg(test)]

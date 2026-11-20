@@ -1,6 +1,6 @@
 [package]
 name = "bragi-core"
-description = "Bragi's one client core: pairing, the model catalog, streaming chat with cancel, and history. Both shells only draw it."
+description = "Bragi's one client core: pairing, the model catalog, streaming chat with cancel, history, and code suggestions and rewrites. Both shells only draw it."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -14,8 +14,10 @@ anyhow.workspace = true
 async-trait.workspace = true
 futures.workspace = true
 getrandom.workspace = true
+ignore.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+similar.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
