@@ -128,7 +128,7 @@ class _Models extends StatelessWidget {
                 selected: c.model == m.id,
                 onSelected: (_) => c.pickModel(m.id),
                 avatar: CircleAvatar(radius: 4, backgroundColor: _dot(m.status)),
-                label: Text('${m.id} · ${_label(m)}${c.state!.nodeCount > 1 ? ' · ${m.nodes} of ${c.state!.nodeCount} nodes' : ''}'),
+                label: Text('${m.id} · ${_label(m)}${c.state!.nodeCount > 1 ? ' · ${m.nodes}/${c.state!.nodeCount} nodes' : ''}'),
               ),
             ),
         ]),

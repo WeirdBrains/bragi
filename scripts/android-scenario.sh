@@ -102,4 +102,51 @@ sleep 1; adb shell input tap $LAST_XY; shot 06-stopping 0; wait_text "stopped"; 
 tap_text "Continue"; sleep 6; shot 08-continued 0
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 n=$(adb shell cat /sdcard/ui.xml | grep -o 'another one\.' | wc -l)
-[ "$n" -ge 2 ] && echo "android-scenario: passed (both answers complete)" || { echo "android-scenario: FAILED ($n complete answers)"; exit 1; }
+[ "$n" -ge 2 ] || { echo "android-scenario: FAILED ($n complete answers)"; exit 1; }
+
+# B2: two inference nodes behind one list. A model that is not warm anywhere is answered by a
+# stand-in; the same question twice is a cache hit; a node dying mid-answer is finished by the other.
+tap_like() {  # taps the first element whose text or content-desc contains $1
+  for _ in $(seq 1 30); do
+    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+    xy=$(adb shell cat /sdcard/ui.xml 2>/dev/null | python3 -c "
+import re,sys
+for m in re.finditer(r'<node [^>]*>', sys.stdin.read()):
+    n=m.group(0)
+    if re.search(r'(text|content-desc)=\"[^\"]*$1[^\"]*\"', n):
+        b=re.search(r'bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"', n)
+        if b:
+            a=list(map(int,b.groups())); print((a[0]+a[2])//2,(a[1]+a[3])//2); break
+")
+    if [ -n "$xy" ]; then adb shell input tap $xy; return 0; fi
+    sleep 1
+  done
+  echo "not found: $1" >&2; return 1
+}
+# The model chips scroll sideways: bring the last one into view.
+swipe_chips() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || true
+  y=$(adb shell cat /sdcard/ui.xml | python3 -c "
+import re,sys
+for m in re.finditer(r'<node [^>]*>', sys.stdin.read()):
+    n=m.group(0)
+    if re.search(r'(text|content-desc)=\"gemma-4-e4b[^\"]*\"', n):
+        b=re.search(r'bounds=\"\[(\d+),(\d+)\]\[(\d+),(\d+)\]\"', n); a=list(map(int,b.groups())); print((a[1]+a[3])//2); break
+")
+  if [ "${1:-left}" = left ]; then adb shell input swipe 1000 "$y" 100 "$y" 200; else adb shell input swipe 100 "$y" 1000 "$y" 200; fi
+}
+tap_text "New chat"; swipe_chips; tap_like "qwen3-32b"
+type_prompt "Why a stand-in?"; tap_text "Send"
+wait_text "stand-in gemma-4-e4b"; shot 09-standin 0.5
+tap_text "New chat"; swipe_chips right; tap_like "gemma-4-e4b ·"
+type_prompt "Same question?"; tap_text "Send"; wait_text "another one\."
+tap_text "New chat"
+type_prompt "Same question?"; tap_text "Send"
+wait_text "cached"; shot 10-cached 0.5
+tap_text "New chat"
+type_prompt "Keep going even if a node dies."; tap_text "Send"
+wait_text "moved to another node"; sleep 1; shot 11-failover 0.5
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+adb shell cat /sdcard/ui.xml | grep -q 'moved to another node' && adb shell cat /sdcard/ui.xml | grep -q 'another one\.' \
+  || { echo "android-scenario: FAILED (the moved answer is not complete)"; exit 1; }
+echo "android-scenario: passed (answers complete; stand-in, cache and node failover shown)"

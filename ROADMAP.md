@@ -17,14 +17,16 @@ Known gaps:
 - Continue sends the partial answer plus an instruction, so a real model may rephrase at the seam.
 - Link codes are pasted, with no QR scanner yet. Nothing is released or on a store.
 
-## B2 Pool client (Planned)
+## B2 Pool client (Done)
 
 Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells.
 
 Weirdnet crates: `weirdnet-agent`.
 
 Known gaps:
-- Needs Ymir's several-model-nodes work (M4) on the other side.
+- Run against two simulated inference nodes only, not yet against real Ymir nodes or across machines.
+- Moving an answer to another node mid-stream needs a node that can resume from text already shown. Ymir nodes don't yet, so a real cut-off answer ends as a partial one until that lands in an unreleased weirdnet-agent.
+- Nodes are tried warm first. Speed and distance are not weighed, and you can't pick a node yourself.
 
 ## B3 Platforms (Planned)
 
