@@ -32,8 +32,13 @@ or another Bragi) to admit it. Either side can show the code.</p>
 <li>Bragi shows a <code>weirdnet-bragi://link/…</code> code, as text and as a QR code. Press <strong>Copy code</strong> (it says <em>Copied</em> for a moment) to put it on the clipboard, on the desktop and on the phone. Bragi on the desktop also prints the code to its standard output when it shows it, so you can pick it up from a terminal too. The code works for two minutes.</li>
 <li>On a Ymir device that is already in the pool, run <code>ymirctl pool add 'weirdnet-bragi://link/…'</code>. In another linked Bragi, open it as a code from another device.</li>
 <li>Bragi shows <em>Do both screens show this code?</em> and six digits, and the other device shows the same six. Compare them. If they match, tap <strong>They match</strong>. If not, tap <strong>They don't</strong> and start again.</li>
-<li>When the other device confirms too, Bragi goes online.</li>
+<li>When the other device confirms too, Bragi goes online. Ymir's <code>pool add</code> also tells Bragi where your nodes can be reached, and Bragi keeps those addresses.</li>
 </ol>
+<p><strong>Nodes on another network:</strong> Bragi finds Ymir nodes on its local network by itself. If yours are somewhere
+it can't discover (another network, or nodes with discovery turned off) and Bragi says <em>No inference node reachable
+yet</em>, run <code>ymirctl pool addresses</code> on a Ymir node and paste one of the addresses it prints
+(<code>/ip4/…/tcp/4848/p2p/…</code>) into the <strong>Link a device</strong> box, then press <strong>Link</strong>. Bragi
+dials it at once and remembers it.</p>
 <p><strong>The other device shows the code:</strong> a linked Bragi can admit a new Ymir node. Run
 <code>ymirctl pool link</code> on the node, open the <code>weirdnet-ymir://link/…</code> code in Bragi, compare the six
 digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
@@ -42,7 +47,7 @@ of a headless Bragi against real Ymir nodes on one computer; it has not yet been
 
 <h2 id="chat">Chat</h2>
 <ul>
-<li>Bragi lists the chat models offered by every inference node in your pool, warm ones first. If the list is empty, check that a device in the pool runs the Ymir <code>inference</code> role (<code>ymirctl status</code>).</li>
+<li>Bragi lists the chat models offered by every inference node in your pool, warm ones first. If the list is empty, check that a device in the pool runs the Ymir <code>inference</code> role (<code>ymirctl status</code>) and that Bragi can reach it (see <em>Nodes on another network</em> above).</li>
 <li>Pick a model and ask. The answer streams in token by token.</li>
 <li><strong>Stop</strong> cancels the request and keeps what arrived; <strong>Continue</strong> picks the answer up again. A real model may rephrase a little at the seam.</li>
 <li>History is saved on the device, one file per conversation. Syncing it between your devices is in progress.</li>

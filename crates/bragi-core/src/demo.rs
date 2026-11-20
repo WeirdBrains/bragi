@@ -468,14 +468,29 @@ impl DemoNode {
 
     /// Links the device showing `link`, as the user's existing device would once both screens
     /// show the same code. Returns that code.
+    ///
+    /// Like Ymir's `pool add`, the link tells the new device where this node and its siblings
+    /// can be dialed.
     pub async fn accept(&self, link: &str) -> Result<String> {
+        let mut peers = vec![self.address()];
+        peers.extend(self.siblings().iter().map(|s| s.address()));
+        self.accept_with(link, peers).await
+    }
+
+    /// [`accept`](Self::accept) as a device that sends no addresses with the link (Ymir 0.1.0,
+    /// Morph): the new device has to find the nodes some other way.
+    pub async fn accept_without_addresses(&self, link: &str) -> Result<String> {
+        self.accept_with(link, Vec::new()).await
+    }
+
+    async fn accept_with(&self, link: &str, peers: Vec<String>) -> Result<String> {
         let link = normalize_link(link);
         let mut pairing = tokio::task::spawn_blocking(move || Pairing::start(SCHEME, &link, weirdnet_sync::node_config(true)))
             .await
             .map_err(other)?
             .map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string()))?;
         let sas = pairing.sas().to_string();
-        let (seed, settings) = (self.identity.seed()?, self.identity.link_settings());
+        let (seed, settings) = (self.identity.seed()?, self.identity.link_settings_with(peers));
         let cert = tokio::task::spawn_blocking(move || pairing.send_with(&seed, "Demo", &settings, &[SYNC_TYPE.to_string()]))
             .await
             .map_err(other)?

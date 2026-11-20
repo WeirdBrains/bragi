@@ -23,7 +23,7 @@ use crate::catalog::CatalogView;
 use crate::chat::{ChatEvent, coalesce};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::history::{ChatMessage, Conversation, ConversationSummary, History, MessageState, Role, now_ms, title_for};
-use crate::identity::{Identity, SYNC_TYPE, SyncNode};
+use crate::identity::{Identity, LinkSettings, SYNC_TYPE, SyncNode};
 
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
 pub const SCHEME: &str = "weirdnet-bragi://";
@@ -42,6 +42,29 @@ pub fn normalize_link(code: &str) -> String {
         }
     }
     code.to_string()
+}
+
+/// Node addresses this device keeps in its data folder, one per line: what links brought and
+/// what the user added ([`Core::add_peer`]), dialed on every start.
+pub const PEERS_FILE: &str = "peers.txt";
+
+/// The addresses in `dir`'s [`PEERS_FILE`] that parse (blank lines and `#` comments skipped).
+fn load_peers(dir: &std::path::Path) -> Vec<String> {
+    let text = std::fs::read_to_string(dir.join(PEERS_FILE)).unwrap_or_default();
+    text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#') && hints(&[l.to_string()]).is_ok()).map(str::to_string).collect()
+}
+
+/// Adds the `new` addresses `list` doesn't have yet; returns whether any was added.
+fn merge_peers(list: &mut Vec<String>, new: impl IntoIterator<Item = String>) -> bool {
+    let mut added = false;
+    for a in new {
+        let a = a.trim().to_string();
+        if !a.is_empty() && hints(std::slice::from_ref(&a)).is_ok() && !list.contains(&a) {
+            list.push(a);
+            added = true;
+        }
+    }
+    added
 }
 
 /// How often the roster is synced with the user's other devices.
@@ -258,7 +281,11 @@ impl Core {
         std::fs::create_dir_all(&cfg.dir)?;
         let history = Arc::new(History::open(&cfg.dir)?);
         let (state, _) = watch::channel(AppState::default());
-        let peers = Arc::new(Mutex::new(cfg.peers.clone()));
+        let mut known = cfg.peers.clone();
+        if cfg.transport == Transport::Internet {
+            merge_peers(&mut known, load_peers(&cfg.dir));
+        }
+        let peers = Arc::new(Mutex::new(known));
         let core = Core {
             inner: Arc::new(Inner {
                 cfg,
@@ -316,14 +343,15 @@ impl Core {
     async fn go_online(&self) -> Result<()> {
         let identity =
             Arc::new(Identity::open(&self.identity_dir())?.ok_or_else(|| CoreError::new(ErrorKind::NotPaired, "this device is not linked"))?);
-        let ncfg = node_config(&self.inner.cfg, false)?;
+        let peers_now = lock(&self.inner.peers).clone();
+        let ncfg = node_config(&Config { peers: peers_now.clone(), ..self.inner.cfg.clone() }, false)?;
         let (key, st) = (identity.node_key().clone(), identity.state());
         let node = tokio::task::spawn_blocking(move || weirdnet_sync::start_node(key, ncfg, st))
             .await
             .map_err(|e| CoreError::new(ErrorKind::Other, e.to_string()))?
             .map_err(|e| CoreError::new(ErrorKind::Unavailable, format!("starting Weirdnet: {e}")))?;
         let node = Arc::new(node);
-        let hints = hints(&self.inner.cfg.peers)?;
+        let hints = hints(&peers_now)?;
         let dialer = NetDialer::new(node.clone());
         let mut nodes = LinkedNodes::new(node.clone(), identity.roster_view());
         for (peer, addrs) in &hints {
@@ -399,10 +427,13 @@ impl Core {
                     self.set_pair(PairState::Confirm { sas });
                 }
                 HostStatus::Received { .. } if matches!(self.state().pair, PairState::Waiting { .. }) => {
-                    let adopted = host
-                        .take()
-                        .map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string()))
-                        .and_then(|t| Ok(Identity::adopt(&self.identity_dir(), key.clone(), &t.seed, t.node_cert.clone(), &t.settings)?));
+                    let adopted = host.take().map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string())).and_then(|t| {
+                        let id = Identity::adopt(&self.identity_dir(), key.clone(), &t.seed, t.node_cert.clone(), &t.settings)?;
+                        // Where the user's nodes are, from the device that linked this one: without
+                        // it a device on another network than its nodes never finds them.
+                        self.remember_peers(LinkSettings::peers_in(&t.settings));
+                        Ok(id)
+                    });
                     *lock(&self.inner.offer) = None;
                     match adopted {
                         Ok(_) => {
@@ -474,7 +505,9 @@ impl Core {
             return Ok(());
         }
         let seed = net.identity.seed()?;
-        let settings = net.identity.link_settings();
+        let mut peers = net.node.reachable_addrs();
+        merge_peers(&mut peers, lock(&self.inner.peers).clone());
+        let settings = net.identity.link_settings_with(peers);
         let cert = tokio::task::spawn_blocking(move || pairing.send_with(&seed, "Bragi", &settings, &[SYNC_TYPE.to_string()]))
             .await
             .map_err(|e| CoreError::new(ErrorKind::Other, e.to_string()))?
@@ -488,12 +521,9 @@ impl Core {
     fn pick_model(&self, model: Option<String>) -> Result<String> {
         match model {
             Some(m) if !m.is_empty() => Ok(m),
-            _ => self
-                .state()
-                .catalog
-                .default_model()
-                .map(str::to_string)
-                .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, "no models yet: no inference node has answered")),
+            _ => {
+                self.state().catalog.default_model().map(str::to_string).ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message()))
+            }
         }
     }
 
@@ -698,13 +728,67 @@ impl Core {
 
     /// Tells sync passes where another of the user's devices can be dialed, for networks where
     /// finding it by id doesn't work (a LAN without mDNS, the memory transport in tests).
+    ///
+    /// Also where inference nodes are found: the address is kept in the data folder
+    /// ([`PEERS_FILE`]) and, once online, dialed at once, so a node that discovery can't find (another
+    /// network, mDNS and the DHT off) shows up without a restart.
     pub fn add_peer(&self, address: &str) -> Result<()> {
+        let address = address.trim();
+        let hint = PeerHint::from_addr(address).map_err(|e| CoreError::new(ErrorKind::BadRequest, format!("peer `{address}`: {e}")))?;
         hints(&[address.to_string()])?;
-        let mut p = lock(&self.inner.peers);
-        if !p.iter().any(|x| x == address) {
-            p.push(address.to_string());
+        self.remember_peers(vec![address.to_string()]);
+        if let Ok(net) = self.net() {
+            let node = net.node.clone();
+            self.inner.handle.spawn_blocking(move || {
+                if let Err(e) = node.add_peer(hint) {
+                    tracing::warn!("dialing an added node: {e}");
+                }
+            });
         }
         Ok(())
+    }
+
+    /// Adds `addresses` to the ones sync passes and the node dial, and keeps them in
+    /// [`PEERS_FILE`] (real network only).
+    fn remember_peers(&self, addresses: Vec<String>) {
+        let all = {
+            let mut p = lock(&self.inner.peers);
+            if !merge_peers(&mut p, addresses) {
+                return;
+            }
+            p.clone()
+        };
+        if self.inner.cfg.transport == Transport::Internet {
+            let mut kept = load_peers(&self.inner.cfg.dir);
+            merge_peers(&mut kept, all);
+            let text: String = kept.iter().map(|a| format!("{a}\n")).collect();
+            if let Err(e) = std::fs::create_dir_all(&self.inner.cfg.dir).and_then(|_| std::fs::write(self.inner.cfg.dir.join(PEERS_FILE), text)) {
+                tracing::warn!("saving node addresses: {e}");
+            }
+        }
+    }
+
+    /// The node addresses this device dials (from its config, links and [`add_peer`](Self::add_peer)).
+    pub fn peers(&self) -> Vec<String> {
+        lock(&self.inner.peers).clone()
+    }
+
+    /// What to tell the user when no inference node has answered: how many linked devices there
+    /// are, and what to do when the nodes are on another network.
+    pub fn no_node_message(&self) -> String {
+        let Ok(net) = self.net() else {
+            return "link this device to your Weirdnet first".into();
+        };
+        let me = net.node.peer_id().to_string();
+        let others = net.identity.roster().active().filter(|c| c.peer_id != me).count();
+        let fix = "Bragi finds Ymir nodes on this local network, or at an address you give it: run `ymirctl pool addresses` on a Ymir node and paste one into Link a device.";
+        match others {
+            0 => format!("No inference node yet: this is the only device in your Weirdnet. Link a Ymir node first. {fix}"),
+            n => format!(
+                "No inference node reachable yet: {n} other linked device{}, none answering as one so far. {fix}",
+                if n == 1 { "" } else { "s" }
+            ),
+        }
     }
 
     pub fn paused(&self) {

@@ -87,7 +87,7 @@ impl BragiView {
     fn new(core: Core, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let theme = Theme::default();
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
-        let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code", theme, cx));
+        let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code or node address", theme, cx));
         let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
         cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
             if let TextInputEvent::Submit { .. } = ev {
@@ -320,6 +320,17 @@ impl BragiView {
 
     pub fn link_device(&mut self, cx: &mut Context<Self>) {
         let link = self.link_input.read(cx).text().to_string();
+        // A node address (`/ip4/…/tcp/4848/p2p/…`, from `ymirctl pool addresses`) rather than a code:
+        // dial that node from now on.
+        if link.trim().starts_with('/') {
+            self.notice = Some(match self.core.add_peer(&link) {
+                Ok(()) => "Added the node's address; looking for it…".into(),
+                Err(e) => e.message,
+            });
+            self.link_input.update(cx, |i, cx| i.set_text("", cx));
+            cx.notify();
+            return;
+        }
         let core = self.core.clone();
         let job = self.core.handle().spawn(async move { core.pair_accept(&link).await });
         cx.spawn(async move |this: WeakEntity<Self>, cx| {

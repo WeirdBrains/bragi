@@ -195,7 +195,7 @@ impl Core {
                 .nodes
                 .first()
                 .map(|n| n.id.clone())
-                .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, "no inference node found yet"))?,
+                .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message()))?,
         };
         let companion = companion.filter(|c| !c.is_empty()).unwrap_or_else(|| DEFAULT_COMPANION.into());
         let (conv, mut messages) = self.begin_turn(conversation, prompt, &companion, attachments)?;
