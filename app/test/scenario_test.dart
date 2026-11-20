@@ -176,6 +176,8 @@ void main() {
 
     // Markdown: bragi-core parses the reply; bold, a list, a table and a code block render as
     // such, never with their markers, and the reply's copy button gives the raw Markdown.
+    // The model's reasoning streams in an open Thinking section, which closes when the answer
+    // starts and opens again on a tap; the answer has none of it.
     c.newChat();
     await tester.tap(find.byKey(const Key('agent')));
     await tester.pump();
@@ -192,6 +194,24 @@ void main() {
     final doc = c.markdown(last().text, false);
     expect((doc['blocks'] as List).map((b) => (b as Map)['type']), containsAll(['heading', 'list', 'table', 'code', 'quote']));
     expect((c.markdown('2 + 2 equals **4', true)['blocks'] as List).first['spans'][1], containsPair('bold', true));
+    c.newChat();
+    await tester.pump();
+    const thinkPrompt = 'Think it through: which node answers?';
+    await tester.enterText(find.byKey(const Key('prompt')), thinkPrompt);
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the reasoning', () => c.messages.length == 2 && last().reasoning.split(' ').length > 5 && last().text.isEmpty);
+    expect(find.byKey(const Key('thinking-text')), findsOneWidget, reason: 'open while the model reasons');
+    expect(find.textContaining('Thinking…'), findsOneWidget);
+    await until('the answer', () => !c.streaming && last().state == 'complete');
+    final wantThink = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: thinkPrompt)))!;
+    expect(last().text, wantThink);
+    expect(last().reasoning, isNotEmpty);
+    expect(last().thinkingMs, isNotNull);
+    expect(find.byKey(const Key('thinking-text')), findsNothing, reason: 'closed once the answer starts');
+    expect(find.textContaining('Thought for'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('thinking')));
+    await tester.pump();
+    expect(find.byKey(const Key('thinking-text')), findsOneWidget);
 
     // A node address pasted into Link a device is kept and dialed (core: add_node), as on the
     // desktop; one without a peer id is refused in the core's words.

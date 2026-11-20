@@ -1,4 +1,5 @@
 // The chat: pick a model from the catalog, ask, watch it stream, stop it, continue it.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -108,7 +109,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           controller: _scroll,
                           padding: const EdgeInsets.all(12),
                           itemCount: c.messages.length,
-                          itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1, markdown: c.markdown),
+                          itemBuilder: (_, i) => _Bubble(key: ValueKey('bubble-${c.current?.id}-$i'), message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1, controller: c),
                         )),
                         if (!_stick)
                           Positioned(
@@ -323,13 +324,13 @@ class _Models extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.streaming, required this.markdown});
+  const _Bubble({super.key, required this.message, required this.streaming, required this.controller});
 
   final MessageView message;
   final bool streaming;
+  final BragiController controller;
 
   /// Parses a reply's Markdown (bragi-core, through the controller's cache).
-  final Map<String, dynamic> Function(String text, bool streaming) markdown;
 
   @override
   Widget build(BuildContext context) {
@@ -376,10 +377,18 @@ class _Bubble extends StatelessWidget {
                 key: const Key('bubble-meta'),
                 style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
               ),
+            if (!mine && message.reasoning.trim().isNotEmpty) _Thinking(message: message, streaming: streaming, controller: controller),
             if (mine || message.text.isEmpty)
-              Text(message.text.isEmpty ? '…' : message.text, style: const TextStyle(fontSize: 15, height: 1.4))
+              Text(
+                message.text.isEmpty
+                    // Nothing from the model yet: say so, until reasoning or text arrives.
+                    ? (streaming && message.reasoning.trim().isEmpty ? 'Waiting for a reply…' : '…')
+                    : message.text,
+                key: message.text.isEmpty && streaming ? const Key('bubble-waiting') : null,
+                style: const TextStyle(fontSize: 15, height: 1.4),
+              )
             else
-              MarkdownView(key: const Key('bubble-markdown'), doc: markdown(message.text, streaming || message.state == 'streaming')),
+              MarkdownView(key: const Key('bubble-markdown'), doc: controller.markdown(message.text, streaming || message.state == 'streaming')),
             if (!mine && !streaming && message.text.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
@@ -395,6 +404,91 @@ class _Bubble extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The collapsible Thinking section above an answer: the model's reasoning as plain text,
+/// streaming live, with the time it took (the title comes from bragi-core, as on the desktop).
+/// Open while the model reasons, closed once the answer starts; a tap flips it.
+class _Thinking extends StatefulWidget {
+  const _Thinking({required this.message, required this.streaming, required this.controller});
+
+  final MessageView message;
+  final bool streaming;
+  final BragiController controller;
+
+  @override
+  State<_Thinking> createState() => _ThinkingState();
+}
+
+class _ThinkingState extends State<_Thinking> {
+  bool _flipped = false;
+  Timer? _tick;
+
+  bool get _reasoningNow => widget.streaming && widget.message.text.isEmpty && widget.message.thinkingMs == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker();
+  }
+
+  @override
+  void didUpdateWidget(_Thinking old) {
+    super.didUpdateWidget(old);
+    _ticker();
+  }
+
+  /// Redraws the elapsed time while the model reasons.
+  void _ticker() {
+    if (_reasoningNow) {
+      _tick ??= Timer.periodic(const Duration(milliseconds: 500), (_) => setState(() {}));
+    } else {
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = _reasoningNow;
+    final open = now != _flipped;
+    final since = widget.controller.thinkingSince;
+    final elapsed = now && since != null ? DateTime.now().difference(since).inMilliseconds : (widget.message.thinkingMs?.toInt() ?? 0);
+    final title = widget.controller.api.thinkingLabel(elapsed, !now);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            key: const Key('thinking'),
+            onTap: () => setState(() => _flipped = !_flipped),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text('${open ? '▾' : '▸'} $title', style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+            ),
+          ),
+          if (open)
+            Container(
+              key: const Key('thinking-text'),
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(left: 10),
+              decoration: const BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 2))),
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: BragiColors.textSecondary),
+                child: MarkdownView(key: const Key('thinking-markdown'), doc: widget.controller.markdown(widget.message.reasoning.trim(), now)),
+              ),
+            ),
+        ],
       ),
     );
   }

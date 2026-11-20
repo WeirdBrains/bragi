@@ -38,6 +38,13 @@ pub struct ChatMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    /// The model's reasoning ("thinking") for an assistant answer, shown apart from it and never
+    /// sent back to the model. Empty when the model didn't reason.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reasoning: String,
+    /// How long the model reasoned before answering, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_ms: Option<u64>,
     pub state: MessageState,
     /// The model that answered (assistant messages).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -165,15 +172,30 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if m.agent {
         ext.insert("agent".into(), true.into());
     }
+    if !m.reasoning.is_empty() {
+        ext.insert("reasoning".into(), m.reasoning.clone().into());
+    }
+    if let Some(ms) = m.thinking_ms {
+        ext.insert("thinking_ms".into(), ms.into());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
 fn from_stored(m: &Stored) -> ChatMessage {
     let get = |k: &str| m.ext.get(k);
+    let assistant = m.role == "assistant";
+    let mut reasoning = get("reasoning").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let mut text = m.text.clone();
+    // An answer saved with its `<think>` block still in the text (by an app that doesn't split it).
+    if assistant && reasoning.is_empty() && text.trim_start().starts_with("<think>") {
+        (reasoning, text) = crate::think::split(&text);
+    }
     ChatMessage {
         id: m.id.clone(),
-        role: if m.role == "assistant" { Role::Assistant } else { Role::User },
-        text: m.text.clone(),
+        role: if assistant { Role::Assistant } else { Role::User },
+        text,
+        reasoning,
+        thinking_ms: get("thinking_ms").and_then(|v| v.as_u64()),
         // Messages from apps that don't track it (Ymir's) are whole.
         state: get("state").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or(MessageState::Complete),
         model: m.model.clone(),
@@ -336,6 +358,8 @@ mod tests {
                 id: String::new(),
                 role: if i % 2 == 0 { Role::User } else { Role::Assistant },
                 text: t.to_string(),
+                reasoning: String::new(),
+                thinking_ms: None,
                 state: MessageState::Complete,
                 model: (i % 2 == 1).then(|| "alpha".to_string()),
                 node: None,
@@ -441,5 +465,19 @@ mod tests {
         let h = History::open(tmp.path()).unwrap();
         assert_eq!(h.page(0, 5).unwrap_err().kind, ErrorKind::NotPaired);
         assert_eq!(h.load("x").unwrap_err().kind, ErrorKind::NotPaired);
+    }
+
+    #[test]
+    fn reasoning_is_kept_and_inline_blocks_are_split() {
+        let mut m = conv("c", &["q", "391"]).messages.remove(1);
+        m.reasoning = "17*20 + 17*3".into();
+        m.thinking_ms = Some(1500);
+        let back = from_stored(&to_stored(&m, "m1".into()));
+        assert_eq!((back.reasoning.as_str(), back.thinking_ms, back.text.as_str()), ("17*20 + 17*3", Some(1500), "391"));
+        // Saved by an app that left the block in the text.
+        let mut raw = to_stored(&conv("c", &["q", "x"]).messages[1], "m2".into());
+        raw.text = "<think>hm</think>\n\n391".into();
+        let back = from_stored(&raw);
+        assert_eq!((back.reasoning.as_str(), back.text.as_str()), ("hm", "391"));
     }
 }

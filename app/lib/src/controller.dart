@@ -55,6 +55,9 @@ class BragiController extends ChangeNotifier {
     return _markdown[key] = jsonDecode(api.markdownJson(text, streaming)) as Map<String, dynamic>;
   }
 
+  /// When the streaming answer's first reasoning arrived (the Thinking section's live time).
+  DateTime? thinkingSince;
+
   String get pairState => state?.pair.state ?? 'unpaired';
 
   /// The node search's line (an added node address: looking, connected, or what to check).
@@ -216,6 +219,7 @@ class BragiController extends ChangeNotifier {
 
   Future<void> _follow(ChatStarted s) async {
     requestId = s.requestId;
+    thinkingSince = null;
     current = await api.conversation(s.conversationId);
     messages = List.of(current!.messages);
     conversations = await api.conversations(0, 100);
@@ -226,6 +230,7 @@ class BragiController extends ChangeNotifier {
       if (e.kind == 'done' || e.kind == 'error') break;
     }
     requestId = null;
+    thinkingSince = null;
     card = null;
     await _refresh();
   }
@@ -233,10 +238,21 @@ class BragiController extends ChangeNotifier {
   void _apply(ChatEventView e) {
     if (messages.isEmpty || messages.last.role != 'assistant') return;
     final last = messages.last;
-    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes, List<String>? tools}) =>
-        MessageView(
+    MessageView with_({
+      String? text,
+      String? reasoning,
+      BigInt? thinkingMs,
+      String? model,
+      String? node,
+      bool? cacheHit,
+      String? standin,
+      int? resumes,
+      List<String>? tools,
+    }) => MessageView(
           role: last.role,
           text: text ?? last.text,
+          reasoning: reasoning ?? last.reasoning,
+          thinkingMs: thinkingMs ?? last.thinkingMs,
           state: last.state,
           model: model ?? last.model,
           node: node ?? last.node,
@@ -252,6 +268,12 @@ class BragiController extends ChangeNotifier {
     switch (e.kind) {
       case 'delta':
         messages = [...messages.take(messages.length - 1), with_(text: splice(last.text, e.offset.toInt(), e.text))];
+      case 'reasoning':
+        thinkingSince ??= DateTime.now();
+        replace(with_(reasoning: splice(last.reasoning, e.offset.toInt(), e.text)));
+      case 'thought':
+        thinkingSince = null;
+        replace(with_(thinkingMs: e.elapsedMs));
       case 'started':
         messages = [...messages.take(messages.length - 1), with_(model: e.model, node: e.node)];
       case 'meta':

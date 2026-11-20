@@ -69,6 +69,13 @@ Future<void> pairCancel() => RustLib.instance.api.crateApiBragiPairCancel();
 Future<LinkCheckView> pairAccept({required String link}) =>
     RustLib.instance.api.crateApiBragiPairAccept(link: link);
 
+/// The Thinking section's title (`bragi_core::think::label`): `Thinking… 4s` while the model
+/// reasons, `Thought for 4s` once `done`.
+String thinkingLabel({required BigInt elapsedMs, required bool done}) => RustLib
+    .instance
+    .api
+    .crateApiBragiThinkingLabel(elapsedMs: elapsedMs, done: done);
+
 /// Whether text from the Link a device box is a node address (`/ip4/…/p2p/…`) rather than a
 /// link code: then call `add_node` instead of `pair_accept`.
 bool isNodeAddress({required String text}) =>
@@ -209,7 +216,7 @@ class AttachmentView {
           text == other.text;
 }
 
-/// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
+/// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `thought`, `resumed`, `usage`,
 /// `done`, `error`, `retry` or `meta`. A delta's text goes at `offset` (characters), replacing what was there.
 class ChatEventView {
   final String kind;
@@ -247,6 +254,10 @@ class ChatEventView {
   final String? tier;
   final String? site;
 
+  /// `thought`: how long the model reasoned before answering, in milliseconds. A `reasoning`
+  /// event's text goes at `offset` in the reasoning, like a delta's in the answer.
+  final BigInt elapsedMs;
+
   const ChatEventView({
     required this.kind,
     required this.offset,
@@ -268,6 +279,7 @@ class ChatEventView {
     required this.ask,
     this.tier,
     this.site,
+    required this.elapsedMs,
   });
 
   static Future<ChatEventView> default_() =>
@@ -294,7 +306,8 @@ class ChatEventView {
       toolState.hashCode ^
       ask.hashCode ^
       tier.hashCode ^
-      site.hashCode;
+      site.hashCode ^
+      elapsedMs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -320,7 +333,8 @@ class ChatEventView {
           toolState == other.toolState &&
           ask == other.ask &&
           tier == other.tier &&
-          site == other.site;
+          site == other.site &&
+          elapsedMs == other.elapsedMs;
 }
 
 class ChatStarted {
@@ -401,6 +415,12 @@ class MessageView {
   final String role;
   final String text;
 
+  /// The model's reasoning, shown in the collapsible Thinking section; empty when it didn't.
+  final String reasoning;
+
+  /// How long it reasoned, in milliseconds.
+  final BigInt? thinkingMs;
+
   /// `complete`, `streaming`, `stopped` or `failed`.
   final String state;
   final String? model;
@@ -422,6 +442,8 @@ class MessageView {
   const MessageView({
     required this.role,
     required this.text,
+    required this.reasoning,
+    this.thinkingMs,
     required this.state,
     this.model,
     this.node,
@@ -438,6 +460,8 @@ class MessageView {
   int get hashCode =>
       role.hashCode ^
       text.hashCode ^
+      reasoning.hashCode ^
+      thinkingMs.hashCode ^
       state.hashCode ^
       model.hashCode ^
       node.hashCode ^
@@ -456,6 +480,8 @@ class MessageView {
           runtimeType == other.runtimeType &&
           role == other.role &&
           text == other.text &&
+          reasoning == other.reasoning &&
+          thinkingMs == other.thinkingMs &&
           state == other.state &&
           model == other.model &&
           node == other.node &&

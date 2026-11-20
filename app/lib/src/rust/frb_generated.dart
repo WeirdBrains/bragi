@@ -191,6 +191,11 @@ abstract class RustLibApi extends BaseApi {
 
   StateView crateApiBragiState();
 
+  String crateApiBragiThinkingLabel({
+    required BigInt elapsedMs,
+    required bool done,
+  });
+
   Stream<StateView> crateApiBragiWatchState();
 }
 
@@ -1235,6 +1240,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "state", argNames: []);
 
   @override
+  String crateApiBragiThinkingLabel({
+    required BigInt elapsedMs,
+    required bool done,
+  }) {
+    return handler.executeSync(
+      SyncTask(
+        callFfi: () {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_u_64(elapsedMs, serializer);
+          sse_encode_bool(done, serializer);
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 33)!;
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiBragiThinkingLabelConstMeta,
+        argValues: [elapsedMs, done],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBragiThinkingLabelConstMeta => const TaskConstMeta(
+    debugName: "thinking_label",
+    argNames: ["elapsedMs", "done"],
+  );
+
+  @override
   Stream<StateView> crateApiBragiWatchState() {
     final sink = RustStreamSink<StateView>();
     unawaited(
@@ -1329,11 +1363,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BigInt dco_decode_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_u_64(raw);
+  }
+
+  @protected
   ChatEventView dco_decode_chat_event_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 20)
-      throw Exception('unexpected arr length: expect 20 but see ${arr.length}');
+    if (arr.length != 21)
+      throw Exception('unexpected arr length: expect 21 but see ${arr.length}');
     return ChatEventView(
       kind: dco_decode_String(arr[0]),
       offset: dco_decode_u_64(arr[1]),
@@ -1355,6 +1395,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ask: dco_decode_u_64(arr[17]),
       tier: dco_decode_opt_String(arr[18]),
       site: dco_decode_opt_String(arr[19]),
+      elapsedMs: dco_decode_u_64(arr[20]),
     );
   }
 
@@ -1455,21 +1496,23 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MessageView dco_decode_message_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 12)
-      throw Exception('unexpected arr length: expect 12 but see ${arr.length}');
+    if (arr.length != 14)
+      throw Exception('unexpected arr length: expect 14 but see ${arr.length}');
     return MessageView(
       role: dco_decode_String(arr[0]),
       text: dco_decode_String(arr[1]),
-      state: dco_decode_String(arr[2]),
-      model: dco_decode_opt_String(arr[3]),
-      node: dco_decode_opt_String(arr[4]),
-      cacheHit: dco_decode_bool(arr[5]),
-      standin: dco_decode_opt_String(arr[6]),
-      resumes: dco_decode_u_32(arr[7]),
-      attachments: dco_decode_list_attachment_view(arr[8]),
-      tools: dco_decode_list_String(arr[9]),
-      agent: dco_decode_bool(arr[10]),
-      atMs: dco_decode_i_64(arr[11]),
+      reasoning: dco_decode_String(arr[2]),
+      thinkingMs: dco_decode_opt_box_autoadd_u_64(arr[3]),
+      state: dco_decode_String(arr[4]),
+      model: dco_decode_opt_String(arr[5]),
+      node: dco_decode_opt_String(arr[6]),
+      cacheHit: dco_decode_bool(arr[7]),
+      standin: dco_decode_opt_String(arr[8]),
+      resumes: dco_decode_u_32(arr[9]),
+      attachments: dco_decode_list_attachment_view(arr[10]),
+      tools: dco_decode_list_String(arr[11]),
+      agent: dco_decode_bool(arr[12]),
+      atMs: dco_decode_i_64(arr[13]),
     );
   }
 
@@ -1512,6 +1555,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   int? dco_decode_opt_box_autoadd_u_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_u_32(raw);
+  }
+
+  @protected
+  BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_u_64(raw);
   }
 
   @protected
@@ -1648,6 +1697,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_u_64(deserializer));
+  }
+
+  @protected
   ChatEventView sse_decode_chat_event_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_kind = sse_decode_String(deserializer);
@@ -1670,6 +1725,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_ask = sse_decode_u_64(deserializer);
     var var_tier = sse_decode_opt_String(deserializer);
     var var_site = sse_decode_opt_String(deserializer);
+    var var_elapsedMs = sse_decode_u_64(deserializer);
     return ChatEventView(
       kind: var_kind,
       offset: var_offset,
@@ -1691,6 +1747,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       ask: var_ask,
       tier: var_tier,
       site: var_site,
+      elapsedMs: var_elapsedMs,
     );
   }
 
@@ -1823,6 +1880,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_role = sse_decode_String(deserializer);
     var var_text = sse_decode_String(deserializer);
+    var var_reasoning = sse_decode_String(deserializer);
+    var var_thinkingMs = sse_decode_opt_box_autoadd_u_64(deserializer);
     var var_state = sse_decode_String(deserializer);
     var var_model = sse_decode_opt_String(deserializer);
     var var_node = sse_decode_opt_String(deserializer);
@@ -1836,6 +1895,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     return MessageView(
       role: var_role,
       text: var_text,
+      reasoning: var_reasoning,
+      thinkingMs: var_thinkingMs,
       state: var_state,
       model: var_model,
       node: var_node,
@@ -1909,6 +1970,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_u_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_u_64(deserializer));
     } else {
       return null;
     }
@@ -2081,6 +2153,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_64(self, serializer);
+  }
+
+  @protected
   void sse_encode_chat_event_view(
     ChatEventView self,
     SseSerializer serializer,
@@ -2106,6 +2184,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_64(self.ask, serializer);
     sse_encode_opt_String(self.tier, serializer);
     sse_encode_opt_String(self.site, serializer);
+    sse_encode_u_64(self.elapsedMs, serializer);
   }
 
   @protected
@@ -2234,6 +2313,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.role, serializer);
     sse_encode_String(self.text, serializer);
+    sse_encode_String(self.reasoning, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.thinkingMs, serializer);
     sse_encode_String(self.state, serializer);
     sse_encode_opt_String(self.model, serializer);
     sse_encode_opt_String(self.node, serializer);
@@ -2298,6 +2379,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_u_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_u_64(self, serializer);
     }
   }
 

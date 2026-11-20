@@ -22,6 +22,7 @@ abstract class BragiApi {
   Future<void> pairCancel();
   Future<rust.LinkCheckView> pairAccept(String link);
   bool isNodeAddress(String text);
+  String thinkingLabel(int elapsedMs, bool done);
   String addNode(String address);
   List<String> peers();
   void dismissNodeSearch();
@@ -59,6 +60,8 @@ class RustBragiApi implements BragiApi {
   bool isNodeAddress(String text) => rust.isNodeAddress(text: text);
   @override
   String addNode(String address) => rust.addNode(address: address);
+  @override
+  String thinkingLabel(int elapsedMs, bool done) => rust.thinkingLabel(elapsedMs: BigInt.from(elapsedMs), done: done);
   @override
   List<String> peers() => rust.peers();
   @override

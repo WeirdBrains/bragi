@@ -20,7 +20,7 @@ use weirdnet_net::{Keypair, Multiaddr, NodeConfig, PeerHint, PeerId};
 
 use crate::attach::Attachment;
 use crate::catalog::CatalogView;
-use crate::chat::{ChatEvent, coalesce};
+use crate::chat::{ChatEvent, Streamed, coalesce};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::history::{ChatMessage, Conversation, ConversationSummary, History, MessageState, Role, now_ms, title_for};
 use crate::identity::{Identity, LinkSettings, SYNC_TYPE, SyncNode};
@@ -597,7 +597,7 @@ impl Core {
         let net = self.net()?;
         let model = self.pick_model(model)?;
         let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
-        Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new()))
+        Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new(), String::new()))
     }
 
     /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
@@ -623,6 +623,8 @@ impl Core {
             id: String::new(),
             role: Role::User,
             text: prompt.into(),
+            reasoning: String::new(),
+            thinking_ms: None,
             state: MessageState::Complete,
             model: None,
             node: None,
@@ -639,6 +641,8 @@ impl Core {
             id: String::new(),
             role: Role::Assistant,
             text: String::new(),
+            reasoning: String::new(),
+            thinking_ms: None,
             state: MessageState::Streaming,
             model: Some(model.to_string()),
             node: None,
@@ -672,16 +676,19 @@ impl Core {
             None => self.pick_model(None)?,
         };
         let shown = last.text.clone();
+        let shown_reasoning = last.reasoning.clone();
         last.state = MessageState::Streaming;
         last.model = Some(model.clone());
         c.updated_ms = now_ms();
         let messages = agent_messages(&c.messages);
         self.inner.history.save(&c)?;
         // The partial answer is the last message: `continuing` moves it into the prefix.
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown))
+        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown, shown_reasoning))
     }
 
-    fn run(&self, net: Arc<Net>, conversation: String, req: Request, shown: String) -> ChatHandle {
+    /// Streams `req` into the last message of `conversation`. `shown` and `shown_reasoning` are
+    /// what that message already holds (a continued answer); the new text and reasoning follow them.
+    fn run(&self, net: Arc<Net>, conversation: String, req: Request, shown: String, shown_reasoning: String) -> ChatHandle {
         let request_id = random_id("r");
         let cancel = CancelToken::new();
         lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
@@ -689,7 +696,8 @@ impl Core {
         let (core, rid, conv) = (self.clone(), request_id.clone(), conversation.clone());
         self.inner.handle.spawn(async move {
             let order = |model: &str| core.nodes_for(model);
-            let (result, text) = stream(&net, &order, req, &out, &cancel, &shown).await;
+            let (result, streamed) = stream(&net, &order, req, &out, &cancel, &shown, shown_reasoning.chars().count() as u64).await;
+            let text = format!("{shown}{}", streamed.text);
             let (state, node, model, last, flags) = match &result {
                 Ok(a) => (
                     MessageState::Complete,
@@ -705,7 +713,7 @@ impl Core {
                     (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() }, Flags::of(&i.partial.meta))
                 }
             };
-            core.finish(&conv, text, state, node, model, flags);
+            core.finish(&conv, text, &streamed, state, node, model, flags);
             // Over before the shell hears it: a `cancel` after the last event must say so.
             lock(&core.inner.requests).remove(&rid);
             let _ = out.send(last);
@@ -720,10 +728,25 @@ impl Core {
         if n.is_empty() { c.nodes.iter().map(|n| n.id.clone()).collect() } else { n }
     }
 
-    fn finish(&self, conversation: &str, text: String, state: MessageState, node: Option<String>, model: Option<String>, flags: Flags) {
+    #[allow(clippy::too_many_arguments)]
+    fn finish(
+        &self,
+        conversation: &str,
+        text: String,
+        streamed: &Streamed,
+        state: MessageState,
+        node: Option<String>,
+        model: Option<String>,
+        flags: Flags,
+    ) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
         if let Some(m) = c.messages.last_mut().filter(|m| m.role == Role::Assistant) {
             m.text = text;
+            // Reasoning is kept with the answer (a continued one adds to it), not sent to the model.
+            m.reasoning.push_str(&streamed.reasoning);
+            if let Some(ms) = streamed.thinking_ms {
+                m.thinking_ms = Some(m.thinking_ms.unwrap_or(0) + ms);
+            }
             m.state = state;
             if node.is_some() {
                 m.node = node;
@@ -983,6 +1006,7 @@ impl Core {
 }
 
 /// Earlier turns as the model sees them: finished and cut-off answers count, empty ones don't.
+/// Reasoning stays out: models expect only the answers of earlier turns, and it would fill the context.
 pub(crate) fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     msgs.iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
@@ -1026,8 +1050,8 @@ fn worth_retrying(e: &RemoteError) -> bool {
 
 /// One answer: a pool over the nodes that serve the model (best first), which fails over between
 /// them and resumes mid-answer; if every node fails before any text, tries again after a short
-/// wait with a fresh node order. Events are coalesced onto `out`. Returns the result and the full
-/// text shown (`shown` plus what streamed).
+/// wait with a fresh node order. Events are coalesced onto `out` (reasoning offsets start at
+/// `shown_reasoning`). Returns the result and what streamed after `shown`.
 async fn stream(
     net: &Net,
     order: &(dyn Fn(&str) -> Vec<String> + Send + Sync),
@@ -1035,7 +1059,8 @@ async fn stream(
     out: &mpsc::UnboundedSender<ChatEvent>,
     cancel: &CancelToken,
     shown: &str,
-) -> (std::result::Result<weirdnet_agent::pool::Answer, Interrupted>, String) {
+    shown_reasoning: u64,
+) -> (std::result::Result<weirdnet_agent::pool::Answer, Interrupted>, Streamed) {
     let offset = shown.chars().count() as u64;
     let mut attempt = 0usize;
     loop {
@@ -1047,10 +1072,10 @@ async fn stream(
         }
         .with_options(net.opts.clone());
         let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
-        let co = tokio::spawn(coalesce(rx, out.clone(), offset));
+        let co = tokio::spawn(coalesce(rx, out.clone(), offset, shown_reasoning));
         let result = pool.infer(req.clone(), &tx, cancel).await;
         drop(tx);
-        let (streamed, _) = co.await.unwrap_or_default();
+        let streamed = co.await.unwrap_or_default();
         match &result {
             Err(i) if !i.streamed() && attempt < RETRY_WAITS.len() && worth_retrying(&i.error) && !cancel.is_cancelled() => {
                 attempt += 1;
@@ -1060,7 +1085,7 @@ async fn stream(
                     _ = cancel.cancelled() => {}
                 }
             }
-            _ => return (result, format!("{shown}{streamed}")),
+            _ => return (result, streamed),
         }
     }
 }
@@ -1139,5 +1164,38 @@ mod link_tests {
         // Only link codes convert; the rest fails the link check as before.
         assert_eq!(normalize_link("weirdnet-ymir://invite/abc"), "weirdnet-ymir://invite/abc");
         assert_eq!(normalize_link("weirdnet://link/abc"), "weirdnet://link/abc");
+    }
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    #[test]
+    fn reasoning_stays_out_of_the_context() {
+        let mut answer = ChatMessage {
+            id: String::new(),
+            role: Role::Assistant,
+            text: "391".into(),
+            reasoning: "17*20 + 17*3".into(),
+            thinking_ms: Some(1200),
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
+            at_ms: 0,
+        };
+        let question = ChatMessage { role: Role::User, text: "17*23?".into(), reasoning: String::new(), thinking_ms: None, ..answer.clone() };
+        let sent = agent_messages(&[question.clone(), answer.clone()]);
+        assert_eq!(sent.len(), 2);
+        assert_eq!(sent[1].content, "391");
+        // An answer that only reasoned before it was stopped isn't sent at all.
+        answer.text.clear();
+        assert_eq!(agent_messages(&[question, answer]).len(), 1);
     }
 }

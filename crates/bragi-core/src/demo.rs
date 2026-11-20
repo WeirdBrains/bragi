@@ -172,6 +172,21 @@ fn main() {
 ```
 
 > Nothing leaves your devices.";
+/// A prompt that starts with this makes the demo model reason first, in reasoning frames (what
+/// llama.cpp's `--reasoning-format` and vLLM's reasoning parsers send).
+pub const THINK_PROMPT: &str = "Think it through:";
+/// A prompt that starts with this makes the demo model reason in a `<think>` block at the start of
+/// its text (Qwen3 served without a reasoning parser).
+pub const THINK_INLINE_PROMPT: &str = "Think inline:";
+
+/// The demo model's reasoning for `prompt`, when it reasons (see [`THINK_PROMPT`]).
+pub fn reasoning_for(prompt: &str) -> Option<String> {
+    (prompt.starts_with(THINK_PROMPT) || prompt.starts_with(THINK_INLINE_PROMPT)).then(|| {
+        "The user wants to see me think. First I check which nodes serve the model, then I pick the \
+         warm one, and the answer streams back over Weirdnet."
+            .to_string()
+    })
+}
 
 /// Answers with [`answer_for`], one word every `delay`, honouring cancel, resume and the
 /// scripted [`Faults`]. A repeated prompt is a cache hit; a model that isn't warm here is
@@ -203,9 +218,28 @@ impl InferBackend for FakeBackend {
         let prompt = last_user(request);
         let answering = self.standin.clone().unwrap_or_else(|| self.model.clone());
         let mut text = answer_for(&answering, &prompt);
+        let reasoning = reasoning_for(&prompt);
+        let inline = prompt.starts_with(THINK_INLINE_PROMPT);
+        // A continued answer's prefix is the answer without its block; a resumed one is the raw text.
+        let raw_prefix = request.assistant_prefix.as_ref().is_none_or(|p| p.text.is_empty() || p.text.starts_with("<think>"));
+        if let (Some(r), true, true) = (&reasoning, inline, raw_prefix) {
+            text = format!("<think>\n{r}\n</think>\n\n{text}");
+        }
         // A resumed or continued attempt generates only what comes after the prefix already shown.
+        let fresh = request.assistant_prefix.as_ref().is_none_or(|p| p.text.is_empty() && p.reasoning.is_empty());
         if let Some(p) = &request.assistant_prefix {
             text = text.chars().skip(p.text.chars().count()).collect();
+        }
+        if let (Some(r), false, true) = (&reasoning, inline, fresh) {
+            for piece in r.split_inclusive(' ') {
+                if cancel.is_cancelled() {
+                    return Err(RemoteError::Cancelled);
+                }
+                if !self.cache_hit {
+                    tokio::time::sleep(self.delay).await;
+                }
+                out.reasoning(piece);
+            }
         }
         let mut meta = Meta::default();
         meta.cache_hit = self.cache_hit;

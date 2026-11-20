@@ -964,6 +964,30 @@ fn wire__crate__api__bragi__state_impl(
         },
     )
 }
+fn wire__crate__api__bragi__thinking_label_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "thinking_label",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_elapsed_ms = <u64>::sse_decode(&mut deserializer);
+            let api_done = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::bragi::thinking_label(api_elapsed_ms, api_done))?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
 fn wire__crate__api__bragi__watch_state_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1064,6 +1088,7 @@ impl SseDecode for crate::api::bragi::ChatEventView {
         let mut var_ask = <u64>::sse_decode(deserializer);
         let mut var_tier = <Option<String>>::sse_decode(deserializer);
         let mut var_site = <Option<String>>::sse_decode(deserializer);
+        let mut var_elapsedMs = <u64>::sse_decode(deserializer);
         return crate::api::bragi::ChatEventView {
             kind: var_kind,
             offset: var_offset,
@@ -1085,6 +1110,7 @@ impl SseDecode for crate::api::bragi::ChatEventView {
             ask: var_ask,
             tier: var_tier,
             site: var_site,
+            elapsed_ms: var_elapsedMs,
         };
     }
 }
@@ -1216,6 +1242,8 @@ impl SseDecode for crate::api::bragi::MessageView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_role = <String>::sse_decode(deserializer);
         let mut var_text = <String>::sse_decode(deserializer);
+        let mut var_reasoning = <String>::sse_decode(deserializer);
+        let mut var_thinkingMs = <Option<u64>>::sse_decode(deserializer);
         let mut var_state = <String>::sse_decode(deserializer);
         let mut var_model = <Option<String>>::sse_decode(deserializer);
         let mut var_node = <Option<String>>::sse_decode(deserializer);
@@ -1229,6 +1257,8 @@ impl SseDecode for crate::api::bragi::MessageView {
         return crate::api::bragi::MessageView {
             role: var_role,
             text: var_text,
+            reasoning: var_reasoning,
+            thinking_ms: var_thinkingMs,
             state: var_state,
             model: var_model,
             node: var_node,
@@ -1303,6 +1333,17 @@ impl SseDecode for Option<u32> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<u32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<u64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -1496,6 +1537,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ChatEventView {
             self.ask.into_into_dart().into_dart(),
             self.tier.into_into_dart().into_dart(),
             self.site.into_into_dart().into_dart(),
+            self.elapsed_ms.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1555,6 +1597,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
         [
             self.role.into_into_dart().into_dart(),
             self.text.into_into_dart().into_dart(),
+            self.reasoning.into_into_dart().into_dart(),
+            self.thinking_ms.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
             self.model.into_into_dart().into_dart(),
             self.node.into_into_dart().into_dart(),
@@ -1717,6 +1761,7 @@ impl SseEncode for crate::api::bragi::ChatEventView {
         <u64>::sse_encode(self.ask, serializer);
         <Option<String>>::sse_encode(self.tier, serializer);
         <Option<String>>::sse_encode(self.site, serializer);
+        <u64>::sse_encode(self.elapsed_ms, serializer);
     }
 }
 
@@ -1826,6 +1871,8 @@ impl SseEncode for crate::api::bragi::MessageView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.role, serializer);
         <String>::sse_encode(self.text, serializer);
+        <String>::sse_encode(self.reasoning, serializer);
+        <Option<u64>>::sse_encode(self.thinking_ms, serializer);
         <String>::sse_encode(self.state, serializer);
         <Option<String>>::sse_encode(self.model, serializer);
         <Option<String>>::sse_encode(self.node, serializer);
@@ -1888,6 +1935,16 @@ impl SseEncode for Option<u32> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <u32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<u64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <u64>::sse_encode(value, serializer);
         }
     }
 }

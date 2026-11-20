@@ -84,7 +84,7 @@ pub struct StateView {
     pub node_search_line: Option<String>,
 }
 
-/// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
+/// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `thought`, `resumed`, `usage`,
 /// `done`, `error`, `retry` or `meta`. A delta's text goes at `offset` (characters), replacing what was there.
 #[derive(Debug, Clone, Default)]
 pub struct ChatEventView {
@@ -115,6 +115,9 @@ pub struct ChatEventView {
     pub ask: u64,
     pub tier: Option<String>,
     pub site: Option<String>,
+    /// `thought`: how long the model reasoned before answering, in milliseconds. A `reasoning`
+    /// event's text goes at `offset` in the reasoning, like a delta's in the answer.
+    pub elapsed_ms: u64,
 }
 
 /// A text file attached to a message.
@@ -135,6 +138,10 @@ pub struct MessageView {
     /// `user` or `assistant`.
     pub role: String,
     pub text: String,
+    /// The model's reasoning, shown in the collapsible Thinking section; empty when it didn't.
+    pub reasoning: String,
+    /// How long it reasoned, in milliseconds.
+    pub thinking_ms: Option<u64>,
     /// `complete`, `streaming`, `stopped` or `failed`.
     pub state: String,
     pub model: Option<String>,
@@ -293,6 +300,10 @@ fn event_view(e: ChatEvent) -> ChatEventView {
             v.offset = offset;
             v.text = text;
         }
+        ChatEvent::Thought { elapsed_ms } => {
+            v.kind = "thought".into();
+            v.elapsed_ms = elapsed_ms;
+        }
         ChatEvent::Retry { attempt, message } => {
             v.kind = "retry".into();
             v.attempt = attempt;
@@ -365,6 +376,8 @@ fn conversation_view(c: &Conversation) -> ConversationView {
             .map(|m| MessageView {
                 role: if m.role == Role::User { "user" } else { "assistant" }.into(),
                 text: m.text.clone(),
+                reasoning: m.reasoning.clone(),
+                thinking_ms: m.thinking_ms,
                 state: message_state_name(m.state),
                 model: m.model.clone(),
                 node: m.node.clone(),
@@ -544,6 +557,13 @@ pub async fn pair_accept(link: String) -> Result<LinkCheckView, String> {
     let c = core.clone();
     let check = core.handle().spawn(async move { c.pair_accept(&link).await }).await.map_err(|e| e.to_string())?.map_err(err)?;
     Ok(LinkCheckView { sas: check.sas, device: check.device })
+}
+
+/// The Thinking section's title (`bragi_core::think::label`): `Thinking… 4s` while the model
+/// reasons, `Thought for 4s` once `done`.
+#[frb(sync)]
+pub fn thinking_label(elapsed_ms: u64, done: bool) -> String {
+    bragi_core::think::label(elapsed_ms, done)
 }
 
 /// Whether text from the Link a device box is a node address (`/ip4/…/p2p/…`) rather than a

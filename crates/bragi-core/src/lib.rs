@@ -19,6 +19,7 @@ pub mod highlight;
 pub mod history;
 pub mod identity;
 pub mod markdown;
+pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
 pub use crate::attach::Attachment;

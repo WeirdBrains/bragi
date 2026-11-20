@@ -1,13 +1,14 @@
 //! What a shell hears while an answer streams. Deltas are coalesced (every ~16 ms or 32 pieces)
 //! so a UI thread or the Dart isolate isn't flooded; nothing is dropped.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use weirdnet_agent::pool::PoolEvent;
 
 use crate::error::ErrorKind;
+use crate::think::{Piece, ThinkSplit};
 
 /// One streamed event, mirroring the infer/2 frames (offsets in characters of the answer).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,9 +27,16 @@ pub enum ChatEvent {
         offset: u64,
         text: String,
     },
+    /// The model's reasoning ("thinking"), streamed apart from the answer; offsets in characters
+    /// of the reasoning. Kept with the message, never sent back to the model.
     Reasoning {
         offset: u64,
         text: String,
+    },
+    /// The reasoning is over (the answer started, or the stream ended): how long it took from
+    /// the first reasoning, in milliseconds.
+    Thought {
+        elapsed_ms: u64,
     },
     /// The attempt failed before any text and is being tried again.
     Retry {
@@ -83,25 +91,38 @@ pub enum ChatEvent {
 pub const COALESCE_EVERY: Duration = Duration::from_millis(16);
 pub const COALESCE_PIECES: usize = 32;
 
-/// Turns pool events into coalesced [`ChatEvent`]s on `out`, starting the text at `offset`
-/// (a continued answer starts after what was shown). Returns the text and reasoning streamed.
-pub async fn coalesce(mut rx: mpsc::UnboundedReceiver<PoolEvent>, out: mpsc::UnboundedSender<ChatEvent>, offset: u64) -> (String, String) {
-    let (mut text, mut reasoning) = (String::new(), String::new());
-    let (mut pending, mut pending_reasoning, mut pieces) = (String::new(), String::new(), 0usize);
-    let (mut at, mut reasoning_at) = (offset, 0u64);
-    let flush = |pending: &mut String, pending_reasoning: &mut String, at: &mut u64, reasoning_at: &mut u64| {
-        if !pending_reasoning.is_empty() {
-            let t = std::mem::take(pending_reasoning);
-            let n = t.chars().count() as u64;
-            let _ = out.send(ChatEvent::Reasoning { offset: *reasoning_at, text: t });
-            *reasoning_at += n;
-        }
-        if !pending.is_empty() {
-            let t = std::mem::take(pending);
-            let n = t.chars().count() as u64;
-            let _ = out.send(ChatEvent::Delta { offset: *at, text: t });
-            *at += n;
-        }
+/// What one stream produced: the answer text and the reasoning (both without what was shown
+/// before it), and how long the model thought, when it did.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Streamed {
+    pub text: String,
+    pub reasoning: String,
+    pub thinking_ms: Option<u64>,
+}
+
+/// Turns pool events into coalesced [`ChatEvent`]s on `out`. The answer's offsets start at
+/// `offset` and the reasoning's at `reasoning_offset` (a continued answer starts after what was
+/// shown). Reasoning comes from the pool's reasoning frames (a server-side parser such as
+/// llama.cpp's `--reasoning-format` or vLLM's) and from a `<think>…</think>` block that opens the
+/// text ([`crate::think`]). The first answer text after reasoning, or the end of the stream, sends
+/// [`ChatEvent::Thought`] with the time since the first reasoning arrived.
+pub async fn coalesce(
+    mut rx: mpsc::UnboundedReceiver<PoolEvent>,
+    out: mpsc::UnboundedSender<ChatEvent>,
+    offset: u64,
+    reasoning_offset: u64,
+) -> Streamed {
+    let mut s = Coalescer {
+        out,
+        done: Streamed::default(),
+        pending: String::new(),
+        pending_reasoning: String::new(),
+        pieces: 0,
+        at: offset,
+        reasoning_at: reasoning_offset,
+        thinking_since: None,
+        // A continued answer is past any opening block.
+        split: if offset > 0 { ThinkSplit::continuing() } else { ThinkSplit::new() },
     };
     let mut tick = tokio::time::interval(COALESCE_EVERY);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -111,18 +132,13 @@ pub async fn coalesce(mut rx: mpsc::UnboundedReceiver<PoolEvent>, out: mpsc::Unb
                 let Some(ev) = ev else { break };
                 match ev {
                     PoolEvent::Text(t) => {
-                        text.push_str(&t);
-                        pending.push_str(&t);
-                        pieces += 1;
+                        for p in s.split.push(&t) {
+                            s.piece(p);
+                        }
                     }
-                    PoolEvent::Reasoning(t) => {
-                        reasoning.push_str(&t);
-                        pending_reasoning.push_str(&t);
-                        pieces += 1;
-                    }
+                    PoolEvent::Reasoning(t) => s.piece(Piece::Reasoning(t)),
                     other => {
-                        flush(&mut pending, &mut pending_reasoning, &mut at, &mut reasoning_at);
-                        pieces = 0;
+                        s.flush();
                         let ev = match other {
                             PoolEvent::Queued { position, .. } => Some(ChatEvent::Queued { position }),
                             PoolEvent::Accepted { node, model, resume } => Some(ChatEvent::Started { node, model, resumed: resume }),
@@ -134,23 +150,82 @@ pub async fn coalesce(mut rx: mpsc::UnboundedReceiver<PoolEvent>, out: mpsc::Unb
                             _ => None,
                         };
                         if let Some(ev) = ev {
-                            let _ = out.send(ev);
+                            let _ = s.out.send(ev);
                         }
                     }
                 }
-                if pieces >= COALESCE_PIECES {
-                    flush(&mut pending, &mut pending_reasoning, &mut at, &mut reasoning_at);
-                    pieces = 0;
+                if s.pieces >= COALESCE_PIECES {
+                    s.flush();
                 }
             }
-            _ = tick.tick() => {
-                flush(&mut pending, &mut pending_reasoning, &mut at, &mut reasoning_at);
-                pieces = 0;
-            }
+            _ = tick.tick() => s.flush(),
         }
     }
-    flush(&mut pending, &mut pending_reasoning, &mut at, &mut reasoning_at);
-    (text, reasoning)
+    for p in s.split.finish() {
+        s.piece(p);
+    }
+    s.flush();
+    s.thought();
+    s.done
+}
+
+struct Coalescer {
+    out: mpsc::UnboundedSender<ChatEvent>,
+    done: Streamed,
+    pending: String,
+    pending_reasoning: String,
+    pieces: usize,
+    at: u64,
+    reasoning_at: u64,
+    /// When the first reasoning arrived.
+    thinking_since: Option<Instant>,
+    split: ThinkSplit,
+}
+
+impl Coalescer {
+    fn piece(&mut self, p: Piece) {
+        match p {
+            Piece::Reasoning(t) => {
+                self.thinking_since.get_or_insert_with(Instant::now);
+                self.done.reasoning.push_str(&t);
+                self.pending_reasoning.push_str(&t);
+            }
+            Piece::Text(t) => {
+                if self.done.thinking_ms.is_none() && self.thinking_since.is_some() {
+                    self.flush();
+                    self.thought();
+                }
+                self.done.text.push_str(&t);
+                self.pending.push_str(&t);
+            }
+        }
+        self.pieces += 1;
+    }
+
+    /// The reasoning is over: says how long it took, once.
+    fn thought(&mut self) {
+        if let (Some(since), None) = (self.thinking_since, self.done.thinking_ms) {
+            let ms = since.elapsed().as_millis() as u64;
+            self.done.thinking_ms = Some(ms);
+            let _ = self.out.send(ChatEvent::Thought { elapsed_ms: ms });
+        }
+    }
+
+    fn flush(&mut self) {
+        if !self.pending_reasoning.is_empty() {
+            let t = std::mem::take(&mut self.pending_reasoning);
+            let n = t.chars().count() as u64;
+            let _ = self.out.send(ChatEvent::Reasoning { offset: self.reasoning_at, text: t });
+            self.reasoning_at += n;
+        }
+        if !self.pending.is_empty() {
+            let t = std::mem::take(&mut self.pending);
+            let n = t.chars().count() as u64;
+            let _ = self.out.send(ChatEvent::Delta { offset: self.at, text: t });
+            self.at += n;
+        }
+        self.pieces = 0;
+    }
 }
 
 #[cfg(test)]
@@ -166,7 +241,7 @@ mod tests {
             tx.send(PoolEvent::Text(format!("{i} "))).unwrap();
         }
         drop(tx);
-        let (text, _) = coalesce(rx, out, 5).await;
+        let text = coalesce(rx, out, 5, 0).await.text;
         let mut shown = String::new();
         let mut deltas = 0;
         let mut next = 5;

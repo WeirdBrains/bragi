@@ -70,6 +70,11 @@ pub struct BragiView {
     agent: bool,
     card: Option<Card>,
     notice: Option<String>,
+    /// Thinking sections the user opened or closed, by conversation and message index (the
+    /// default: open while the model reasons, closed once the answer starts).
+    thinking_flipped: std::collections::HashSet<(String, usize)>,
+    /// When the streaming answer's first reasoning arrived, for the live elapsed time.
+    thinking_since: Option<Instant>,
     scroll: ScrollHandle,
     /// Follow the newest text; false once the reader scrolls up.
     stick: bool,
@@ -155,6 +160,8 @@ impl BragiView {
             agent: false,
             card: None,
             notice: None,
+            thinking_flipped: Default::default(),
+            thinking_since: None,
             scroll: ScrollHandle::new(),
             stick: true,
             recheck: false,
@@ -479,6 +486,23 @@ impl BragiView {
         self.current = self.core.conversation(&h.conversation_id).ok();
         self.reload();
         self.jump_to_latest();
+        self.thinking_since = None;
+        // Redraws the Thinking section's elapsed time while the model reasons.
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(500)).await;
+                let going = this.update(cx, |v, cx| {
+                    if v.thinking_since.is_some() {
+                        cx.notify();
+                    }
+                    v.streaming.is_some()
+                });
+                if !matches!(going, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             while let Some(ev) = h.events.recv().await {
                 let end = matches!(ev, ChatEvent::Done { .. } | ChatEvent::Error { .. });
@@ -492,6 +516,7 @@ impl BragiView {
             }
             let _ = this.update(cx, |v, cx| {
                 v.streaming = None;
+                v.thinking_since = None;
                 v.card = None;
                 v.reload();
                 v.follow_bottom();
@@ -508,6 +533,16 @@ impl BragiView {
             ChatEvent::Delta { offset, text } => {
                 splice(&mut last.text, offset, &text);
                 self.follow_bottom();
+            }
+            ChatEvent::Reasoning { offset, text } => {
+                self.thinking_since.get_or_insert_with(Instant::now);
+                splice(&mut last.reasoning, offset, &text);
+                self.scroll.scroll_to_bottom();
+            }
+            ChatEvent::Thought { elapsed_ms } => {
+                // A continued answer adds to the time already spent.
+                last.thinking_ms = Some(elapsed_ms);
+                self.thinking_since = None;
             }
             ChatEvent::Started { node, model, .. } => {
                 last.node = Some(node);
@@ -786,6 +821,51 @@ impl BragiView {
         row
     }
 
+    /// The collapsible Thinking section above an answer: the model's reasoning as plain text,
+    /// streaming live, with the time it took. Open while the model reasons, closed once the
+    /// answer starts; a click flips it.
+    fn thinking(&self, index: usize, m: &ChatMessage, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        if m.role != Role::Assistant || m.reasoning.trim().is_empty() {
+            return None;
+        }
+        let t = self.theme;
+        let streaming = m.state == MessageState::Streaming;
+        let reasoning_now = streaming && m.text.is_empty() && m.thinking_ms.is_none();
+        let conversation = self.current.as_ref().map(|c| c.id.clone()).unwrap_or_default();
+        let key = (conversation, index);
+        let open = reasoning_now != self.thinking_flipped.contains(&key);
+        let elapsed = match (reasoning_now, self.thinking_since) {
+            (true, Some(since)) => since.elapsed().as_millis() as u64,
+            _ => m.thinking_ms.unwrap_or(0),
+        };
+        let title = format!("{} {}", if open { "▾" } else { "▸" }, bragi_core::think::label(elapsed, !reasoning_now));
+        let header = div()
+            .id(SharedString::from(format!("thinking-{index}")))
+            .text_size(px(12.))
+            .text_color(rgb(t.text_secondary))
+            .cursor_pointer()
+            .hover(|s| s.opacity(0.8))
+            .child(title)
+            .on_click(cx.listener(move |v, _, _, cx| {
+                if !v.thinking_flipped.remove(&key) {
+                    v.thinking_flipped.insert(key.clone());
+                }
+                cx.notify();
+            }));
+        Some(div().flex().flex_col().gap(px(4.)).child(header).when(open, |d| {
+            d.child(
+                div()
+                    .pl(px(10.))
+                    .border_l_2()
+                    .border_color(rgb(t.border))
+                    .text_size(px(13.))
+                    .line_height(px(19.))
+                    .text_color(rgb(t.text_secondary))
+                    .child(m.reasoning.trim().to_string()),
+            )
+        }))
+    }
+
     fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let mine = m.role == Role::User;
@@ -833,6 +913,7 @@ impl BragiView {
                         .text_color(rgb(t.text_secondary))
                         .child(format!("attached: {} ({} lines)", a.name, a.text.lines().count()))
                 }))
+                .children(self.thinking(i, m, cx))
                 .child(self.message_text(i, m, cx)),
         )
     }
@@ -900,7 +981,9 @@ impl BragiView {
         let t = self.theme;
         let text = div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary));
         if m.text.is_empty() {
-            return text.child("…").into_any_element();
+            // Nothing from the model yet: say so, until reasoning or text arrives.
+            let waiting = m.state == MessageState::Streaming && m.reasoning.trim().is_empty();
+            return text.child(if waiting { "Waiting for a reply…" } else { "…" }).into_any_element();
         }
         if m.role == Role::User {
             return text.child(m.text.clone()).into_any_element();
@@ -1415,6 +1498,39 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("markdown");
     shot(cx, "26-markdown").await;
+    // The model's reasoning streams in an open Thinking section, which closes when the answer starts.
+    let prompt = format!("{} which node answers?", bragi_core::demo::THINK_PROMPT);
+    this.update(cx, |v, cx| {
+        if v.agent {
+            v.toggle_agent(cx);
+        }
+        v.new_chat(cx);
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.set_prompt(&prompt, cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the reasoning", |v| last_assistant(v).is_some_and(|m| m.reasoning.split(' ').count() > 5 && m.text.is_empty())).await?;
+    step("thinking");
+    shot(cx, "27-thinking").await;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let (text, reasoning, ms) =
+        this.read_with(cx, |v, _| last_assistant(v).map(|m| (m.text, m.reasoning, m.thinking_ms)).unwrap_or_default()).map_err(|e| e.to_string())?;
+    let want = bragi_core::demo::reasoning_for(&prompt).unwrap_or_default();
+    if text != bragi_core::demo::answer_for(bragi_core::demo::WARM_MODEL, &prompt) || reasoning.trim() != want || ms.is_none() {
+        return Err(format!("thinking: {text:?} {reasoning:?} {ms:?}"));
+    }
+    step("thought");
+    shot(cx, "28-thought").await;
+    // A click opens the closed section again.
+    this.update(cx, |v, cx| {
+        if let Some(c) = &v.current {
+            v.thinking_flipped.insert((c.id.clone(), c.messages.len() - 1));
+        }
+        cx.notify();
+    })
+    .map_err(|e| e.to_string())?;
+    shot(cx, "29-thought-opened").await;
     Ok(())
 }
 
