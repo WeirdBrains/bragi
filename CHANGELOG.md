@@ -6,6 +6,13 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `bragi serve`: a local API on 127.0.0.1 for editors and other local tools (token-protected), also
+  available from the desktop app with `bragi --serve`, and as the headless `bragi-serve` binary.
+- A VS Code and Cursor extension (`editors/vscode`): inline code suggestions, rewrites with a diff
+  to accept or reject, and a chat panel that uses the editor's context.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added
