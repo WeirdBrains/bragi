@@ -102,6 +102,13 @@ impl Faults {
 }
 
 /// The canned answer `model` gives to `prompt`.
+/// What the other laptop of [`DemoNode::play_other_device`] asks.
+pub const OTHER_DEVICE_QUESTION: &str = "A question typed on the other laptop";
+
+/// The demo's way to show history from another device: a conversation whose first message
+/// mentions this makes the demo's other laptop start one and sync it over.
+pub const OTHER_DEVICE_TRIGGER: &str = "other laptop";
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
     format!(
         "{model} here, answering \"{prompt}\". Bragi asks the inference nodes among your own devices, \
@@ -342,11 +349,71 @@ impl DemoNode {
     /// id has to start the key chain, which only a device that pulls can do.
     pub async fn sync_with(&self, addresses: &[String]) {
         let hints = crate::core::peer_hints(addresses).unwrap_or_default();
-        let (identity, node) = (self.identity.clone(), self.node.clone());
-        let _ = tokio::task::spawn_blocking(move || {
-            identity.tick(&node, &|c| hints.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default())
-        })
-        .await;
+        let nodes: Vec<(Arc<Identity>, Arc<SyncNode>)> =
+            std::iter::once((self.identity.clone(), self.node.clone())).chain(self.siblings().iter().map(|s| (s.identity.clone(), s.node.clone()))).collect();
+        for (identity, node) in nodes {
+            let hints = hints.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                identity.tick(&node, &|c| hints.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default())
+            })
+            .await;
+        }
+    }
+
+    /// Demo only: the user's other laptop. A second core links to this node's identity, asks
+    /// one question, and syncs with `core` until the conversation is there. Returns its id.
+    pub async fn play_other_device(self: &Arc<Self>, core: &Core) -> Result<String> {
+        fn timed_out(what: &str) -> CoreError {
+            CoreError::new(ErrorKind::Unavailable, format!("timed out waiting for {what}"))
+        }
+        async fn until(f: impl Fn() -> bool, what: &str) -> Result<()> {
+            let deadline = std::time::Instant::now() + Duration::from_secs(40);
+            while !f() {
+                if std::time::Instant::now() > deadline {
+                    return Err(timed_out(what));
+                }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+            Ok(())
+        }
+        struct Scratch(std::path::PathBuf);
+        impl Drop for Scratch {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let mut salt = [0u8; 4];
+        let _ = getrandom::fill(&mut salt);
+        let dir = Scratch(std::env::temp_dir().join(format!("bragi-other-laptop-{:08x}", u32::from_le_bytes(salt))));
+        let laptop = Core::start(self.app_config(&dir.0, "Bragi on the laptop"))?;
+        self.auto_accept(&laptop);
+        laptop.pair_offer().await?;
+        until(|| matches!(laptop.state().pair, PairState::Confirm { .. }), "the other laptop's code check").await?;
+        laptop.pair_confirm(true)?;
+        until(|| laptop.state().online && laptop.state().catalog.models.len() >= 2, "the other laptop online").await?;
+        // On the memory transport devices find each other by address only.
+        let addr = |c: &Core| c.address().ok_or_else(|| timed_out("an address"));
+        core.add_peer(&addr(&laptop)?)?;
+        laptop.add_peer(&addr(core)?)?;
+        let mut chat = laptop.send(None, OTHER_DEVICE_QUESTION, None)?;
+        while let Some(ev) = chat.events.recv().await {
+            if matches!(ev, crate::ChatEvent::Done { .. } | crate::ChatEvent::Error { .. }) {
+                break;
+            }
+        }
+        let id = chat.conversation_id.clone();
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        loop {
+            if core.conversation(&id).is_ok_and(|c| c.messages.len() == 2) {
+                return Ok(id);
+            }
+            if std::time::Instant::now() > deadline {
+                return Err(timed_out("the conversation on this device"));
+            }
+            let addrs: Vec<String> = [core, &laptop].iter().filter_map(|c| c.address()).collect();
+            let _ = tokio::join!(core.sync_now(), laptop.sync_now(), self.sync_with(&addrs));
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
     }
 
     /// Plays the existing device for `core`: when it shows a code, accept it.

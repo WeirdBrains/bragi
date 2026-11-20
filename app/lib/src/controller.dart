@@ -40,7 +40,8 @@ class BragiController extends ChangeNotifier {
     _watch = api.watchState().listen((s) {
       final wasLinked = linked;
       state = s;
-      if (!wasLinked && linked) unawaited(_refresh());
+      // History from another device arrives with a state wake-up.
+      if (linked && (!wasLinked || (!streaming && !_refreshing))) unawaited(_refresh());
       notifyListeners();
     });
     await _refresh();
@@ -52,7 +53,10 @@ class BragiController extends ChangeNotifier {
     super.dispose();
   }
 
+  bool _refreshing = false;
+
   Future<void> _refresh() async {
+    _refreshing = true;
     try {
       conversations = await api.conversations(0, 100);
       final c = current;
@@ -63,6 +67,7 @@ class BragiController extends ChangeNotifier {
     } catch (e) {
       notice = '$e';
     }
+    _refreshing = false;
     notifyListeners();
   }
 

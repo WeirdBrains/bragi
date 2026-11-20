@@ -149,4 +149,18 @@ wait_text "moved to another node"; sleep 1; shot 11-failover 0.5
 adb shell uiautomator dump /sdcard/ui.xml >/dev/null
 adb shell cat /sdcard/ui.xml | grep -q 'moved to another node' && adb shell cat /sdcard/ui.xml | grep -q 'another one\.' \
   || { echo "android-scenario: FAILED (the moved answer is not complete)"; exit 1; }
-echo "android-scenario: passed (answers complete; stand-in, cache and node failover shown)"
+
+# B4: history follows the user. A conversation that mentions "other laptop" makes the demo's
+# other laptop (a second device with the same identity) ask a question and sync it over; it
+# shows up in this device's history drawer and opens with both messages.
+tap_text "New chat"
+type_prompt "What did I ask on my other laptop?"; tap_text "Send"
+wait_text "another one\."
+adb shell input swipe 2 600 800 600 300
+wait_text "A question typed on the other laptop"; shot 12-other-device 0.5
+tap_text "A question typed on the other laptop"
+wait_text "Bragi is\|another one\."; shot 13-other-device-opened 0.8
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null
+adb shell cat /sdcard/ui.xml | grep -q 'A question typed on the other laptop' \
+  || { echo "android-scenario: FAILED (the other device's conversation did not open)"; exit 1; }
+echo "android-scenario: passed (answers complete; stand-in, cache and node failover shown; history from another device)"

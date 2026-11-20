@@ -363,6 +363,27 @@ pub fn start_demo(dir: String, label: String, accept_after_ms: u32, word_delay_m
         Core::start(node.app_config(&dir.join("app"), &label)).map_err(err)?
     };
     node.auto_accept_after(&core, Duration::from_millis(accept_after_ms.into()));
+    // The demo's other laptop: a conversation that mentions it makes it start one, which then
+    // syncs over (the Android scenario shows history from another device this way).
+    {
+        let (node, core) = (node.clone(), core.clone());
+        rt.spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(300)).await;
+                let asked = core
+                    .conversations(0, 20)
+                    .unwrap_or_default()
+                    .iter()
+                    .any(|c| c.title.to_lowercase().contains(bragi_core::demo::OTHER_DEVICE_TRIGGER));
+                if asked {
+                    if let Err(e) = node.play_other_device(&core).await {
+                        eprintln!("the demo's other laptop: {e}");
+                    }
+                    return;
+                }
+            }
+        });
+    }
     *s = Some(Running { core, _demo: Some(node), _runtime: Some(rt) });
     Ok(())
 }

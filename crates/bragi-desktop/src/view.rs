@@ -118,6 +118,11 @@ impl BragiView {
             self.model = None;
         }
         self.state = s;
+        // History from another device arrives with a state wake-up; redraw it unless an answer
+        // is streaming in (that has its own redraws).
+        if self.streaming.is_none() && self.state.online {
+            self.reload();
+        }
         cx.notify();
     }
 
@@ -651,6 +656,7 @@ async fn wait_for(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, what: &
 
 /// The demo nodes' scripted trouble, for the scenario.
 static FAULTS: std::sync::OnceLock<Arc<Faults>> = std::sync::OnceLock::new();
+static DEMO: std::sync::OnceLock<Arc<DemoNode>> = std::sync::OnceLock::new();
 
 fn last_assistant(v: &BragiView) -> Option<ChatMessage> {
     v.current.as_ref().and_then(|c| c.messages.last().cloned()).filter(|m| m.role == Role::Assistant)
@@ -750,6 +756,20 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("failover");
     shot(cx, "11-failover").await;
+
+    // B4: the user's other device (a second core, linked to the same demo identity) starts a
+    // conversation; after a sync pass it is in this window's list, and can be opened and read.
+    let demo = DEMO.get().ok_or("no demo node")?.clone();
+    let core = this.read_with(cx, |v, _| v.core.clone()).map_err(|e| e.to_string())?;
+    let handle = core.handle().clone();
+    let job = handle.spawn(async move { demo.play_other_device(&core).await });
+    let id = job.await.map_err(|e| e.to_string())?.map_err(|e| e.message)?;
+    wait_for(&this, cx, "the other device's conversation in the list", |v| v.conversations.iter().any(|c| c.id == id)).await?;
+    step("history from another device");
+    shot(cx, "12-other-device").await;
+    this.update(cx, |v, cx| v.open(&id, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "it opened", |v| v.current.as_ref().is_some_and(|c| c.id == id && c.messages.len() == 2)).await?;
+    shot(cx, "13-other-device-opened").await;
     Ok(())
 }
 
@@ -799,6 +819,7 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
         // Two inference nodes of one user, so the pool has something to merge and fail over.
         let node = rt.block_on(DemoNode::start_cloud(&home.join("demo"), Duration::from_millis(45))).expect("the demo nodes");
         let _ = FAULTS.set(node.faults.clone());
+        let _ = DEMO.set(node.clone());
         let core = {
             let _g = rt.enter();
             Core::start(node.app_config(&home.join("app"), "Bragi desktop (demo)")).expect("bragi-core")
