@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       only:
-        description: 'Run one job only: desktop or ios (default: both)'
+        description: 'Run one job only: desktop, ios or freebsd (default: desktop and ios)'
         required: false
         default: ''
   pull_request:
@@ -59,3 +59,20 @@ jobs:
           xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO build > /tmp/xcb.log 2>&1 || true
           grep -v '^ *export \|built for newer' /tmp/xcb.log | grep -n -E ' error: |^ld: |Undefined symbols|duplicate symbol|not found for|clang: error|library .* not found|framework .* not found' -A8 | head -n 100
           exit 1
+  # FreeBSD (what GhostBSD is built on). GPUI's Linux platform crate covers target_os = "freebsd".
+  # It cannot be cross-checked from Linux (no FreeBSD sysroot; aws-lc-sys fails), so it builds in a
+  # FreeBSD VM. Written on a Linux box and NOT RUN yet. Manual only (only: freebsd). OpenBSD and
+  # DragonFly are not targets GPUI supports.
+  freebsd:
+    if: ${{ github.event.inputs.only == 'freebsd' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cross-platform-actions/action@v0.29.0
+        with:
+          operating_system: freebsd
+          version: '14.2'
+          run: |
+            sudo pkg install -y rust cmake pkgconf wayland libxkbcommon libxcb vulkan-loader
+            cargo build --release -p bragi-desktop
+            cargo test -p bragi-core -p bragi-desktop
