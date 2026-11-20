@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/svg/bragi-lockup.svg">
+    <img src="brand/svg/bragi-lockup-light.svg" alt="Bragi" width="320">
+  </picture>
+</p>
+
 # Bragi
 
 Bragi is the chat app for your own cloud. It links to your Weirdnet identity like any of your
@@ -16,6 +23,8 @@ Android (Flutter). Nothing is released yet.
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
 | `app/` | The Flutter app (Android in B1). |
+| `brand/`, `BRAND.md` | Logo, icons, palette and usage rules. |
+| `site/`, `roadmap.toml`, `ROADMAP.md` | The website (Jaspr) and the roadmap it is generated from. |
 | `scripts/desktop-scenario.sh` | Plays the end-to-end scenario in the desktop shell inside Xvfb and takes screenshots. |
 | `third_party/` | Patched copies of published crates (see its README). |
 
