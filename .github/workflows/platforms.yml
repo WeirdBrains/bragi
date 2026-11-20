@@ -73,6 +73,9 @@ jobs:
           operating_system: freebsd
           version: '14.2'
           run: |
-            sudo pkg install -y rust cmake pkgconf wayland libxkbcommon libxcb vulkan-loader
+            sudo pkg install -y curl cmake pkgconf wayland libxkbcommon libxcb vulkan-loader
+            # The pkg `rust` lags (1.98); the crates need 1.99, so use rustup's stable.
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+            . "$HOME/.cargo/env"
             cargo build --release -p bragi-desktop
             cargo test -p bragi-core -p bragi-desktop
