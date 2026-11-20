@@ -28,6 +28,22 @@ use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
 pub const SCHEME: &str = "weirdnet-bragi://";
 
+/// Ymir's and Morph's link schemes. Their link codes carry the same payload as Bragi's.
+const OTHER_SCHEMES: [&str; 2] = ["weirdnet-ymir://", "weirdnet-morph://"];
+
+/// Reads a pasted code as a Bragi one: a `weirdnet-ymir://link/` or `weirdnet-morph://link/` code is
+/// the same payload under another app's scheme, so a Bragi device can open codes shown by Ymir or
+/// Morph. Anything else (invites, other schemes) is left for the link check to refuse.
+pub fn normalize_link(code: &str) -> String {
+    let code = code.trim();
+    for other in OTHER_SCHEMES {
+        if let Some(rest) = code.strip_prefix(other).filter(|r| r.starts_with("link/")) {
+            return format!("{SCHEME}{rest}");
+        }
+    }
+    code.to_string()
+}
+
 /// How often the roster is synced with the user's other devices.
 const SYNC_EVERY: Duration = Duration::from_secs(30);
 
@@ -439,7 +455,7 @@ impl Core {
     /// with the other screen, then [`Core::pair_accept_confirm`].
     pub async fn pair_accept(&self, link: &str) -> Result<LinkCheck> {
         self.net()?;
-        let (cfg, link) = (node_config(&self.inner.cfg, true)?, link.trim().to_string());
+        let (cfg, link) = (node_config(&self.inner.cfg, true)?, normalize_link(link));
         let pairing = tokio::task::spawn_blocking(move || Pairing::start(SCHEME, &link, cfg))
             .await
             .map_err(|e| CoreError::new(ErrorKind::Other, e.to_string()))?
@@ -872,3 +888,18 @@ impl weirdnet_agent::pool::NodeSource for SharedNodes {
 
 /// How often the roster is checked for inference nodes that came or went.
 const NODE_POLL: Duration = Duration::from_secs(2);
+
+#[cfg(test)]
+mod link_tests {
+    use super::normalize_link;
+
+    #[test]
+    fn other_apps_link_codes_read_as_bragi_codes() {
+        assert_eq!(normalize_link(" weirdnet-ymir://link/abc\n"), "weirdnet-bragi://link/abc");
+        assert_eq!(normalize_link("weirdnet-morph://link/abc"), "weirdnet-bragi://link/abc");
+        assert_eq!(normalize_link("weirdnet-bragi://link/abc"), "weirdnet-bragi://link/abc");
+        // Only link codes convert; the rest fails the link check as before.
+        assert_eq!(normalize_link("weirdnet-ymir://invite/abc"), "weirdnet-ymir://invite/abc");
+        assert_eq!(normalize_link("weirdnet://link/abc"), "weirdnet://link/abc");
+    }
+}

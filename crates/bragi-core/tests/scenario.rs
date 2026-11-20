@@ -192,3 +192,25 @@ async fn a_stranger_is_refused_and_a_linked_device_links_another() {
     assert_eq!(user, demo.identity.user_id());
     assert!(third.pair_offer().await.is_err(), "already linked");
 }
+
+/// A code shown by Bragi but carried under Ymir's or Morph's scheme (what `ymirctl pool add`
+/// and Morph read) links the same way once the opening device normalizes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn codes_under_another_apps_scheme_link_too() {
+    for scheme in ["weirdnet-ymir://", "weirdnet-morph://"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let demo = Arc::new(DemoNode::start(&tmp.path().join("demo"), Duration::from_millis(5)).await.unwrap());
+        let core = Core::start(demo.app_config(&tmp.path().join("app"), "Bragi test")).unwrap();
+        let link = core.pair_offer().await.unwrap();
+        let other = link.replacen("weirdnet-bragi://", scheme, 1);
+        assert_ne!(other, link);
+        let accepting = {
+            let d = demo.clone();
+            tokio::spawn(async move { d.accept(&other).await })
+        };
+        until(&core, "the code check", |s| matches!(s.pair, PairState::Confirm { .. })).await;
+        core.pair_confirm(true).unwrap();
+        until(&core, "linked", |s| matches!(s.pair, PairState::Linked { .. }) && s.online).await;
+        accepting.await.unwrap().unwrap();
+    }
+}

@@ -25,7 +25,7 @@ use weirdnet_device_link::Pairing;
 use weirdnet_net::{Keypair, WEIRDNET};
 use weirdnet_sync::Roster;
 
-use crate::core::{Config, Core, PairState, SCHEME, Transport};
+use crate::core::{Config, Core, PairState, SCHEME, Transport, normalize_link};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::identity::{Identity, SYNC_TYPE, SyncNode};
 
@@ -469,7 +469,7 @@ impl DemoNode {
     /// Links the device showing `link`, as the user's existing device would once both screens
     /// show the same code. Returns that code.
     pub async fn accept(&self, link: &str) -> Result<String> {
-        let link = link.to_string();
+        let link = normalize_link(link);
         let mut pairing = tokio::task::spawn_blocking(move || Pairing::start(SCHEME, &link, weirdnet_sync::node_config(true)))
             .await
             .map_err(other)?

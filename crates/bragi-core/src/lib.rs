@@ -22,6 +22,6 @@ pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
 pub use crate::attach::Attachment;
 pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;
-pub use crate::core::{AppState, ChatHandle, Config, Core, LinkCheck, PairState, SCHEME, Transport, node_config};
+pub use crate::core::{AppState, ChatHandle, Config, Core, LinkCheck, PairState, SCHEME, Transport, node_config, normalize_link};
 pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, MessageState, Role};
