@@ -73,7 +73,7 @@ jobs:
           operating_system: freebsd
           version: '14.2'
           run: |
-            sudo pkg install -y ca_root_nss curl cmake pkgconf wayland libxkbcommon libxcb vulkan-loader git fontconfig freetype2 libX11 openssl
+            sudo pkg install -y ca_root_nss bzip2 brotli curl cmake pkgconf wayland libxkbcommon libxcb vulkan-loader git fontconfig freetype2 libX11 openssl
             # The pkg `rust` lags (1.98); the crates need 1.99, so use rustup's stable.
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
             . "$HOME/.cargo/env"
