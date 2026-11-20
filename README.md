@@ -48,7 +48,7 @@ needed.
 
 Packaging (B3; nothing is published): `scripts/package-android.sh` writes the per-ABI apks and the
 aab to `dist/android` (signed with `app/android/key.properties` if present, else the debug key),
-and `scripts/package-linux.sh` writes a tarball. macOS, Windows and iOS are not built yet; see
+and `scripts/package-linux.sh` writes a tarball. macOS, Windows and iOS build unsigned in CI only; see
 `.github/workflows/platforms.yml`.
 
 ## License

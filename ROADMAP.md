@@ -29,12 +29,12 @@ Known gaps:
 
 ## B3 Platforms (In progress)
 
-iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid. Android release builds, F-Droid metadata and a Linux tarball are built; macOS, Windows and iOS need machines this box doesn't have.
+iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid. Android release builds, F-Droid metadata and a Linux tarball are built; macOS, Windows and iOS build in CI (unsigned) but have not been run on a machine.
 
 Weirdnet crates: none new.
 
 Known gaps:
-- macOS, Windows and iOS are not built or tested yet. The desktop shell compiles for Windows (cargo check), and a CI workflow and iOS project exist but have not run.
+- macOS, Windows and iOS build and test in GitHub Actions (unsigned), but were never run: no scenario on macOS or Windows, and the iOS app was never launched.
 - Nothing is signed with a real key or uploaded. Play, F-Droid and TestFlight need a keystore, a tagged release and Apple developer access from m3talsmith.
 - The F-Droid recipe is a draft that was never run through fdroid build.
 
