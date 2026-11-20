@@ -1,0 +1,27 @@
+# The Nix flake: both packages (the release in packaging/nix/release.json) build, patch and start.
+name: Nix
+on:
+  push:
+    branches: [main]
+    paths: ['flake.nix', 'flake.lock', 'packaging/nix/**', '.github/workflows/nix.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  nix:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - run: |
+          nix flake check
+          nix build .#bragi -o result-desktop
+          nix build .#bragi-standalone -o result-standalone
+          ./result-desktop/bin/bragi --version
+          ./result-standalone/bin/bragi --version
+          test -f result-desktop/share/applications/bragi.desktop
+          test ! -e result-standalone/share/applications
