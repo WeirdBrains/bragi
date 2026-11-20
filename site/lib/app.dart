@@ -3,6 +3,8 @@ import 'package:jaspr/jaspr.dart';
 import 'package:jaspr_router/jaspr_router.dart';
 
 import 'components/layout.dart';
+import 'pages/docs.dart';
+import 'pages/docs_started.dart';
 import 'pages/download.dart';
 import 'pages/features.dart';
 import 'pages/home.dart';
@@ -31,6 +33,16 @@ class App extends StatelessComponent {
           path: '/download',
           title: 'Download · $siteTitle',
           builder: (_, _) => const Layout(active: '/download', child: DownloadPage()),
+        ),
+        Route(
+          path: '/docs',
+          title: 'Docs · $siteTitle',
+          builder: (_, _) => const Layout(active: '/docs', child: DocsPage()),
+        ),
+        Route(
+          path: '/docs/guides/getting-started',
+          title: 'Getting started · $siteTitle',
+          builder: (_, _) => const Layout(active: '/docs', child: GettingStartedPage()),
         ),
         Route(
           path: '/roadmap',

@@ -7,6 +7,7 @@ const _nav = [
   ('/', 'Overview'),
   ('/features', 'Features'),
   ('/download', 'Download'),
+  ('/docs', 'Docs'),
   ('/roadmap', 'Roadmap'),
 ];
 
@@ -49,6 +50,7 @@ class Layout extends StatelessComponent {
             a(href: repoUrl, [Component.text('GitHub')]),
             a(href: ymirSiteUrl, [Component.text('Ymir, the model cloud')]),
             a(href: weirdnetUrl, [Component.text('Weirdnet')]),
+            a(href: siteLink('/docs'), [Component.text('Docs')]),
             a(href: siteLink('/roadmap'), [Component.text('Roadmap')]),
           ]),
         ]),
