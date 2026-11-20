@@ -45,3 +45,7 @@ The workflow signs with a release key only when these repository secrets exist:
 `BRAGI_ANDROID_KEY_ALIAS` and `BRAGI_ANDROID_KEY_PASSWORD`. Without them the apks are signed with the
 runner's debug key, which changes between builds, so a new version has to be installed fresh rather than
 over an older one.
+
+## minisign
+
+The `minisign` job signs every release file when the `MINISIGN_SECRET_KEY` and `MINISIGN_PASSWORD` repository secrets are set, and uploads the `.minisig` files as the `bragi-minisign` artifact to attach to the release. Without them it skips with a notice; there is no minisign key yet.
