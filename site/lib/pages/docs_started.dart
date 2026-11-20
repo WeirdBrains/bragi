@@ -28,7 +28,7 @@ or another Bragi) to admit it. Either side can show the code.</p>
 <p><strong>Bragi shows the code:</strong></p>
 <ol>
 <li>Open Bragi. It says <em>Link Bragi to your Weirdnet</em>. Tap <strong>Show a link code</strong>.</li>
-<li>Bragi shows a <code>weirdnet-bragi://link/…</code> code, as text and as a QR code. On the phone you can copy it. The code works for two minutes.</li>
+<li>Bragi shows a <code>weirdnet-bragi://link/…</code> code, as text and as a QR code. Press <strong>Copy code</strong> (it says <em>Copied</em> for a moment) to put it on the clipboard, on the desktop and on the phone. Bragi on the desktop also prints the code to its standard output when it shows it, so you can pick it up from a terminal too. The code works for two minutes.</li>
 <li>On a Ymir device that is already in the pool, run <code>ymirctl pool add 'weirdnet-bragi://link/…'</code>. In another linked Bragi, open it as a code from another device.</li>
 <li>Bragi shows <em>Do both screens show this code?</em> and six digits, and the other device shows the same six. Compare them. If they match, tap <strong>They match</strong>. If not, tap <strong>They don't</strong> and start again.</li>
 <li>When the other device confirms too, Bragi goes online.</li>
@@ -36,7 +36,7 @@ or another Bragi) to admit it. Either side can show the code.</p>
 <p><strong>The other device shows the code:</strong> a linked Bragi can admit a new Ymir node. Run
 <code>ymirctl pool link</code> on the node, open the <code>weirdnet-ymir://link/…</code> code in Bragi, compare the six
 digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
-<p>There is no QR scanner yet, so codes are pasted. This linking is covered by automated tests and by an end-to-end test
+<p>There is no QR scanner yet, so codes are pasted (Ctrl+V or Ctrl+Shift+V in the box for a code from another device). This linking is covered by automated tests and by an end-to-end test
 of a headless Bragi against real Ymir nodes on one computer; it has not yet been tried across separate machines.</p>
 
 <h2 id="chat">Chat</h2>

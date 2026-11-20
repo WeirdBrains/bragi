@@ -54,6 +54,7 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("end", End, c),
         KeyBinding::new("ctrl-v", Paste, c),
         KeyBinding::new("shift-insert", Paste, c),
+        KeyBinding::new("ctrl-shift-v", Paste, c),
         KeyBinding::new("ctrl-c", Copy, c),
         KeyBinding::new("ctrl-x", Cut, c),
         KeyBinding::new("enter", Submit, c),

@@ -54,6 +54,8 @@ pub struct BragiView {
     prompt: Entity<TextInput>,
     link_input: Entity<TextInput>,
     link_check: Option<LinkCheck>,
+    /// The link code was just copied (the Copy button says so for a moment).
+    copied: bool,
     /// Files chosen for the next message, the path box that adds one, and agent mode.
     attachments: Vec<Attachment>,
     attach_input: Entity<TextInput>,
@@ -125,6 +127,7 @@ impl BragiView {
             prompt,
             link_input,
             link_check: None,
+            copied: false,
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -171,9 +174,29 @@ impl BragiView {
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             let r = job.await;
             let _ = this.update(cx, |v, cx| {
-                if let Ok(Err(e)) = r {
-                    v.notice = Some(e.message);
+                v.copied = false;
+                match r {
+                    // Also on stdout, so the code is never stuck in the window.
+                    Ok(Ok(link)) => println!("bragi: link code: {link}"),
+                    Ok(Err(e)) => v.notice = Some(e.message),
+                    _ => {}
                 }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Puts the link code on the clipboard and says so for two seconds.
+    pub fn copy_code(&mut self, cx: &mut Context<Self>) {
+        let PairState::Offering { link, .. } = &self.state.pair else { return };
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(link.clone()));
+        self.copied = true;
+        cx.notify();
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            let _ = this.update(cx, |v, cx| {
+                v.copied = false;
                 cx.notify();
             });
         })
@@ -497,7 +520,11 @@ impl BragiView {
             PairState::Offering { link, .. } => card
                 .child(title("Open this code on your other device"))
                 .child(self.qr(link))
-                .child(div().w_full().text_size(px(10.)).text_color(rgb(t.text_secondary)).child(link.clone()))
+                .child(div().id("link-code").w_full().text_size(px(10.)).text_color(rgb(t.text_secondary)).child(link.clone()))
+                .child(
+                    self.button("copy-code", if self.copied { "Copied" } else { "Copy code" }, true)
+                        .on_click(cx.listener(|v, _, _, cx| v.copy_code(cx))),
+                )
                 .child(note("It works for two minutes.".into())),
             PairState::Confirm { sas } => card
                 .child(title("Do both screens show this code?"))
@@ -868,6 +895,20 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     shot(cx, "01-unpaired").await;
     this.update(cx, |v, cx| v.show_code(cx)).map_err(|e| e.to_string())?;
     wait_for(&this, cx, "the code", |v| matches!(v.state.pair, PairState::Offering { .. } | PairState::Confirm { .. })).await?;
+    // Copy puts the offered code on the clipboard (when the demo peer has not already moved on).
+    let copied = this
+        .update(cx, |v, cx| {
+            let PairState::Offering { link, .. } = v.state.pair.clone() else { return None };
+            v.copy_code(cx);
+            Some((link, cx.read_from_clipboard().and_then(|i| i.text())))
+        })
+        .map_err(|e| e.to_string())?;
+    if let Some((link, got)) = copied {
+        if got.as_deref() != Some(link.as_str()) {
+            return Err("the Copy button did not put the link code on the clipboard".into());
+        }
+        step("copied the link code");
+    }
     shot(cx, "02-code").await;
     wait_for(&this, cx, "the check", |v| matches!(v.state.pair, PairState::Confirm { .. })).await?;
     shot(cx, "03-check").await;
