@@ -5,12 +5,18 @@
 name: Platforms
 on:
   workflow_dispatch:
+    inputs:
+      only:
+        description: 'Run one job only: desktop or ios (default: both)'
+        required: false
+        default: ''
   pull_request:
     paths: ['crates/bragi-desktop/**', 'crates/bragi-core/**', 'app/**', '.github/workflows/platforms.yml']
 permissions:
   contents: read
 jobs:
   desktop:
+    if: ${{ github.event.inputs.only == '' || github.event.inputs.only == 'desktop' || github.event_name != 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +35,7 @@ jobs:
             target/release/bragi.exe
           if-no-files-found: ignore
   ios:
+    if: ${{ github.event.inputs.only == '' || github.event.inputs.only == 'ios' || github.event_name != 'workflow_dispatch' }}
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
@@ -38,5 +45,6 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
-      - run: flutter build ios --release --no-codesign
+      - run: flutter build ios --release --no-codesign -v 2>&1 | tail -n 400
+        shell: bash
         working-directory: app
