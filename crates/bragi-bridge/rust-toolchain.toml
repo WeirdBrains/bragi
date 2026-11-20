@@ -1,4 +1,4 @@
-# Read by the Flutter app's Native Assets build (app/hook/build.dart). B1 ships Android;
+# Read by the Flutter app's Native Assets build (app/hook/build.dart). B1 ships Android, B3 adds iOS;
 # the Linux targets are for `flutter test` on the host.
 [toolchain]
 channel = "1.99.1"
@@ -8,4 +8,7 @@ targets = [
   "x86_64-linux-android",
   "x86_64-unknown-linux-gnu",
   "aarch64-unknown-linux-gnu",
+  "aarch64-apple-ios",
+  "aarch64-apple-ios-sim",
+  "x86_64-apple-ios",
 ]
