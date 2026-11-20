@@ -24,6 +24,7 @@ abstract class BragiApi {
   bool isNodeAddress(String text);
   String addNode(String address);
   List<String> peers();
+  void dismissNodeSearch();
   Future<void> pairAcceptConfirm(bool matches);
   Future<rust.ChatStarted> send(String? conversation, String prompt, String? model);
   Future<rust.ChatStarted> sendWith(String? conversation, String prompt, String? model, List<rust.AttachmentView> files);
@@ -58,6 +59,8 @@ class RustBragiApi implements BragiApi {
   String addNode(String address) => rust.addNode(address: address);
   @override
   List<String> peers() => rust.peers();
+  @override
+  void dismissNodeSearch() => rust.dismissNodeSearch();
   @override
   Future<void> pairAcceptConfirm(bool matches) => rust.pairAcceptConfirm(matches: matches);
   @override

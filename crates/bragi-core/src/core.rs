@@ -48,6 +48,11 @@ pub fn normalize_link(code: &str) -> String {
 /// what the user added ([`Core::add_peer`]), dialed on every start.
 pub const PEERS_FILE: &str = "peers.txt";
 
+/// A peer id short enough for a status line: `12D3KooW…C5mz7`.
+fn short_peer(peer: &str) -> String {
+    if peer.len() <= 16 { peer.to_string() } else { format!("{}…{}", &peer[..8], &peer[peer.len() - 5..]) }
+}
+
 /// What the shells show once [`Core::add_node`] took an address.
 pub const NODE_ADDED: &str = "Added the node's address; looking for it…";
 
@@ -142,7 +147,48 @@ pub struct AppState {
     pub catalog: CatalogView,
     /// The Weirdnet node is running.
     pub online: bool,
+    /// What became of the last node address added in Link a device.
+    #[serde(default)]
+    pub node_search: NodeSearch,
 }
+
+/// The last node address added with [`Core::add_node`]: looked for, found, or not found in
+/// time. The shells show [`NodeSearch::line`]; any other user action clears it
+/// ([`Core::dismiss_node_search`]), and a found node clears itself after a few seconds.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum NodeSearch {
+    #[default]
+    Idle,
+    /// Dialing it; it shows up once it answers as an inference node.
+    Looking { node: String },
+    /// It answered: its models are in the list.
+    Found { node: String },
+    /// Not found in time (or not one of the user's devices); `message` says what to check.
+    NotFound { node: String, message: String },
+}
+
+impl NodeSearch {
+    /// The line to show, if any.
+    pub fn line(&self) -> Option<String> {
+        match self {
+            NodeSearch::Idle => None,
+            NodeSearch::Looking { node } => Some(format!("Looking for {node}…")),
+            NodeSearch::Found { node } => Some(format!("Connected to {node}.")),
+            NodeSearch::NotFound { message, .. } => Some(message.clone()),
+        }
+    }
+
+    /// Whether the line reports a problem (the shells draw it as a warning, not progress).
+    pub fn is_problem(&self) -> bool {
+        matches!(self, NodeSearch::NotFound { .. })
+    }
+}
+
+/// How long [`Core::add_node`] looks for the node before saying what to check.
+pub const NODE_SEARCH_LIMIT: Duration = Duration::from_secs(30);
+/// How long "Connected to …" stays up.
+pub const NODE_FOUND_SHOWN: Duration = Duration::from_secs(6);
 
 /// A streaming answer.
 pub struct ChatHandle {
@@ -190,6 +236,8 @@ pub(crate) struct Inner {
     pub(crate) requests: Mutex<HashMap<String, CancelToken>>,
     /// Approval cards waiting for an answer, by request id (agent mode).
     pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
+    /// The node search's generation (a newer search or a dismissal ends the older one) and limit.
+    pub(crate) search: Mutex<(u64, Duration)>,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -307,6 +355,7 @@ impl Core {
                 pairing: Mutex::new(None),
                 requests: Mutex::new(HashMap::new()),
                 cards: Mutex::new(HashMap::new()),
+                search: Mutex::new((0, NODE_SEARCH_LIMIT)),
             }),
             _runtime: runtime,
         };
@@ -759,9 +808,98 @@ impl Core {
 
     /// The Link a device box on every shell: a node address (see [`is_node_address`]) is added
     /// with [`add_peer`](Self::add_peer) and dialed at once. Returns the line to show the user.
+    ///
+    /// Progress goes to [`AppState::node_search`]: `Looking`, then `Found` once the node
+    /// answers as an inference node (cleared after [`NODE_FOUND_SHOWN`]), or `NotFound` with what
+    /// to check after [`NODE_SEARCH_LIMIT`].
     pub fn add_node(&self, address: &str) -> Result<String> {
         self.add_peer(address)?;
+        let peer = PeerHint::from_addr(address.trim()).map(|h| h.peer_id).unwrap_or_default();
+        let (generation, limit) = {
+            let mut s = lock(&self.inner.search);
+            s.0 += 1;
+            *s
+        };
+        let roster = self.net().ok().map(|n| (n.identity.roster(), n.node.peer_id().to_string()));
+        let linked = roster.as_ref().and_then(|(r, _)| r.active().find(|c| c.peer_id == peer).map(|c| c.label.clone()));
+        let node = linked.clone().unwrap_or_else(|| short_peer(&peer));
+        let search = match (&roster, linked) {
+            (Some((_, me)), _) if *me == peer => NodeSearch::NotFound {
+                node: node.clone(),
+                message: "That address is this device's own; paste a Ymir node's address (`ymirctl pool addresses` on the node).".into(),
+            },
+            (Some(_), None) => NodeSearch::NotFound {
+                node: node.clone(),
+                message: format!(
+                    "{node} isn't one of your linked devices. Link it first (on a linked Ymir node: `ymirctl pool add` with its code), then add its address."
+                ),
+            },
+            _ => NodeSearch::Looking { node: node.clone() },
+        };
+        let looking = matches!(search, NodeSearch::Looking { .. });
+        self.set_node_search(search);
+        if looking {
+            let core = self.clone();
+            self.inner.handle.spawn(async move { core.follow_node_search(generation, peer, node, limit).await });
+        }
         Ok(NODE_ADDED.to_string())
+    }
+
+    /// Waits for `peer` to show up among the inference nodes (or for the limit), as long as no
+    /// newer search or dismissal replaced this one.
+    async fn follow_node_search(&self, generation: u64, peer: String, node: String, limit: Duration) {
+        let current = |c: &Core| lock(&c.inner.search).0 == generation;
+        let mut w = self.inner.state.subscribe();
+        let deadline = tokio::time::Instant::now() + limit;
+        let found = loop {
+            if !current(self) {
+                return;
+            }
+            if w.borrow_and_update().catalog.nodes.iter().any(|n| n.id == peer) {
+                break true;
+            }
+            tokio::select! {
+                r = w.changed() => if r.is_err() { return },
+                _ = tokio::time::sleep_until(deadline) => break false,
+            }
+        };
+        if !current(self) {
+            return;
+        }
+        if found {
+            self.set_node_search(NodeSearch::Found { node });
+            tokio::time::sleep(NODE_FOUND_SHOWN).await;
+            if current(self) {
+                self.set_node_search(NodeSearch::Idle);
+            }
+        } else {
+            self.set_node_search(NodeSearch::NotFound {
+                node: node.clone(),
+                message: format!(
+                    "Couldn't reach {node} at that address yet. Check that ymird runs there with the inference role (`ymirctl status`), that the address is one `ymirctl pool addresses` prints, and that this device can reach it. Bragi keeps trying."
+                ),
+            });
+        }
+    }
+
+    fn set_node_search(&self, search: NodeSearch) {
+        self.inner.state.send_if_modified(|s| {
+            let changed = s.node_search != search;
+            s.node_search = search;
+            changed
+        });
+    }
+
+    /// The user did something else: the node search's line goes away (the address stays).
+    pub fn dismiss_node_search(&self) {
+        lock(&self.inner.search).0 += 1;
+        self.set_node_search(NodeSearch::Idle);
+    }
+
+    /// How long [`add_node`](Self::add_node) looks before saying what to check (default
+    /// [`NODE_SEARCH_LIMIT`]; tests and demos shorten it).
+    pub fn set_node_search_limit(&self, limit: Duration) {
+        lock(&self.inner.search).1 = limit;
     }
 
     /// Adds `addresses` to the ones sync passes and the node dial, and keeps them in

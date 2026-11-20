@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 210494261;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1331905741;
 
 // Section: executor
 
@@ -346,6 +346,52 @@ fn wire__crate__api__bragi__demo_fail_next_answer_after_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__bragi__demo_node_address_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "demo_node_address",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::bragi::demo_node_address())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__bragi__dismiss_node_search_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "dismiss_node_search",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::bragi::dismiss_node_search();
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -765,6 +811,31 @@ fn wire__crate__api__bragi__send_with_impl(
                     std::result::Result::Ok(output_ok)
                 })())
             }
+        },
+    )
+}
+fn wire__crate__api__bragi__set_node_search_limit_ms_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_node_search_limit_ms",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_ms = <u32>::sse_decode(&mut deserializer);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>({
+                    crate::api::bragi::set_node_search_limit_ms(api_ms);
+                })?;
+                std::result::Result::Ok(output_ok)
+            })())
         },
     )
 }
@@ -1244,12 +1315,16 @@ impl SseDecode for crate::api::bragi::StateView {
         let mut var_nodeCount = <u32>::sse_decode(deserializer);
         let mut var_models = <Vec<crate::api::bragi::ModelView>>::sse_decode(deserializer);
         let mut var_defaultModel = <Option<String>>::sse_decode(deserializer);
+        let mut var_nodeSearch = <String>::sse_decode(deserializer);
+        let mut var_nodeSearchLine = <Option<String>>::sse_decode(deserializer);
         return crate::api::bragi::StateView {
             pair: var_pair,
             online: var_online,
             node_count: var_nodeCount,
             models: var_models,
             default_model: var_defaultModel,
+            node_search: var_nodeSearch,
+            node_search_line: var_nodeSearchLine,
         };
     }
 }
@@ -1313,24 +1388,24 @@ fn pde_ffi_dispatcher_primary_impl(
         10 => wire__crate__api__bragi__delete_conversation_impl(port, ptr, rust_vec_len, data_len),
         11 => wire__crate__api__bragi__demo_answer_impl(port, ptr, rust_vec_len, data_len),
         12 => wire__crate__api__bragi__demo_fail_next_answer_after_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1348,9 +1423,12 @@ fn pde_ffi_dispatcher_sync_impl(
         3 => wire__crate__api__bragi__attach_bytes_impl(ptr, rust_vec_len, data_len),
         4 => wire__crate__api__bragi__attach_file_impl(ptr, rust_vec_len, data_len),
         5 => wire__crate__api__bragi__cancel_impl(ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__bragi__is_node_address_impl(ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__bragi__demo_node_address_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__bragi__dismiss_node_search_impl(ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__bragi__is_node_address_impl(ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1523,6 +1601,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::StateView {
             self.node_count.into_into_dart().into_dart(),
             self.models.into_into_dart().into_dart(),
             self.default_model.into_into_dart().into_dart(),
+            self.node_search.into_into_dart().into_dart(),
+            self.node_search_line.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1808,6 +1888,8 @@ impl SseEncode for crate::api::bragi::StateView {
         <u32>::sse_encode(self.node_count, serializer);
         <Vec<crate::api::bragi::ModelView>>::sse_encode(self.models, serializer);
         <Option<String>>::sse_encode(self.default_model, serializer);
+        <String>::sse_encode(self.node_search, serializer);
+        <Option<String>>::sse_encode(self.node_search_line, serializer);
     }
 }
 

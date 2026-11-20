@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:bragi/src/api.dart';
 import 'package:bragi/src/app.dart';
 import 'package:bragi/src/controller.dart';
+import 'package:bragi/src/theme.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -181,13 +182,27 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.enterText(find.byKey(const Key('link-code')), '  $address ');
     await tester.tap(find.byKey(const Key('link-go')));
-    await until('the address added', () => c.notice != null);
-    expect(c.notice, startsWith("Added the node's address"));
-    expect(rust.peers(), contains(address));
+    await until('the address added', () => rust.peers().contains(address));
+    expect(c.notice, isNull, reason: 'progress is not an error');
+    // That address isn't one of the demo user's devices: said at once, as a warning.
+    await until('the node search', () => c.nodeSearch == 'not_found');
+    expect(c.nodeSearchLine, contains("isn't one of your linked devices"));
+    expect(find.byKey(const Key('node-search')), findsOneWidget);
     expect(find.text(address), findsNothing, reason: 'the box is cleared');
     expect(await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')), isFalse);
     expect(c.notice, contains('peer'));
     expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
+    // Anything else the user does cleared the line.
+    expect(c.nodeSearchLine, isNull);
+
+    // A linked node: looking, then "Connected to …" in the success colour (it used to stay red forever).
+    final first = (await tester.runAsync(() async => rust.demoNodeAddress()))!;
+    expect(await tester.runAsync(() => c.linkDevice(first)), isTrue);
+    await until('connected', () => c.nodeSearch == 'found');
+    expect(c.nodeSearchLine, 'Connected to demo inference node.');
+    expect(c.notice, isNull);
+    final line = tester.widget<Text>(find.byKey(const Key('node-search')));
+    expect(line.style!.color, BragiColors.warm);
   });
 
   test('splice puts a delta at its offset', () {

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use bragi_core::demo::{DemoNode, Faults};
 use bragi_core::{
     AppState, Attachment, ChatEvent, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus,
-    PairState, Role, Transport,
+    NodeSearch, PairState, Role, Transport,
 };
 use gpui::{
     App, Bounds, Context, Entity, Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Task, WeakEntity, Window, WindowBounds,
@@ -87,7 +87,7 @@ impl BragiView {
     fn new(core: Core, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let theme = Theme::default();
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
-        let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code or node address", theme, cx));
+        let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
         let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
         cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
             if let TextInputEvent::Submit { .. } = ev {
@@ -211,6 +211,7 @@ impl BragiView {
     }
 
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         self.current = None;
         cx.notify();
     }
@@ -222,6 +223,7 @@ impl BragiView {
     }
 
     pub fn pick_model(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         self.model = Some(id.to_string());
         cx.notify();
     }
@@ -278,6 +280,7 @@ impl BragiView {
     }
 
     pub fn send(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         if self.streaming.is_some() {
             return;
         }
@@ -322,11 +325,11 @@ impl BragiView {
         let link = self.link_input.read(cx).text().to_string();
         // A node address (`/ip4/…/tcp/4848/p2p/…`, from `ymirctl pool addresses`) rather than a code:
         // dial that node from now on.
+        self.core.dismiss_node_search();
         if bragi_core::is_node_address(&link) {
-            self.notice = Some(match self.core.add_node(&link) {
-                Ok(line) => line,
-                Err(e) => e.message,
-            });
+            // Progress and the outcome come as the core's node search (drawn below the chat, not
+            // in red); only a refused address is an error.
+            self.notice = self.core.add_node(&link).err().map(|e| e.message);
             self.link_input.update(cx, |i, cx| i.set_text("", cx));
             cx.notify();
             return;
@@ -594,7 +597,16 @@ impl BragiView {
                 .flex_col()
                 .gap(px(6.))
                 .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("LINK A DEVICE"))
-                .child(div().px(px(8.)).py(px(6.)).rounded(px(6.)).bg(rgb(t.background)).text_size(px(12.)).child(self.link_input.clone()))
+                .child(
+                    div()
+                        .px(px(8.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .bg(rgb(t.background))
+                        .text_size(px(12.))
+                        .overflow_hidden()
+                        .child(self.link_input.clone()),
+                )
                 .child(self.button("link-go", "Link", false).on_click(cx.listener(|v, _, _, cx| v.link_device(cx)))),
         };
         div()
@@ -842,6 +854,14 @@ impl BragiView {
             .child(self.models(cx))
             .child(body)
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
+            .children(self.state.node_search.line().map(|line| {
+                let color = match &self.state.node_search {
+                    NodeSearch::Found { .. } => t.success,
+                    s if s.is_problem() => t.warning,
+                    _ => t.text_secondary,
+                };
+                div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(color)).child(line)
+            }))
             .children(any.then_some(above))
             .child(div().border_t_1().border_color(rgb(t.border)).child(bar))
     }
@@ -1064,6 +1084,39 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("agent task");
     shot(cx, "18-agent-answer").await;
+
+    // A node address pasted into Link a device: the placeholder fits the field, progress is
+    // not red, a node that never answers turns into advice, and a found one says so and clears.
+    shot(cx, "19-link-field").await;
+    let demo = DEMO.get().ok_or("no demo node")?.clone();
+    let second = demo.siblings().first().cloned().ok_or("no second demo node")?;
+    let gone = second.address();
+    second.stop();
+    wait_for(&this, cx, "the stopped node gone", |v| v.state.catalog.nodes.len() == 1).await?;
+    this.update(cx, |v, cx| {
+        v.core.set_node_search_limit(Duration::from_secs(4));
+        v.link_input.update(cx, |i, cx| i.set_text(&gone, cx));
+        v.link_device(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "looking", |v| matches!(v.state.node_search, NodeSearch::Looking { .. }) && v.notice.is_none()).await?;
+    step("looking for the node");
+    shot(cx, "20-node-looking").await;
+    wait_for(&this, cx, "the advice", |v| v.state.node_search.is_problem()).await?;
+    step("node not found: advice");
+    shot(cx, "21-node-not-found").await;
+    let first = demo.address();
+    this.update(cx, |v, cx| {
+        v.link_input.update(cx, |i, cx| i.set_text(&first, cx));
+        v.link_device(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "connected", |v| matches!(v.state.node_search, NodeSearch::Found { .. })).await?;
+    step("node found");
+    shot(cx, "22-node-found").await;
+    wait_for(&this, cx, "the line cleared", |v| v.state.node_search == NodeSearch::Idle).await?;
+    step("node line cleared");
+    shot(cx, "23-node-cleared").await;
     Ok(())
 }
 

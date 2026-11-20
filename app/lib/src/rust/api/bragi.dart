@@ -33,6 +33,11 @@ Future<void> startDemo({
 Future<void> demoFailNextAnswerAfter({required int words}) =>
     RustLib.instance.api.crateApiBragiDemoFailNextAnswerAfter(words: words);
 
+/// Where the demo's first inference node can be dialed (`/memory/…/p2p/…`), for a test that
+/// pastes a node address; none outside the demo.
+String? demoNodeAddress() =>
+    RustLib.instance.api.crateApiBragiDemoNodeAddress();
+
 /// The demo node's answer to `prompt`, which a test compares a continued answer with.
 Future<String> demoAnswer({required String model, required String prompt}) =>
     RustLib.instance.api.crateApiBragiDemoAnswer(model: model, prompt: prompt);
@@ -73,6 +78,14 @@ bool isNodeAddress({required String text}) =>
 /// no restart. Returns the line to show.
 String addNode({required String address}) =>
     RustLib.instance.api.crateApiBragiAddNode(address: address);
+
+/// The user did something else: the node search's line goes away.
+void dismissNodeSearch() =>
+    RustLib.instance.api.crateApiBragiDismissNodeSearch();
+
+/// How long `add_node` looks for the node before saying what to check (tests shorten it).
+void setNodeSearchLimitMs({required int ms}) =>
+    RustLib.instance.api.crateApiBragiSetNodeSearchLimitMs(ms: ms);
 
 /// The node addresses this device dials (its links' and the ones added).
 List<String> peers() => RustLib.instance.api.crateApiBragiPeers();
@@ -553,12 +566,19 @@ class StateView {
   final List<ModelView> models;
   final String? defaultModel;
 
+  /// The last node address added in Link a device: `idle`, `looking`, `found` or `not_found`,
+  /// and the line to show (none when idle). `found` is success, `not_found` a warning.
+  final String nodeSearch;
+  final String? nodeSearchLine;
+
   const StateView({
     required this.pair,
     required this.online,
     required this.nodeCount,
     required this.models,
     this.defaultModel,
+    required this.nodeSearch,
+    this.nodeSearchLine,
   });
 
   @override
@@ -567,7 +587,9 @@ class StateView {
       online.hashCode ^
       nodeCount.hashCode ^
       models.hashCode ^
-      defaultModel.hashCode;
+      defaultModel.hashCode ^
+      nodeSearch.hashCode ^
+      nodeSearchLine.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -578,7 +600,9 @@ class StateView {
           online == other.online &&
           nodeCount == other.nodeCount &&
           models == other.models &&
-          defaultModel == other.defaultModel;
+          defaultModel == other.defaultModel &&
+          nodeSearch == other.nodeSearch &&
+          nodeSearchLine == other.nodeSearchLine;
 }
 
 class SummaryView {

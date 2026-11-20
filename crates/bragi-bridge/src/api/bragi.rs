@@ -9,7 +9,7 @@ use std::time::Duration;
 use bragi_core::demo::DemoNode;
 use bragi_core::{
     AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus,
-    PairState, Role, ToolState,
+    NodeSearch, PairState, Role, ToolState,
 };
 use flutter_rust_bridge::frb;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -78,6 +78,10 @@ pub struct StateView {
     pub node_count: u32,
     pub models: Vec<ModelView>,
     pub default_model: Option<String>,
+    /// The last node address added in Link a device: `idle`, `looking`, `found` or `not_found`,
+    /// and the line to show (none when idle). `found` is success, `not_found` a warning.
+    pub node_search: String,
+    pub node_search_line: Option<String>,
 }
 
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
@@ -256,6 +260,14 @@ fn state_view(s: &AppState) -> StateView {
             })
             .collect(),
         default_model: s.catalog.default_model().map(str::to_string),
+        node_search: match s.node_search {
+            NodeSearch::Idle => "idle",
+            NodeSearch::Looking { .. } => "looking",
+            NodeSearch::Found { .. } => "found",
+            NodeSearch::NotFound { .. } => "not_found",
+        }
+        .into(),
+        node_search_line: s.node_search.line(),
     }
 }
 
@@ -453,6 +465,13 @@ pub fn demo_fail_next_answer_after(words: u32) -> Result<(), String> {
     Ok(())
 }
 
+/// Where the demo's first inference node can be dialed (`/memory/…/p2p/…`), for a test that
+/// pastes a node address; none outside the demo.
+#[frb(sync)]
+pub fn demo_node_address() -> Option<String> {
+    slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|r| r._demo.as_ref().map(|d| d.address()))
+}
+
 /// The demo node's answer to `prompt`, which a test compares a continued answer with.
 pub fn demo_answer(model: String, prompt: String) -> String {
     bragi_core::demo::answer_for(&model, &prompt)
@@ -539,6 +558,22 @@ pub fn is_node_address(text: String) -> bool {
 #[frb(sync)]
 pub fn add_node(address: String) -> Result<String, String> {
     core()?.add_node(&address).map_err(err)
+}
+
+/// The user did something else: the node search's line goes away.
+#[frb(sync)]
+pub fn dismiss_node_search() {
+    if let Ok(c) = core() {
+        c.dismiss_node_search();
+    }
+}
+
+/// How long `add_node` looks for the node before saying what to check (tests shorten it).
+#[frb(sync)]
+pub fn set_node_search_limit_ms(ms: u32) {
+    if let Ok(c) = core() {
+        c.set_node_search_limit(Duration::from_millis(ms.into()));
+    }
 }
 
 /// The node addresses this device dials (its links' and the ones added).

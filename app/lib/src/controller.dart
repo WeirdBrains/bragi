@@ -44,6 +44,10 @@ class BragiController extends ChangeNotifier {
   StreamSubscription<StateView>? _watch;
 
   String get pairState => state?.pair.state ?? 'unpaired';
+
+  /// The node search's line (an added node address: looking, connected, or what to check).
+  String? get nodeSearchLine => state?.nodeSearchLine;
+  String get nodeSearch => state?.nodeSearch ?? 'idle';
   bool get linked => pairState == 'linked';
   bool get streaming => requestId != null;
   bool get canContinue => !streaming && (current?.continuable ?? false);
@@ -88,6 +92,8 @@ class BragiController extends ChangeNotifier {
   Future<void> _try(Future<void> Function() f) async {
     try {
       notice = null;
+      // Anything the user does clears the node search's line (an added address starts a new one).
+      api.dismissNodeSearch();
       await f();
     } catch (e) {
       notice = '$e';
@@ -180,7 +186,8 @@ class BragiController extends ChangeNotifier {
     if (api.isNodeAddress(link)) {
       var added = false;
       await _try(() async {
-        notice = api.addNode(link);
+        // Progress and the outcome arrive as the state's node search; only a refusal is a notice.
+        api.addNode(link);
         added = true;
       });
       return added;

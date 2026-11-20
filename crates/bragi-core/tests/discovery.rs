@@ -5,7 +5,7 @@
 use std::time::{Duration, Instant};
 
 use bragi_core::demo::DemoNode;
-use bragi_core::{AppState, Config, Core, PairState, Transport};
+use bragi_core::{AppState, Config, Core, NodeSearch, PairState, Transport};
 
 async fn until(core: &Core, what: &str, limit: Duration, f: impl Fn(&AppState) -> bool) -> Option<AppState> {
     let deadline = Instant::now() + limit;
@@ -90,5 +90,53 @@ async fn without_addresses_an_added_one_finds_the_node_without_a_restart() {
     assert_eq!(core.add_node(&address).unwrap(), bragi_core::NODE_ADDED);
     assert!(core.peers().contains(&address));
     until(&core, "the added node's catalog", Duration::from_secs(30), |s| !s.catalog.nodes.is_empty()).await.expect("the added node found");
+    // The status line: looking, then "Connected to <its name>", which clears itself (it used to
+    // say "Added the node's address; looking for it…" forever).
+    let found = until(&core, "the node found", Duration::from_secs(10), |s| matches!(s.node_search, NodeSearch::Found { .. })).await.expect("found");
+    assert_eq!(found.node_search.line().as_deref(), Some("Connected to demo inference node."));
+    assert!(!found.node_search.is_problem());
+    until(&core, "the line cleared", bragi_core::NODE_FOUND_SHOWN + Duration::from_secs(3), |s| s.node_search == NodeSearch::Idle)
+        .await
+        .expect("cleared after a few seconds");
     assert!(core.add_node("/ip4/192.0.2.1/tcp/4848").is_err(), "an address without a peer id is refused");
+}
+
+/// The node search's other endings: a node that isn't linked, one that never answers (the
+/// limit), and the user moving on (dismissed).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_node_search_times_out_into_advice_and_clears_when_dismissed() {
+    let tmp = tempfile::tempdir().unwrap();
+    let demo = DemoNode::start_cloud(&tmp.path().join("demo"), Duration::from_millis(8)).await.unwrap();
+    let core = Core::start(demo.app_config(&tmp.path().join("app"), "Bragi test")).unwrap();
+    demo.auto_accept(&core);
+    core.pair_offer().await.unwrap();
+    until(&core, "the code check", Duration::from_secs(30), |s| matches!(s.pair, PairState::Confirm { .. })).await.expect("code check");
+    core.pair_confirm(true).unwrap();
+    until(&core, "both nodes", Duration::from_secs(30), |s| s.catalog.nodes.len() == 2).await.expect("both nodes");
+
+    // Not one of the user's devices: said at once.
+    core.add_node("/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY").unwrap();
+    let s = core.state();
+    assert!(s.node_search.is_problem() && s.node_search.line().unwrap().contains("isn't one of your linked devices"), "{:?}", s.node_search);
+
+    // A linked node that went away: looked for, then advice after the limit.
+    let second = demo.siblings()[0].clone();
+    let address = second.address();
+    second.stop();
+    until(&core, "the stopped node gone", Duration::from_secs(30), |s| s.catalog.nodes.len() == 1).await.expect("gone");
+    core.set_node_search_limit(Duration::from_secs(1));
+    core.add_node(&address).unwrap();
+    assert_eq!(core.state().node_search, NodeSearch::Looking { node: "demo inference node 2".into() });
+    assert_eq!(core.state().node_search.line().as_deref(), Some("Looking for demo inference node 2…"));
+    let s = until(&core, "the advice", Duration::from_secs(10), |s| s.node_search.is_problem()).await.expect("advice");
+    let line = s.node_search.line().unwrap();
+    assert!(line.contains("Couldn't reach demo inference node 2") && line.contains("ymirctl status"), "{line}");
+
+    // Anything else the user does clears it, and a dismissed search never comes back.
+    core.set_node_search_limit(Duration::from_millis(500));
+    core.add_node(&address).unwrap();
+    core.dismiss_node_search();
+    assert_eq!(core.state().node_search, NodeSearch::Idle);
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    assert_eq!(core.state().node_search, NodeSearch::Idle);
 }

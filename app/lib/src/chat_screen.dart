@@ -91,6 +91,22 @@ class _ChatScreenState extends State<ChatScreen> {
                 padding: const EdgeInsets.all(6),
                 child: Text(c.notice!, style: const TextStyle(color: BragiColors.error, fontSize: 12)),
               ),
+            if (c.nodeSearchLine != null)
+              Padding(
+                padding: const EdgeInsets.all(6),
+                child: Text(
+                  c.nodeSearchLine!,
+                  key: const Key('node-search'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: switch (c.nodeSearch) {
+                      'found' => BragiColors.warm,
+                      'not_found' => BragiColors.busy,
+                      _ => BragiColors.textSecondary,
+                    },
+                  ),
+                ),
+              ),
             if (c.card != null) _Card(controller: c),
             if (c.attachments.isNotEmpty)
               Padding(
@@ -395,7 +411,9 @@ class _History extends StatelessWidget {
                           key: const Key('link-code'),
                           controller: link,
                           decoration: const InputDecoration(
-                            hintText: 'weirdnet-bragi:// code or node address',
+                            hintText: 'Link code or node address',
+                            hintMaxLines: 1,
+                            hintStyle: TextStyle(overflow: TextOverflow.ellipsis),
                             isDense: true,
                             border: OutlineInputBorder(),
                           ),
