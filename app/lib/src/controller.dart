@@ -12,6 +12,16 @@ String splice(String text, int offset, String delta) {
   return kept + delta;
 }
 
+/// An agent task's approval card, waiting for the user.
+class ApprovalCard {
+  const ApprovalCard({required this.requestId, required this.ask, required this.summary, required this.tier});
+
+  final String requestId;
+  final int ask;
+  final String summary;
+  final String tier;
+}
+
 class BragiController extends ChangeNotifier {
   BragiController(this.api);
 
@@ -26,6 +36,11 @@ class BragiController extends ChangeNotifier {
   String? requestId;
   String? notice;
   LinkCheckView? linkCheck;
+
+  /// Files chosen for the next message, agent mode, and an agent task's approval card.
+  List<AttachmentView> attachments = const [];
+  bool agent = false;
+  ApprovalCard? card;
   StreamSubscription<StateView>? _watch;
 
   String get pairState => state?.pair.state ?? 'unpaired';
@@ -33,8 +48,7 @@ class BragiController extends ChangeNotifier {
   bool get streaming => requestId != null;
   bool get canContinue => !streaming && (current?.continuable ?? false);
   List<ModelView> get models => state?.models ?? const [];
-  String? get model =>
-      (_model != null && models.any((m) => m.id == _model)) ? _model : state?.defaultModel;
+  String? get model => (_model != null && models.any((m) => m.id == _model)) ? _model : state?.defaultModel;
 
   Future<void> attach() async {
     _watch = api.watchState().listen((s) {
@@ -97,13 +111,55 @@ class BragiController extends ChangeNotifier {
   }
 
   Future<void> open(String id) => _try(() async {
-        current = await api.conversation(id);
-        messages = List.of(current!.messages);
-      });
+    current = await api.conversation(id);
+    messages = List.of(current!.messages);
+  });
 
   Future<void> send(String prompt) async {
     if (streaming || prompt.trim().isEmpty) return;
-    await _try(() async => _follow(await api.send(current?.id, prompt, model)));
+    final files = attachments;
+    attachments = const [];
+    await _try(() async {
+      try {
+        final started = agent
+            ? await api.sendAgent(current?.id, prompt, null, files)
+            : await api.sendWith(current?.id, prompt, model, files);
+        await _follow(started);
+      } catch (_) {
+        attachments = files;
+        rethrow;
+      }
+    });
+  }
+
+  void toggleAgent() {
+    agent = !agent;
+    notifyListeners();
+  }
+
+  /// Adds a text file the picker returned. A binary or big one is refused with the core's words.
+  void attachFile(String name, List<int> bytes) {
+    try {
+      attachments = [...attachments, api.attachBytes(name, bytes)];
+      notice = null;
+    } catch (e) {
+      notice = '$e';
+    }
+    notifyListeners();
+  }
+
+  void detach(int index) {
+    attachments = [...attachments]..removeAt(index);
+    notifyListeners();
+  }
+
+  /// Answers the approval card: `once`, `task` or `deny`.
+  void answer(String choice) {
+    final c = card;
+    if (c == null) return;
+    card = null;
+    api.approve(c.requestId, c.ask, choice);
+    notifyListeners();
   }
 
   Future<void> continueAnswer() async {
@@ -120,10 +176,10 @@ class BragiController extends ChangeNotifier {
   Future<void> linkDevice(String link) => _try(() async => linkCheck = await api.pairAccept(link));
 
   Future<void> linkConfirm(bool matches) => _try(() async {
-        linkCheck = null;
-        await api.pairAcceptConfirm(matches);
-        notice = matches ? 'Linked.' : 'Cancelled.';
-      });
+    linkCheck = null;
+    await api.pairAcceptConfirm(matches);
+    notice = matches ? 'Linked.' : 'Cancelled.';
+  });
 
   Future<void> _follow(ChatStarted s) async {
     requestId = s.requestId;
@@ -137,13 +193,15 @@ class BragiController extends ChangeNotifier {
       if (e.kind == 'done' || e.kind == 'error') break;
     }
     requestId = null;
+    card = null;
     await _refresh();
   }
 
   void _apply(ChatEventView e) {
     if (messages.isEmpty || messages.last.role != 'assistant') return;
     final last = messages.last;
-    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes}) => MessageView(
+    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes, List<String>? tools}) =>
+        MessageView(
           role: last.role,
           text: text ?? last.text,
           state: last.state,
@@ -152,6 +210,9 @@ class BragiController extends ChangeNotifier {
           cacheHit: cacheHit ?? last.cacheHit,
           standin: standin ?? last.standin,
           resumes: resumes ?? last.resumes,
+          attachments: last.attachments,
+          tools: tools ?? last.tools,
+          agent: last.agent,
           atMs: last.atMs,
         );
     void replace(MessageView m) => messages = [...messages.take(messages.length - 1), m];
@@ -164,6 +225,14 @@ class BragiController extends ChangeNotifier {
         replace(with_(cacheHit: e.cacheHit, standin: e.standin));
       case 'resumed':
         replace(with_(node: e.node, resumes: last.resumes + 1));
+      case 'tool':
+        if (e.toolState == 'started' && e.tool != null && !last.tools.contains(e.tool)) {
+          replace(with_(tools: [...last.tools, e.tool!]));
+        }
+      case 'approval':
+        card = ApprovalCard(requestId: requestId!, ask: e.ask.toInt(), summary: e.text, tier: e.tier ?? 'other');
+      case 'notice':
+        notice = e.text;
       case 'retry':
         notice = 'No node answered; trying again (${e.attempt})…';
       case 'error':

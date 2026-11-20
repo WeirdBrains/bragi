@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 use bragi_core::demo::{DemoNode, Faults};
 use bragi_core::{
-    AppState, ChatEvent, ChatMessage, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus, PairState, Role,
-    Transport,
+    AppState, Attachment, ChatEvent, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus,
+    PairState, Role, Transport,
 };
 use gpui::{
     App, Bounds, Context, Entity, Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Task, WeakEntity, Window, WindowBounds,
@@ -35,6 +35,14 @@ struct Streaming {
     conversation: String,
 }
 
+/// An agent task's approval card, waiting for the user.
+struct Card {
+    request_id: String,
+    ask: u64,
+    summary: String,
+    tier: String,
+}
+
 pub struct BragiView {
     core: Core,
     theme: Theme,
@@ -46,6 +54,12 @@ pub struct BragiView {
     prompt: Entity<TextInput>,
     link_input: Entity<TextInput>,
     link_check: Option<LinkCheck>,
+    /// Files chosen for the next message, the path box that adds one, and agent mode.
+    attachments: Vec<Attachment>,
+    attach_input: Entity<TextInput>,
+    attach_open: bool,
+    agent: bool,
+    card: Option<Card>,
     notice: Option<String>,
     scroll: ScrollHandle,
     close_only: bool,
@@ -72,6 +86,13 @@ impl BragiView {
         let theme = Theme::default();
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code", theme, cx));
+        let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
+        cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
+            if let TextInputEvent::Submit { .. } = ev {
+                this.attach_typed(cx);
+            }
+        })
+        .detach();
         cx.subscribe_in(&prompt, window, |this, _, ev: &TextInputEvent, window, cx| match ev {
             TextInputEvent::Submit { .. } => this.send(window, cx),
             TextInputEvent::Cancel => this.stop(cx),
@@ -104,6 +125,11 @@ impl BragiView {
             prompt,
             link_input,
             link_check: None,
+            attachments: Vec::new(),
+            attach_input,
+            attach_open: false,
+            agent: false,
+            card: None,
             notice: None,
             scroll: ScrollHandle::new(),
             close_only: tiling_wm(),
@@ -181,18 +207,74 @@ impl BragiView {
         self.prompt.update(cx, |p, cx| p.set_text(text, cx));
     }
 
+    pub fn toggle_attach(&mut self, cx: &mut Context<Self>) {
+        self.attach_open = !self.attach_open;
+        cx.notify();
+    }
+
+    pub fn toggle_agent(&mut self, cx: &mut Context<Self>) {
+        self.agent = !self.agent;
+        cx.notify();
+    }
+
+    /// Adds the file named in the path box to the next message.
+    pub fn attach_typed(&mut self, cx: &mut Context<Self>) {
+        let path = self.attach_input.read(cx).text().trim().to_string();
+        self.attach_path(&path, cx);
+    }
+
+    pub fn attach_path(&mut self, path: &str, cx: &mut Context<Self>) {
+        let path = match path.strip_prefix("~/") {
+            Some(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)).unwrap_or_else(|| PathBuf::from(path)),
+            None => PathBuf::from(path),
+        };
+        match Attachment::from_path(&path) {
+            Ok(a) => {
+                self.attachments.push(a);
+                self.attach_input.update(cx, |i, cx| i.set_text("", cx));
+                self.attach_open = false;
+                self.notice = None;
+            }
+            Err(e) => self.notice = Some(e.message),
+        }
+        cx.notify();
+    }
+
+    pub fn detach(&mut self, index: usize, cx: &mut Context<Self>) {
+        if index < self.attachments.len() {
+            self.attachments.remove(index);
+        }
+        cx.notify();
+    }
+
+    pub fn answer_card(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        if let Some(c) = self.card.take() {
+            self.core.approve(&c.request_id, c.ask, choice);
+        }
+        cx.notify();
+    }
+
     pub fn send(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.streaming.is_some() {
             return;
         }
         let text = self.prompt.read(cx).text().to_string();
         let conv = self.current.as_ref().map(|c| c.id.clone());
-        match self.core.send(conv.as_deref(), &text, self.model()) {
+        let files = std::mem::take(&mut self.attachments);
+        let sent = if self.agent {
+            self.core.send_agent(conv.as_deref(), &text, None, None, files.clone())
+        } else {
+            self.core.send_with(conv.as_deref(), &text, self.model(), files.clone())
+        };
+        match sent {
+            Err(e) => {
+                self.attachments = files;
+                self.notice = Some(e.message);
+            }
             Ok(h) => {
                 self.prompt.update(cx, |p, cx| p.set_text("", cx));
                 self.follow(h, cx);
             }
-            Err(e) => self.notice = Some(e.message),
         }
         cx.notify();
     }
@@ -260,7 +342,7 @@ impl BragiView {
             while let Some(ev) = h.events.recv().await {
                 let end = matches!(ev, ChatEvent::Done { .. } | ChatEvent::Error { .. });
                 let alive = this.update(cx, |v, cx| {
-                    v.on_chat(&h.conversation_id, ev);
+                    v.on_chat(&h.request_id, &h.conversation_id, ev);
                     cx.notify();
                 });
                 if alive.is_err() || end {
@@ -269,6 +351,7 @@ impl BragiView {
             }
             let _ = this.update(cx, |v, cx| {
                 v.streaming = None;
+                v.card = None;
                 v.reload();
                 v.scroll.scroll_to_bottom();
                 cx.notify();
@@ -277,7 +360,7 @@ impl BragiView {
         .detach();
     }
 
-    fn on_chat(&mut self, conversation: &str, ev: ChatEvent) {
+    fn on_chat(&mut self, request_id: &str, conversation: &str, ev: ChatEvent) {
         let Some(c) = self.current.as_mut().filter(|c| c.id == conversation) else { return };
         let Some(last) = c.messages.last_mut().filter(|m| m.role == Role::Assistant) else { return };
         match ev {
@@ -297,6 +380,15 @@ impl BragiView {
                 last.node = Some(node);
                 last.resumes += 1;
             }
+            ChatEvent::Tool { tool, state: bragi_core::ToolState::Started, .. } => {
+                if !last.tools.contains(&tool) {
+                    last.tools.push(tool);
+                }
+            }
+            ChatEvent::Approval { ask, summary, tier, .. } => {
+                self.card = Some(Card { request_id: request_id.to_string(), ask, summary, tier });
+            }
+            ChatEvent::Notice { text } => self.notice = Some(text),
             ChatEvent::Retry { attempt, .. } => self.notice = Some(format!("No node answered; trying again ({attempt})…")),
             ChatEvent::Error { kind, message, .. } if kind != bragi_core::ErrorKind::Cancelled => self.notice = Some(message),
             _ => {}
@@ -542,6 +634,7 @@ impl BragiView {
             m.cache_hit.then(|| "cached".to_string()),
             m.standin.as_ref().map(|s| format!("stand-in {s}")),
             (m.resumes > 0).then(|| if m.resumes == 1 { "moved to another node".to_string() } else { format!("moved nodes {}×", m.resumes) }),
+            m.agent.then(|| if m.tools.is_empty() { "agent task".to_string() } else { format!("agent task · used {}", m.tools.join(", ")) }),
         ]
         .into_iter()
         .flatten()
@@ -562,6 +655,16 @@ impl BragiView {
                 .rounded(px(12.))
                 .bg(rgb(if mine { t.selection } else { t.surface }))
                 .children(meta.map(|s| div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(s)))
+                .children(m.attachments.iter().map(|a| {
+                    div()
+                        .px(px(8.))
+                        .py(px(3.))
+                        .rounded(px(6.))
+                        .bg(rgb(t.surface_variant))
+                        .text_size(px(12.))
+                        .text_color(rgb(t.text_secondary))
+                        .child(format!("attached: {} ({} lines)", a.name, a.text.lines().count()))
+                }))
                 .child(div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary)).child(if m.text.is_empty() {
                     "…".to_string()
                 } else {
@@ -593,8 +696,11 @@ impl BragiView {
             .gap(px(8.))
             .items_center()
             .p(px(12.))
-            .border_t_1()
-            .border_color(rgb(t.border))
+            .child(self.button("attach", "Attach", false).on_click(cx.listener(|v, _, _, cx| v.toggle_attach(cx))))
+            .child(
+                self.button("agent", if self.agent { "Agent: on" } else { "Agent: off" }, self.agent)
+                    .on_click(cx.listener(|v, _, _, cx| v.toggle_agent(cx))),
+            )
             .child(div().flex_1().px(px(12.)).py(px(9.)).rounded(px(8.)).bg(rgb(t.surface)).text_size(px(14.)).child(self.prompt.clone()));
         if can_continue {
             bar = bar.child(self.button("continue", "Continue", false).on_click(cx.listener(|v, _, _, cx| v.continue_answer(cx))));
@@ -604,6 +710,78 @@ impl BragiView {
         } else {
             bar.child(self.button("send", "Send", true).on_click(cx.listener(|v, _, window, cx| v.send(window, cx))))
         };
+        // Files chosen for the next message, the path box, and an agent task's approval card.
+        let mut above = div().flex().flex_col().gap(px(8.)).px(px(12.)).border_t_1().border_color(rgb(t.border));
+        let mut any = false;
+        if !self.attachments.is_empty() {
+            any = true;
+            let mut chips = div().flex().flex_row().gap(px(6.)).pt(px(8.));
+            for (i, a) in self.attachments.iter().enumerate() {
+                chips = chips.child(
+                    div()
+                        .id(SharedString::from(format!("chip-{i}")))
+                        .px(px(10.))
+                        .py(px(4.))
+                        .rounded(px(12.))
+                        .bg(rgb(t.surface_variant))
+                        .text_size(px(12.))
+                        .cursor_pointer()
+                        .on_click(cx.listener(move |v, _, _, cx| v.detach(i, cx)))
+                        .child(format!("{} ({} lines) ×", a.name, a.text.lines().count())),
+                );
+            }
+            above = above.child(chips);
+        }
+        if self.attach_open {
+            any = true;
+            above = above.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(8.))
+                    .items_center()
+                    .pt(px(8.))
+                    .child(
+                        div().flex_1().px(px(12.)).py(px(8.)).rounded(px(8.)).bg(rgb(t.surface)).text_size(px(13.)).child(self.attach_input.clone()),
+                    )
+                    .child(self.button("attach-add", "Add file", true).on_click(cx.listener(|v, _, _, cx| v.attach_typed(cx)))),
+            );
+        }
+        if let Some(card) = &self.card {
+            any = true;
+            above = above.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(10.))
+                    .items_center()
+                    .mt(px(8.))
+                    .p(px(10.))
+                    .rounded(px(10.))
+                    .border_1()
+                    .border_color(rgb(t.accent))
+                    .bg(rgb(t.surface))
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .flex_col()
+                            .child(div().text_size(px(13.)).text_color(rgb(t.text_primary)).child(card.summary.clone()))
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(rgb(t.text_secondary))
+                                    .child(format!("the node asks to {} · only you can say yes", card.tier)),
+                            ),
+                    )
+                    .child(self.button("allow-once", "Allow once", true).on_click(cx.listener(|v, _, _, cx| v.answer_card(Choice::Once, cx))))
+                    .child(
+                        self.button("allow-task", "Allow for this task", false)
+                            .on_click(cx.listener(|v, _, _, cx| v.answer_card(Choice::ThisTask, cx))),
+                    )
+                    .child(self.button("deny", "Deny", false).on_click(cx.listener(|v, _, _, cx| v.answer_card(Choice::Deny, cx)))),
+            );
+        }
         div()
             .flex()
             .flex_col()
@@ -611,7 +789,8 @@ impl BragiView {
             .child(self.models(cx))
             .child(body)
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
-            .child(bar)
+            .children(any.then_some(above))
+            .child(div().border_t_1().border_color(rgb(t.border)).child(bar))
     }
 }
 
@@ -770,6 +949,54 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     this.update(cx, |v, cx| v.open(&id, cx)).map_err(|e| e.to_string())?;
     wait_for(&this, cx, "it opened", |v| v.current.as_ref().is_some_and(|c| c.id == id && c.messages.len() == 2)).await?;
     shot(cx, "13-other-device-opened").await;
+
+    // B5: a text file attached to a question (the model reads it inline), then agent mode: a task
+    // on the node asks to use a tool, the user allows it once, and the answer says what it used.
+    let notes = std::env::temp_dir().join(format!("bragi-scenario-notes-{}.md", std::process::id()));
+    std::fs::write(&notes, "# Notes\n- buy milk\n- write the B5 milestone\n").map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.toggle_attach(cx);
+        v.attach_input.update(cx, |i, cx| i.set_text(&notes.display().to_string(), cx));
+    })
+    .map_err(|e| e.to_string())?;
+    shot(cx, "14-attach-path").await;
+    this.update(cx, |v, cx| {
+        v.attach_typed(cx);
+        v.set_prompt("What is on my list?", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the file chip", |v| v.attachments.len() == 1).await?;
+    shot(cx, "15-attached").await;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let text = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.text).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if !text.contains("I read bragi-scenario-notes-") || !text.contains("(3 lines)") {
+        return Err(format!("the attachment did not reach the model: {text:?}"));
+    }
+    step("attachment");
+    shot(cx, "16-attachment-answer").await;
+    let _ = std::fs::remove_file(&notes);
+
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.toggle_agent(cx);
+        v.set_prompt("Find my notes about groceries.", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the approval card", |v| v.card.is_some()).await?;
+    step("approval card");
+    shot(cx, "17-approval").await;
+    this.update(cx, |v, cx| v.answer_card(bragi_core::Choice::Once, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the task", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let (text, tools) = this.read_with(cx, |v, _| last_assistant(v).map(|m| (m.text, m.tools)).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if !text.contains("2 notes mention") || tools != ["notes.search"] {
+        return Err(format!("agent task: {text:?} {tools:?}"));
+    }
+    step("agent task");
+    shot(cx, "18-agent-answer").await;
     Ok(())
 }
 

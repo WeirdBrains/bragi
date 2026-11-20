@@ -18,6 +18,7 @@ dependencies:
   # 2.3.x pulls package:jni into desktop FFI plugin lists.
   path_provider_android: '>=2.2.5 <2.3.0'
   qr: ^4.0.1
+  file_picker: ^10.3.10
   material_ui: ^1.11.0
 
 dev_dependencies:

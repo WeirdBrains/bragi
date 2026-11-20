@@ -4,6 +4,7 @@ import 'rust/api/bragi.dart' as rust;
 
 export 'rust/api/bragi.dart'
     show
+        AttachmentView,
         ChatEventView,
         ChatStarted,
         ConversationView,
@@ -22,6 +23,10 @@ abstract class BragiApi {
   Future<rust.LinkCheckView> pairAccept(String link);
   Future<void> pairAcceptConfirm(bool matches);
   Future<rust.ChatStarted> send(String? conversation, String prompt, String? model);
+  Future<rust.ChatStarted> sendWith(String? conversation, String prompt, String? model, List<rust.AttachmentView> files);
+  Future<rust.ChatStarted> sendAgent(String? conversation, String prompt, String? node, List<rust.AttachmentView> files);
+  rust.AttachmentView attachBytes(String name, List<int> bytes);
+  bool approve(String requestId, int ask, String choice);
   Future<rust.ChatStarted> continueAnswer(String conversation, String? model);
   Stream<rust.ChatEventView> followChat(String requestId);
   bool cancel(String requestId);
@@ -50,6 +55,16 @@ class RustBragiApi implements BragiApi {
   Future<rust.ChatStarted> send(String? conversation, String prompt, String? model) =>
       rust.send(conversation: conversation, prompt: prompt, model: model);
   @override
+  Future<rust.ChatStarted> sendWith(String? conversation, String prompt, String? model, List<rust.AttachmentView> files) =>
+      rust.sendWith(conversation: conversation, prompt: prompt, model: model, files: files);
+  @override
+  Future<rust.ChatStarted> sendAgent(String? conversation, String prompt, String? node, List<rust.AttachmentView> files) =>
+      rust.sendAgent(conversation: conversation, prompt: prompt, node: node, files: files);
+  @override
+  rust.AttachmentView attachBytes(String name, List<int> bytes) => rust.attachBytes(name: name, bytes: bytes);
+  @override
+  bool approve(String requestId, int ask, String choice) => rust.approve(requestId: requestId, ask: BigInt.from(ask), choice: choice);
+  @override
   Future<rust.ChatStarted> continueAnswer(String conversation, String? model) =>
       rust.continueAnswer(conversation: conversation, model: model);
   @override
@@ -57,8 +72,7 @@ class RustBragiApi implements BragiApi {
   @override
   bool cancel(String requestId) => rust.cancel(requestId: requestId);
   @override
-  Future<List<rust.SummaryView>> conversations(int offset, int limit) =>
-      rust.conversations(offset: offset, limit: limit);
+  Future<List<rust.SummaryView>> conversations(int offset, int limit) => rust.conversations(offset: offset, limit: limit);
   @override
   Future<rust.ConversationView> conversation(String id) => rust.conversation(id: id);
   @override

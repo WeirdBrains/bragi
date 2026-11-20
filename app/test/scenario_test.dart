@@ -2,7 +2,9 @@
 // real bridge and bragi-core, against the in-process demo node: no fakes, no real network.
 //
 //   cargo build -p bragi-bridge
-//   BRAGI_BRIDGE_LIB=$CARGO_TARGET_DIR/debug/libbragi_bridge.so flutter test
+//   BRAGI_BRIDGE_LIB=$CARGO_TARGET_DIR/debug/libbragi_bridge.so flutter test --dart-define=BRAGI_DEMO=true
+//
+// (The demo define makes the attach button add a sample file instead of opening the system picker.)
 import 'dart:io';
 
 import 'package:bragi/src/api.dart';
@@ -133,6 +135,43 @@ void main() {
     final wantDies = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: dies)))!;
     expect(last().text, wantDies);
     expect(find.textContaining('moved to another node'), findsOneWidget);
+
+    // B5: a text file attached to a question reaches the model and stays with the message.
+    c.newChat();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('attach')));
+    await until('the file chip', () => shown('chip-0'));
+    expect(c.attachments.single.name, 'sample-notes.md');
+    await tester.enterText(find.byKey(const Key('prompt')), 'What is on my list?');
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the answer', () => !c.streaming && c.messages.length == 2 && last().state == 'complete');
+    expect(last().text, contains('I read sample-notes.md (3 lines)'));
+    expect(c.messages.first.attachments.single.name, 'sample-notes.md');
+    expect(c.attachments, isEmpty, reason: 'the chip went with the message');
+    expect(find.textContaining('attached: sample-notes.md'), findsOneWidget);
+    // A binary file is refused in the core's words.
+    c.attachFile('pic.png', [0x89, 0x50, 0x00, 0x01]);
+    expect(c.notice, contains('not a text file'));
+    expect(c.attachments, isEmpty);
+
+    // B5: agent mode. The node asks, the card is answered here, the tool runs on the node.
+    c.newChat();
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('agent')));
+    await tester.pump();
+    expect(c.agent, isTrue);
+    await tester.enterText(find.byKey(const Key('prompt')), 'Find my notes about groceries.');
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the approval card', () => shown('approval'));
+    expect(c.card!.summary, contains('notes.search'));
+    expect(c.card!.tier, 'navigate');
+    await tester.tap(find.byKey(const Key('allow-once')));
+    await until('the task', () => !c.streaming && c.messages.length == 2 && last().state == 'complete');
+    expect(last().text, contains('2 notes mention'));
+    expect(last().tools, ['notes.search']);
+    expect(last().agent, isTrue);
+    expect(find.textContaining('agent task · used notes.search'), findsOneWidget);
+    expect(c.card, isNull);
   });
 
   test('splice puts a delta at its offset', () {

@@ -37,7 +37,7 @@ scripts/desktop-scenario.sh /tmp/shots       # the scenario, headless, with scre
 
 cd app
 flutter_rust_bridge_codegen generate         # after changing crates/bragi-bridge/src/api
-BRAGI_BRIDGE_LIB=$CARGO_TARGET_DIR/debug/libbragi_bridge.so flutter test
+BRAGI_BRIDGE_LIB=$CARGO_TARGET_DIR/debug/libbragi_bridge.so flutter test --dart-define=BRAGI_DEMO=true
 flutter build apk                            # add --dart-define=BRAGI_DEMO=true for the demo
 ```
 
