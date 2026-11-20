@@ -32,7 +32,8 @@ else
   echo "signing: DEBUG key (sideload only; no aab)"
 fi
 cd app
-flutter build apk --release --split-per-abi
+# One retry: Gradle's first run downloads its plugins, and Maven Central sometimes answers 429.
+flutter build apk --release --split-per-abi || { sleep 60; flutter build apk --release --split-per-abi; }
 mkdir -p ../dist
 for abi in arm64-v8a armeabi-v7a x86_64; do
   cp "build/app/outputs/flutter-apk/app-$abi-release.apk" "../dist/bragi-$ver-android-$abi$suffix.apk"
