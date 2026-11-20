@@ -56,5 +56,6 @@ jobs:
         if: steps.build.outcome == 'failure'
         working-directory: app/ios
         run: |
-          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO build 2>&1 | grep -v 'built for newer' | grep -E -i -B2 -A6 'error|undefined|ld:' | head -n 120
+          xcodebuild -workspace Runner.xcworkspace -scheme Runner -configuration Release -sdk iphoneos CODE_SIGNING_ALLOWED=NO build > /tmp/xcb.log 2>&1 || true
+          grep -v '^ *export \|built for newer' /tmp/xcb.log | grep -n -E ' error: |^ld: |Undefined symbols|duplicate symbol|not found for|clang: error|library .* not found|framework .* not found' -A8 | head -n 100
           exit 1
