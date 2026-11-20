@@ -14,7 +14,6 @@ Weirdnet crates: `weirdnet-agent`, `weirdnet-device-link`, `weirdnet-sync`, `wei
 
 Known gaps:
 - Tested against a simulated inference node, not yet a real Ymir node or across real machines.
-- Continue sends the partial answer plus an instruction, so a real model may rephrase at the seam.
 - Link codes are pasted, with no QR scanner yet. Nothing is released or on a store.
 
 ## B2 Pool client (Done)
@@ -25,14 +24,19 @@ Weirdnet crates: `weirdnet-agent`.
 
 Known gaps:
 - Run against two simulated inference nodes only, not yet against real Ymir nodes or across machines.
-- Moving an answer to another node mid-stream needs a node that can resume from text already shown. Ymir nodes don't yet, so a real cut-off answer ends as a partial one until that lands in an unreleased weirdnet-agent.
+- Ymir M5 nodes now resume from text already shown, but that has only been tried against a mock engine on one computer.
 - Nodes are tried warm first. Speed and distance are not weighed, and you can't pick a node yourself.
 
-## B3 Platforms (Planned)
+## B3 Platforms (In progress)
 
-iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid.
+iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid. Android release builds, F-Droid metadata and a Linux tarball are built; macOS, Windows and iOS need machines this box doesn't have.
 
 Weirdnet crates: none new.
+
+Known gaps:
+- macOS, Windows and iOS are not built or tested yet. The desktop shell compiles for Windows (cargo check), and a CI workflow and iOS project exist but have not run.
+- Nothing is signed with a real key or uploaded. Play, F-Droid and TestFlight need a keystore, a tagged release and Apple developer access from m3talsmith.
+- The F-Droid recipe is a draft that was never run through fdroid build.
 
 ## B4 Sync and optional extras (Planned)
 

@@ -11,7 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B1** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
+Status: **B3 in progress (B1 and B2 done)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
 inference node, streaming chat with stop and continue, and local history, on Linux (GPUI) and
 Android (Flutter). Nothing is released yet.
 
@@ -45,6 +45,11 @@ GPUI needs its usual Linux build dependencies (Vulkan, Wayland and X11 headers, 
 Flutter app builds `bragi-bridge` through the Native Assets hook (`app/hook/build.dart`), so the
 Android SDK and NDK and the Rust Android targets in `crates/bragi-bridge/rust-toolchain.toml` are
 needed.
+
+Packaging (B3; nothing is published): `scripts/package-android.sh` writes the per-ABI apks and the
+aab to `dist/android` (signed with `app/android/key.properties` if present, else the debug key),
+and `scripts/package-linux.sh` writes a tarball. macOS, Windows and iOS are not built yet; see
+`.github/workflows/platforms.yml`.
 
 ## License
 
