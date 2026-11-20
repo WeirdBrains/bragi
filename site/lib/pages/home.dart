@@ -61,6 +61,28 @@ class Home extends StatelessComponent {
       section(classes: 'section', [
         div(classes: 'wrap', [
           div(classes: 'section-head', [
+            h2([Component.text('The phone app')]),
+            p([
+              Component.text(
+                'The Android app on the same demo profile, run on a headless emulator. It does the same things '
+                'through the same core.',
+              ),
+            ]),
+          ]),
+          div(classes: 'shots phones', [
+            shot('phone-check.png', 'Bragi on Android showing the pairing check code', 'Pairing check.'),
+            shot('phone-answer.png', 'Bragi on Android showing a streamed answer', 'A streamed answer.'),
+            shot(
+              'phone-stopped.png',
+              'Bragi on Android with a stopped answer and a Continue button',
+              'Stopped, with Continue.',
+            ),
+          ]),
+        ]),
+      ]),
+      section(classes: 'section band', [
+        div(classes: 'wrap', [
+          div(classes: 'section-head', [
             h2([Component.text('How it fits')]),
             p([Component.text('One shared Rust core does all the work. The desktop and phone apps only draw it.')]),
           ]),
