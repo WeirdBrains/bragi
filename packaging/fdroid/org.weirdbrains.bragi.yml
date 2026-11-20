@@ -1,0 +1,40 @@
+# DRAFT F-Droid build recipe, never run through `fdroid build` (no fdroidserver here). The Flutter and
+# Rust toolchain steps will need adjusting with F-Droid's reviewers. F-Droid build recipe (submit to fdroiddata once a tagged release exists). Not yet submitted;
+# Bragi publishes nothing at B3. The tag v0.1.0 does not exist yet.
+Categories:
+  - Internet
+  - Connectivity
+License: BSD-3-Clause
+AuthorName: Weird Brains
+SourceCode: https://github.com/WeirdBrains/bragi
+IssueTracker: https://github.com/WeirdBrains/bragi/issues
+
+AutoName: Bragi
+
+RepoType: git
+Repo: https://github.com/WeirdBrains/bragi.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: v0.1.0
+    subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y rustc cargo
+    output: build/app/outputs/flutter-apk/app-release.apk
+    srclibs:
+      - flutter@stable
+    prebuild:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get
+    build:
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter build apk --release --split-per-abi
+    ndk: r28c
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1
