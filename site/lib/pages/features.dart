@@ -8,8 +8,9 @@ const _html = '''
 <h2 id="pairing">Pairing</h2>
 <p>Bragi links to your Weirdnet identity like any of your devices. Either it shows a code for a device that is
 already linked, or, as a linked device, it opens another device's code. Both screens show the same six digits to
-compare, so a stranger can't slip in. Link codes use the <code>weirdnet-bragi://</code> scheme. For now they are pasted
-in; a QR scanner is not built yet.</p>
+compare, so a stranger can't slip in. Bragi's own codes use the <code>weirdnet-bragi://</code> scheme, and it also opens
+codes from Ymir (<code>weirdnet-ymir://</code>), whose <code>ymirctl pool add</code> in turn opens Bragi's.
+For now codes are pasted in; a QR scanner is not built yet.</p>
 <h2 id="models">Models</h2>
 <p>Bragi lists the chat models your Ymir inference node offers, warm ones first, with live status (warm, busy, loads
 on use). A multi-node catalog comes with the pool client (B2).</p>

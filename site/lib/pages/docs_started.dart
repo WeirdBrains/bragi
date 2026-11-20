@@ -23,18 +23,21 @@ cd app &amp;&amp; flutter build apk                      # the Android app (need
 <a href="${download}">Download</a> page.</p>
 
 <h2 id="link">Link Bragi to your Weirdnet</h2>
-<p>Bragi joins your Weirdnet identity like any of your devices, and it needs another already-linked device to admit it.</p>
+<p>Bragi joins your Weirdnet identity like any of your devices, and it needs a device that is already linked (Ymir
+or another Bragi) to admit it. Either side can show the code.</p>
+<p><strong>Bragi shows the code:</strong></p>
 <ol>
 <li>Open Bragi. It says <em>Link Bragi to your Weirdnet</em>. Tap <strong>Show a link code</strong>.</li>
-<li>Bragi shows a <code>weirdnet-bragi://link/…</code> code, as text and as a QR code. On the phone you can copy it. The code works for two minutes. There is no QR scanner yet, so codes are pasted.</li>
-<li>Open the code on a device that is already linked and accepts Bragi codes, such as another linked Bragi.</li>
-<li>Bragi shows <em>Do both screens show this code?</em> and six digits. Compare them with the other device. If they match, tap <strong>They match</strong>. If not, tap <strong>They don't</strong>, and start again.</li>
+<li>Bragi shows a <code>weirdnet-bragi://link/…</code> code, as text and as a QR code. On the phone you can copy it. The code works for two minutes.</li>
+<li>On a Ymir device that is already in the pool, run <code>ymirctl pool add 'weirdnet-bragi://link/…'</code>. In another linked Bragi, open it as a code from another device.</li>
+<li>Bragi shows <em>Do both screens show this code?</em> and six digits, and the other device shows the same six. Compare them. If they match, tap <strong>They match</strong>. If not, tap <strong>They don't</strong> and start again.</li>
 <li>When the other device confirms too, Bragi goes online.</li>
 </ol>
-<p>A linked Bragi can also admit another device: it opens that device's code and shows the same six-digit check.
-The Ymir command line, <code>ymirctl pool add</code>, reads <code>weirdnet-ymir://</code> and
-<code>weirdnet-morph://</code> codes today, not <code>weirdnet-bragi://</code> ones. See
-<a href="${ymirGuide}#bragi">the Ymir guide</a> for the current state.</p>
+<p><strong>The other device shows the code:</strong> a linked Bragi can admit a new Ymir node. Run
+<code>ymirctl pool link</code> on the node, open the <code>weirdnet-ymir://link/…</code> code in Bragi, compare the six
+digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
+<p>There is no QR scanner yet, so codes are pasted. This linking is covered by automated tests and by an end-to-end test
+of a headless Bragi against real Ymir nodes on one computer; it has not yet been tried across separate machines.</p>
 
 <h2 id="chat">Chat</h2>
 <ul>
