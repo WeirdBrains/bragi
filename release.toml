@@ -1,0 +1,118 @@
+# Bragi release config for weirdnet-project-helpers (scripts/weirdnet_release.py). docs/RELEASES.md has the
+# whole flow: cut (this file), the Release workflow builds every platform on the tag, then the `next` steps.
+#
+# CARGO_TARGET_DIR is not set here (no host paths in a public repo): export it to a scratch directory
+# outside the checkout before running the release.
+helpers = "0.3.2"
+project = "bragi"
+require_message = true
+tag_message = "{tag}: {title}"
+next = [
+  "gh run watch (the Release workflow on {tag}), then gh run download RUN -D dist/ and flatten dist/*/* into dist/",
+  "Scan every file in dist/ for private details (strings | grep) before uploading",
+  "python3 scripts/weirdnet_release.py github {version}   # GitHub release with GitHub-named SHA256SUMS",
+  "python3 scripts/weirdnet_release.py assets {version}",
+  "packaging/arch/bragi-bin/PKGBUILD: pkgver={pkgver}, _ver={version}, both tarballs' sha256; .SRCINFO; packaging/nix/release.json",
+  "python3 scripts/weirdnet_release.py taur {version} --dry-run, then without --dry-run",
+  "Website: latestVersion in site/lib/site.dart, push, check the Pages workflow and https://bragi.weirdbrains.com/download/",
+]
+
+[[files]]
+kind = "cargo-workspace"
+path = "Cargo.toml"
+primary = true
+
+[[files]]
+kind = "pubspec"                # versionName / CFBundleShortVersionString follow the release; the +N build
+paths = ["app/pubspec.yaml"]    # (versionCode / CFBundleVersion) grows by one each release
+build = "increment"
+
+[[files]]
+kind = "cargo-lock"
+paths = ["Cargo.lock"]
+
+[changelog]
+path = "CHANGELOG.md"
+first_message_is_title = true
+
+[checks]
+commands = [
+  "cargo fmt --all --check",
+  "cargo clippy --locked --workspace --all-targets -- -D warnings",
+  "cargo test -q --locked --workspace",
+]
+
+[crates]
+publish = []                    # bragi-core, bragi-desktop and bragi-bridge are publish = false (app crates)
+
+[taur]
+org = "WeirdBrains"
+
+[[taur.packages]]
+name = "bragi-bin"
+dir = "packaging/arch/bragi-bin"
+source_contains = "v{version}"
+
+[github]
+files = [
+  "dist/bragi-{version}-x86_64-unknown-linux-gnu.tar.gz", "dist/bragi-{version}-x86_64-unknown-linux-gnu.zip",
+  "dist/bragi-{version}-aarch64-unknown-linux-gnu.tar.gz", "dist/bragi-{version}-aarch64-unknown-linux-gnu.zip",
+  "dist/bragi_{debver}-1_amd64.deb", "dist/bragi-standalone_{debver}-1_amd64.deb",
+  "dist/bragi_{debver}-1_arm64.deb", "dist/bragi-standalone_{debver}-1_arm64.deb",
+  "dist/bragi-{debver}-1.x86_64.rpm", "dist/bragi-standalone-{debver}-1.x86_64.rpm",
+  "dist/bragi-{debver}-1.aarch64.rpm", "dist/bragi-standalone-{debver}-1.aarch64.rpm",
+  "dist/bragi-{pkgver}-1-x86_64.pkg.tar.zst", "dist/bragi-standalone-{pkgver}-1-x86_64.pkg.tar.zst",
+  "dist/bragi-{pkgver}-1-aarch64.pkg.tar.zst", "dist/bragi-standalone-{pkgver}-1-aarch64.pkg.tar.zst",
+  "dist/bragi-{version}-universal-apple-darwin.zip", "dist/bragi-{version}-universal-apple-darwin.dmg",
+  "dist/bragi-{version}-universal-apple-darwin.tar.gz",
+  "dist/bragi-{version}-*-pc-windows-msvc.zip", "dist/bragi-{version}-*-pc-windows-msvc.exe",
+  "dist/bragi-{version}-*-pc-windows-msvc.msi", "dist/bragi-{version}-*-pc-windows-msvc-setup.exe",
+  "dist/bragi-{version}-android-*.apk",
+  "dist/bragi-{version}-ios-*.ipa",
+]
+sums = "SHA256SUMS"
+
+# BSDs: Bragi's desktop shell is GPUI, which does not build for FreeBSD (CI job `freebsd` in
+# platforms.yml), OpenBSD or DragonFly, and the phone app is Flutter (no BSD embedder until Salty Gull's
+# fork). The release script has no BSD os values yet; bragi-core itself builds and tests on FreeBSD.
+
+[[platforms]]
+os = "linux"
+arch = ["x86_64", "aarch64"]
+formats = ["tar.gz", "zip", "deb", "rpm", "pkg.tar.zst", "nix"]
+channels = ["github", "taur", "nix"]
+assets = ["bragi-{version}-x86_64-unknown-linux-gnu.tar.gz", "bragi-{version}-aarch64-unknown-linux-gnu.tar.gz",
+          "bragi-{version}-*-unknown-linux-gnu.zip", "bragi_*_amd64.deb", "bragi-standalone_*_arm64.deb",
+          "bragi-*.x86_64.rpm", "bragi-standalone-*.aarch64.rpm", "bragi-*-x86_64.pkg.tar.zst",
+          "bragi-standalone-*-aarch64.pkg.tar.zst", "SHA256SUMS"]
+
+[[platforms]]
+os = "macos"
+arch = ["universal"]
+formats = ["zip", "dmg", "app", "tar.gz"]
+channels = ["github"]
+assets = ["bragi-{version}-universal-apple-darwin.zip", "bragi-{version}-universal-apple-darwin.dmg",
+          "bragi-{version}-universal-apple-darwin.tar.gz"]
+
+[[platforms]]
+os = "windows"
+arch = ["x86_64", "aarch64"]
+formats = ["zip", "exe", "exe-wix", "msi"]
+channels = ["github"]
+assets = ["bragi-{version}-x86_64-pc-windows-msvc.zip", "bragi-{version}-x86_64-pc-windows-msvc.exe",
+          "bragi-{version}-x86_64-pc-windows-msvc.msi", "bragi-{version}-x86_64-pc-windows-msvc-setup.exe"]
+
+[[platforms]]
+os = "android"
+arch = ["aarch64", "x86_64"]
+arch_note = "armeabi-v7a is built too"
+formats = ["apk", "aab"]
+channels = ["github", "apk-sideload", "fdroid", "google-play"]
+assets = ["bragi-{version}-android-arm64-v8a*.apk", "bragi-{version}-android-x86_64*.apk"]
+
+[[platforms]]
+os = "ios"
+arch = ["aarch64"]
+formats = ["ipa"]
+channels = ["altstore", "adhoc-ipa", "eu-marketplace", "testflight", "app-store"]
+assets = []                     # GitHub assets are not an iOS channel here; the unsigned ipa is on the release for AltStore/Sideloadly
