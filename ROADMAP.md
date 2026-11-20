@@ -57,6 +57,6 @@ Text attachments and agent mode (tool calls with approval cards) are built and s
 Weirdnet crates: `weirdnet-agent`.
 
 Known gaps:
-- BSDs: GPUI covers FreeBSD, but it cannot be cross-built from Linux. The `freebsd` CI job (manual) has never run; OpenBSD and DragonFly are not GPUI targets.
+- BSDs: the desktop app does not build on FreeBSD. GPUI compiles gpui_linux for FreeBSD but gates `layer_shell` and the priority queue to linux/windows/wasm, at the pinned rev and on Zed main (a Zed bug, found by the `freebsd` CI job). bragi-core is tested there by the job; OpenBSD and DragonFly are not GPUI targets.
 - Ymir M9 now serves agent tasks (task/1), tested with a task client, but Bragi's agent mode was only run against the demo node, not a real `ymird`.
 - Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.
