@@ -11,7 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B4 in progress (B1 and B2 done, B3 in progress)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
+Status: **B5 in progress (B1 and B2 done, B3 and B4 in progress)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
 inference node, streaming chat with stop and continue, and history that syncs between your devices, on Linux (GPUI) and
 Android (Flutter). Nothing is released yet.
 

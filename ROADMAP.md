@@ -50,8 +50,13 @@ Known gaps:
 - The on-device model is not started: it needs a llama.cpp build and packaging on both platforms.
 - Requests still send whole messages; Bragi does not yet hand a Ymir node a conversation id.
 
-## B5 Breadth (Planned)
+## B5 Breadth (In progress)
 
-BSDs where the desktop toolkit builds, agent mode and attachments, on both shells.
+Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is not built or run: a FreeBSD CI job is written but never ran.
 
 Weirdnet crates: `weirdnet-agent`.
+
+Known gaps:
+- BSDs: GPUI covers FreeBSD, but it cannot be cross-built from Linux. The `freebsd` CI job (manual) has never run; OpenBSD and DragonFly are not GPUI targets.
+- Real Ymir nodes do not serve agent tasks (task/1) yet, so agent mode only ran against the demo node.
+- Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.
