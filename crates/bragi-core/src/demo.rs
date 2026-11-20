@@ -267,7 +267,9 @@ impl ModelBackend for AgentModel {
     ) -> std::result::Result<ModelTurn, ModelError> {
         match messages.last() {
             Some(m) if m.role == Role::Tool => {
-                self.say(deltas, cancel, &format!("The notes tool said: {}. That is everything it found.", m.content)).await?;
+                // The runtime wraps tool output in `<untrusted_tool_result>` and adds a trace note.
+                let said: Vec<&str> = m.content.lines().filter(|l| !l.starts_with('<') && !l.starts_with('[')).collect();
+                self.say(deltas, cancel, &format!("The notes tool said: {}. That is everything it found.", said.join(" "))).await?;
                 Ok(ModelTurn { text: String::new(), tool_calls: Vec::new() })
             }
             other => {

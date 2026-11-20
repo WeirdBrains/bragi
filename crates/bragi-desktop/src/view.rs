@@ -563,6 +563,7 @@ impl BragiView {
             .flex()
             .flex_col()
             .gap(px(10.))
+            .flex_none()
             .w(px(240.))
             .p(px(10.))
             .bg(rgb(t.surface))
@@ -577,7 +578,18 @@ impl BragiView {
     fn models(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let picked = self.model();
-        let mut row = div().flex().flex_row().gap(px(8.)).items_center().px(px(16.)).py(px(10.)).border_b_1().border_color(rgb(t.border));
+        let mut row = div()
+            .id("models")
+            .flex()
+            .flex_none()
+            .flex_row()
+            .gap(px(8.))
+            .items_center()
+            .px(px(16.))
+            .py(px(10.))
+            .overflow_x_scroll()
+            .border_b_1()
+            .border_color(rgb(t.border));
         if self.state.catalog.models.is_empty() {
             row = row.child(div().text_size(px(13.)).text_color(rgb(t.text_secondary)).child("Looking for your inference nodes…"));
         }
@@ -603,6 +615,7 @@ impl BragiView {
                     .flex_row()
                     .items_center()
                     .gap(px(6.))
+                    .flex_none()
                     .px(px(10.))
                     .py(px(5.))
                     .rounded(px(14.))
@@ -786,6 +799,8 @@ impl BragiView {
             .flex()
             .flex_col()
             .flex_1()
+            .min_w(px(0.))
+            .overflow_hidden()
             .child(self.models(cx))
             .child(body)
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
