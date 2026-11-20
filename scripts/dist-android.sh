@@ -13,7 +13,7 @@ root=$(pwd)
 ver=$(sed -n 's/^version: *\([0-9][^+ ]*\).*/\1/p' app/pubspec.yaml)
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home/user"
 props=app/android/key.properties
-cleanup() { [ -n "${made_props:-}" ] && rm -f "$props"; }
+cleanup() { if [ -n "${made_props:-}" ]; then rm -f "$props"; fi; }
 trap cleanup EXIT
 if [ -n "${BRAGI_ANDROID_KEYSTORE:-}" ]; then
   [ -f "$props" ] && { echo "$props exists; not overwriting it" >&2; exit 1; }
