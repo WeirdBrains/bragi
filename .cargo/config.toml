@@ -6,3 +6,8 @@ rustflags = ["-C", "link-arg=-miphoneos-version-min=15.0"]
 rustflags = ["-C", "link-arg=-miphoneos-version-min=15.0"]
 [target.aarch64-apple-ios-sim]
 rustflags = ["-C", "link-arg=-mios-simulator-version-min=15.0"]
+
+# The Flutter hook runs cargo with a trimmed environment (and may set RUSTFLAGS, which beats the
+# rustflags above), so also pin the deployment target where cargo and rustc will see it.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = "15.0"
