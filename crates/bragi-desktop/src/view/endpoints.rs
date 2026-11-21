@@ -245,10 +245,7 @@ impl BragiView {
             let r = job.await;
             let _ = this.update(cx, |v, cx| {
                 let line = match r {
-                    Ok(Ok(t)) if t.ok => (
-                        true,
-                        format!("{} · {} model{} · {} ms", t.message, t.models.len(), if t.models.len() == 1 { "" } else { "s" }, t.latency_ms),
-                    ),
+                    Ok(Ok(t)) if t.ok => (true, format!("{} · {} ms", t.message, t.latency_ms)),
                     Ok(Ok(t)) => (false, t.message),
                     Ok(Err(e)) => (false, e.message),
                     Err(e) => (false, e.to_string()),
