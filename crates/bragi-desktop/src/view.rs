@@ -984,7 +984,7 @@ impl BragiView {
                 };
                 div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(color)).child(line)
             }))
-                        .children(any.then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
+            .children(any.then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
             .child(div().flex_none().border_t_1().border_color(rgb(t.border)).child(bar))
     }
 }
