@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::{lock, random_id};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::openai;
+use crate::secrets::SecretStore;
 
 pub const ENDPOINTS_FILE: &str = "endpoints.json";
 pub const SECRETS_FILE: &str = "secrets.enc";
@@ -48,6 +49,9 @@ pub struct Endpoint {
     pub mode: EndpointMode,
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// The key is in the OS keychain (otherwise, if there is one, in the sealed file).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub in_keychain: bool,
 }
 
 fn yes() -> bool {
@@ -105,6 +109,8 @@ impl std::fmt::Debug for EndpointInput {
 pub struct Endpoints {
     dir: PathBuf,
     list: Mutex<Vec<Endpoint>>,
+    /// The OS keychain, once a shell has opted in; keys go there instead of the sealed file.
+    keychain: Mutex<Option<Arc<dyn SecretStore>>>,
 }
 
 fn storage(e: impl std::fmt::Display) -> CoreError {
@@ -114,7 +120,7 @@ fn storage(e: impl std::fmt::Display) -> CoreError {
 impl Endpoints {
     pub fn open(dir: &Path) -> Self {
         let list = std::fs::read_to_string(dir.join(ENDPOINTS_FILE)).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Self { dir: dir.to_path_buf(), list: Mutex::new(list) }
+        Self { dir: dir.to_path_buf(), list: Mutex::new(list), keychain: Mutex::new(None) }
     }
 
     fn save(&self, list: &[Endpoint]) -> Result<()> {
@@ -145,6 +151,7 @@ impl Endpoints {
             model: input.model.map(|m| m.trim().to_string()).filter(|m| !m.is_empty()),
             mode: input.mode,
             enabled: input.enabled,
+            in_keychain: false,
         };
         let mut list = lock(&self.list);
         if list.len() >= MAX_ENDPOINTS {
@@ -154,11 +161,11 @@ impl Endpoints {
         self.save(&list)?;
         drop(list);
         let key = api_key.map(|k| k.trim().to_string()).filter(|k| !k.is_empty());
-        let has_key = key.is_some();
         if let Some(k) = key {
             self.set_key(&e.id, Some(&k))?;
         }
-        Ok(view(&e, has_key))
+        let e = self.get(&e.id).unwrap_or(e);
+        Ok(view(&e, self.has_key(&e)))
     }
 
     pub fn edit(&self, id: &str, input: EndpointInput, key: KeyChange) -> Result<EndpointView> {
@@ -179,8 +186,8 @@ impl Endpoints {
             KeyChange::Set(k) if !k.trim().is_empty() => self.set_key(id, Some(k.trim()))?,
             KeyChange::Set(_) | KeyChange::Clear => self.set_key(id, None)?,
         }
-        let has_key = self.read_secrets().unwrap_or_default().contains_key(id);
-        Ok(view(&e, has_key))
+        let e = self.get(id).unwrap_or(e);
+        Ok(view(&e, self.has_key(&e)))
     }
 
     /// Removes the endpoint and its key. Sessions bound to it are the caller's to rebind.
@@ -209,7 +216,7 @@ impl Endpoints {
     /// Where to call, with the unsealed key (kept only for the call).
     pub fn target(&self, id: &str) -> Result<openai::Target> {
         let e = self.get(id).ok_or_else(|| missing(id))?;
-        let api_key = self.read_secrets()?.remove(id);
+        let api_key = self.read_key(&e)?;
         Ok(openai::Target { base_url: e.base_url, api_key })
     }
 
@@ -245,25 +252,100 @@ impl Endpoints {
         serde_json::from_slice(&plain).map_err(storage)
     }
 
+    /// Whether a key is stored for it, without opening the keychain.
+    pub fn has_key(&self, e: &Endpoint) -> bool {
+        e.in_keychain || self.read_secrets().is_ok_and(|m| m.contains_key(&e.id))
+    }
+
+    /// Where a shell says keys should go from now on. Keys already in the sealed file move into the
+    /// keychain (the file is removed once empty); one that can't move stays where it is. Returns
+    /// how many moved.
+    pub fn use_keychain(&self, store: Arc<dyn SecretStore>) -> usize {
+        *lock(&self.keychain) = Some(store.clone());
+        let Ok(mut sealed) = self.read_secrets() else { return 0 };
+        let mut moved = 0;
+        for id in sealed.keys().cloned().collect::<Vec<_>>() {
+            if store.set(&account(&id), &sealed[&id]).is_ok() {
+                sealed.remove(&id);
+                self.flag_keychain(&id, true);
+                moved += 1;
+            }
+        }
+        if moved > 0 {
+            let _ = self.write_secrets(&sealed);
+        }
+        moved
+    }
+
+    fn flag_keychain(&self, id: &str, on: bool) {
+        let mut list = lock(&self.list);
+        if let Some(e) = list.iter_mut().find(|e| e.id == id)
+            && e.in_keychain != on
+        {
+            e.in_keychain = on;
+            let _ = self.save(&list);
+        }
+    }
+
+    fn read_key(&self, e: &Endpoint) -> Result<Option<String>> {
+        if e.in_keychain {
+            let store = lock(&self.keychain).clone().ok_or_else(|| storage("this key is in the OS keychain, which isn't available here"))?;
+            return store.get(&account(&e.id));
+        }
+        Ok(self.read_secrets()?.remove(&e.id))
+    }
+
     fn set_key(&self, id: &str, key: Option<&str>) -> Result<()> {
+        let store = lock(&self.keychain).clone();
+        if let (Some(store), Some(k)) = (&store, key) {
+            if store.set(&account(id), k).is_ok() {
+                self.flag_keychain(id, true);
+                return self.drop_sealed(id);
+            }
+            tracing::warn!("the OS keychain refused a key; keeping it in the sealed file");
+        }
+        if let (Some(store), None) = (&store, key)
+            && store.delete(&account(id)).is_err()
+        {
+            tracing::warn!("couldn't remove a key from the OS keychain");
+        }
+        self.flag_keychain(id, false);
         let mut m = self.read_secrets().unwrap_or_default();
         match key {
             Some(k) => m.insert(id.to_string(), k.to_string()),
             None => m.remove(id),
         };
+        self.write_secrets(&m)
+    }
+
+    fn drop_sealed(&self, id: &str) -> Result<()> {
+        let mut m = self.read_secrets().unwrap_or_default();
+        if m.remove(id).is_some() {
+            self.write_secrets(&m)?;
+        }
+        Ok(())
+    }
+
+    fn write_secrets(&self, m: &BTreeMap<String, String>) -> Result<()> {
         if m.is_empty() {
             let _ = std::fs::remove_file(self.dir.join(SECRETS_FILE));
+            let _ = std::fs::remove_file(self.dir.join(SECRETS_KEY_FILE));
             return Ok(());
         }
         let mut nonce = [0u8; 12];
         getrandom::fill(&mut nonce).map_err(|e| storage(format!("random nonce: {e}")))?;
-        let plain = serde_json::to_vec(&m).map_err(storage)?;
+        let plain = serde_json::to_vec(m).map_err(storage)?;
         let ct = self.cipher()?.encrypt(Nonce::from_slice(&nonce), plain.as_slice()).map_err(|_| storage("sealing the key store"))?;
         let mut out = nonce.to_vec();
         out.extend(ct);
         crate::identity::write_private_file(&self.dir.join(SECRETS_FILE), &out)?;
         Ok(())
     }
+}
+
+/// The keychain account for an endpoint's key.
+fn account(id: &str) -> String {
+    format!("endpoint:{id}")
 }
 
 fn view(e: &Endpoint, has_key: bool) -> EndpointView {
@@ -331,6 +413,42 @@ mod tests {
         assert!(s.list().is_empty());
         assert!(!d.path().join(SECRETS_FILE).exists(), "the last key's file goes with it");
         assert!(s.delete(&v.id).is_err());
+    }
+
+    #[test]
+    fn keychain_holds_keys_and_the_sealed_file_is_the_fallback() {
+        use crate::secrets::MemoryStore;
+        use std::sync::atomic::Ordering;
+        let d = tempfile::tempdir().unwrap();
+        let s = Endpoints::open(d.path());
+        // A key set before the keychain was chosen moves into it.
+        let old = s.add(input("Old"), Some("sk-old-secret".into())).unwrap();
+        assert!(d.path().join(SECRETS_FILE).exists());
+        let kc = Arc::new(MemoryStore::default());
+        assert_eq!(s.use_keychain(kc.clone()), 1);
+        assert!(!d.path().join(SECRETS_FILE).exists() && !d.path().join(SECRETS_KEY_FILE).exists(), "nothing sealed is left");
+        assert_eq!(s.target(&old.id).unwrap().api_key.as_deref(), Some("sk-old-secret"));
+        // New keys go to the keychain and never touch the disk.
+        let v = s.add(input("New"), Some("sk-new-secret".into())).unwrap();
+        assert!(v.has_key && kc.len() == 2 && !d.path().join(SECRETS_FILE).exists());
+        let list = std::fs::read_to_string(d.path().join(ENDPOINTS_FILE)).unwrap();
+        assert!(!list.contains("secret") && list.contains("in_keychain"));
+        // Clear and delete remove them from the keychain.
+        assert!(!s.edit(&v.id, input("New"), KeyChange::Clear).unwrap().has_key);
+        s.delete(&old.id).unwrap();
+        assert!(kc.is_empty());
+        // A keychain that refuses writes: the key is sealed in the file instead and still works.
+        kc.broken.store(true, Ordering::SeqCst);
+        let f = s.add(input("Fallback"), Some("sk-fb-secret".into())).unwrap();
+        assert!(f.has_key && d.path().join(SECRETS_FILE).exists());
+        assert_eq!(s.target(&f.id).unwrap().api_key.as_deref(), Some("sk-fb-secret"));
+        // A key in the keychain with no keychain available is an error, not a silent "no key".
+        kc.broken.store(false, Ordering::SeqCst);
+        let k = s.add(input("K"), Some("sk-k-secret".into())).unwrap();
+        let s2 = Endpoints::open(d.path());
+        assert!(s2.target(&k.id).is_err());
+        s2.use_keychain(kc);
+        assert_eq!(s2.target(&k.id).unwrap().api_key.as_deref(), Some("sk-k-secret"));
     }
 
     #[test]

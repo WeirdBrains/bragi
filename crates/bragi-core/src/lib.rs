@@ -22,6 +22,7 @@ pub mod identity;
 pub mod markdown;
 pub mod openai;
 pub mod reactions;
+pub mod secrets;
 pub mod sessions;
 mod targets;
 pub mod think;

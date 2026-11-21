@@ -101,6 +101,24 @@ impl Core {
 
     // ---- Endpoints ----
 
+    /// Opts in to the OS keychain for API keys (shells call this once after opening the core).
+    /// Keys already in the sealed file move into it. Returns whether a keychain is in use; when
+    /// there is none (no Secret Service, or iOS and Android for now) keys stay in the sealed file.
+    pub fn use_os_keychain(&self) -> bool {
+        match crate::secrets::os_keychain() {
+            Some(store) => {
+                self.inner.endpoints.use_keychain(store);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Like [`Core::use_os_keychain`] with a store of the caller's choosing.
+    pub fn use_secret_store(&self, store: std::sync::Arc<dyn crate::secrets::SecretStore>) {
+        self.inner.endpoints.use_keychain(store);
+    }
+
     pub fn endpoints(&self) -> Vec<EndpointView> {
         self.inner.endpoints.views()
     }

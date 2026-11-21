@@ -28,6 +28,9 @@ weirdnet-device-link.workspace = true
 weirdnet-net.workspace = true
 weirdnet-sync.workspace = true
 
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+keyring.workspace = true
+
 [dev-dependencies]
 tempfile.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }

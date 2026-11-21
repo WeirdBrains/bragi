@@ -464,6 +464,8 @@ pub fn start(dir: String, label: String) -> Result<(), String> {
         return Ok(());
     }
     let core = Core::start(Config::new(PathBuf::from(dir), label)).map_err(err)?;
+    // API keys go to the OS keychain where there is one (Android and iOS keep the sealed file for now).
+    core.use_os_keychain();
     *s = Some(Running { core, _demo: None, _runtime: None });
     Ok(())
 }

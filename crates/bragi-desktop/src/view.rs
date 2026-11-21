@@ -1722,7 +1722,11 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
         let mut cfg = Config::new(home, label());
         cfg.transport = Transport::Internet;
         match Core::start(cfg) {
-            Ok(c) => c,
+            Ok(c) => {
+                // API keys go to the OS keychain when one is running; otherwise the sealed file.
+                c.use_os_keychain();
+                c
+            }
             Err(e) => {
                 eprintln!("bragi: {e}");
                 return std::process::ExitCode::FAILURE;
