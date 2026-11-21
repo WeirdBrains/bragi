@@ -6,6 +6,7 @@
 //   BRAGI_BRIDGE_LIB=$CARGO_TARGET_DIR/debug/libbragi_bridge.so flutter test --dart-define=BRAGI_DEMO=true
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:bragi/src/api.dart';
 import 'package:bragi/src/app.dart';
@@ -13,6 +14,7 @@ import 'package:bragi/src/controller.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -85,6 +87,18 @@ void main() {
         await tester.pump();
       }
       fail('timed out waiting for $what');
+    }
+
+    // With BRAGI_SHOTS=<dir>, writes a PNG of the current screen (headless; nothing is shown).
+    Future<void> shot(String name) async {
+      final dir = Platform.environment['BRAGI_SHOTS'];
+      if (dir == null) return;
+      await tester.runAsync(() async {
+        final boundary = tester.renderObject<RenderRepaintBoundary>(find.byType(RepaintBoundary).first);
+        final image = await boundary.toImage();
+        final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+        File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
+      });
     }
 
     bool shown(String key) => find.byKey(Key(key)).evaluate().isNotEmpty;
@@ -199,6 +213,8 @@ void main() {
     await tap('ep-save');
     await settle();
 
+    await shot('settings-endpoints');
+
     // ---- Sessions: a chat bound to Mock Alpha, and one bound to Mock B (same server) ----
     Navigator.of(tester.element(find.byKey(const Key('settings-list')))).pop();
     await tester.pumpAndSettle();
@@ -233,6 +249,7 @@ void main() {
     await openSettings();
     await tap('endpoint-delete-${a.id}');
     await tester.pumpAndSettle();
+    await shot('delete-confirm-rebind');
     expect(find.textContaining('2 chats are bound to it'), findsOneWidget);
     expect(find.textContaining('Your chats and their history are kept'), findsOneWidget);
     await tap('ep-delete-cancel');
@@ -373,6 +390,7 @@ void main() {
     await tap('folder-delete-confirm');
     await settle();
     expect(c.folders.map((f) => f.name), ['Work']);
+    await shot('sessions-folders');
     expect(c.sessions.firstWhere((s) => s.id == onPool).folder, work.id, reason: 'moved up to the parent');
     expect((await tester.runAsync(() => c.api.conversation(onPool)))!.messages, hasLength(2));
   });

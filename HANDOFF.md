@@ -148,7 +148,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **Branch**: `feature/openai-endpoints-v2` (merged main in; not merged to main).
 
 **Checks**: fmt, clippy -D warnings and `cargo test --workspace` (mock OpenAI server: streaming, errors, auth, models list) passed; `flutter analyze` clean; `flutter test --dart-define=BRAGI_DEMO=true` passed (Settings add/edit/delete/reorder/test, delete-confirm and rebind, sessions and folders, plus the scenario test).
-**Not tested**: a real OpenAI-compatible server or real keychain; a real phone; the headless GUI screenshots were not captured.
+**Not tested**: a real OpenAI-compatible server or real keychain; a real phone; the screenshots are headless widget-test renders (BRAGI_SHOTS), not a real window.
 
 **Left**: the GPUI desktop shell has no Settings screen yet; keys use the sealed file store, not the OS keychain.
 **Next**: LF-12.
