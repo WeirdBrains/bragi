@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use bragi_core::demo::DemoNode;
 use bragi_core::{
-    AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus,
-    NodeSearch, PairState, Role, ToolState,
+    AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, ErrorKind, Media, MessageState,
+    ModelStatus, NodeSearch, PairState, Role, ToolState,
 };
 use flutter_rust_bridge::frb;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -68,6 +68,9 @@ pub struct ModelView {
     pub nodes: u32,
     /// The model that answers while this one loads, if a node names one.
     pub standin: Option<String>,
+    /// Whether it reads images, and whether it reads audio.
+    pub vision: bool,
+    pub audio: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -120,11 +123,17 @@ pub struct ChatEventView {
     pub elapsed_ms: u64,
 }
 
-/// A text file attached to a message.
+/// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
+/// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
+/// `data` the base64 file. A message read back from history has `data` empty (its size is
+/// not worth carrying to the screen; the name and kind are shown).
 #[derive(Debug, Clone)]
 pub struct AttachmentView {
     pub name: String,
     pub text: String,
+    pub kind: String,
+    pub mime: String,
+    pub data: String,
 }
 
 #[derive(Debug, Clone)]
@@ -279,6 +288,8 @@ fn state_view(s: &AppState) -> StateView {
                 context: m.context,
                 nodes: m.nodes.len() as u32,
                 standin: m.standin.clone(),
+                vision: m.vision,
+                audio: m.audio,
             })
             .collect(),
         default_model: s.catalog.default_model().map(str::to_string),
@@ -402,7 +413,7 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 cache_hit: m.cache_hit,
                 standin: m.standin.clone(),
                 resumes: m.resumes,
-                attachments: m.attachments.iter().map(attachment_view).collect(),
+                attachments: m.attachments.iter().map(|a| attachment_view(a, false)).collect(),
                 tools: m.tools.clone(),
                 agent: m.agent,
                 at_ms: m.at_ms,
@@ -411,12 +422,22 @@ fn conversation_view(c: &Conversation) -> ConversationView {
     }
 }
 
-fn attachment_view(a: &Attachment) -> AttachmentView {
-    AttachmentView { name: a.name.clone(), text: a.text.clone() }
+fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView {
+    let (kind, mime, data) = match &a.media {
+        None => ("text", String::new(), String::new()),
+        Some(Media::Image { mime, data }) => ("image", mime.clone(), data.clone()),
+        Some(Media::Audio { format, data }) => ("audio", format.clone(), data.clone()),
+    };
+    AttachmentView { name: a.name.clone(), text: a.text.clone(), kind: kind.into(), mime, data: if with_data { data } else { String::new() } }
 }
 
-fn attachments(v: Vec<AttachmentView>) -> Vec<Attachment> {
-    v.into_iter().map(|a| Attachment { name: a.name, text: a.text }).collect()
+fn attachments(v: Vec<AttachmentView>) -> Result<Vec<Attachment>, String> {
+    v.into_iter()
+        .map(|a| match a.kind.as_str() {
+            "image" | "audio" => Attachment::from_media(&a.name, &a.kind, &a.mime, &a.data).map_err(err),
+            _ => Ok(Attachment { name: a.name, text: a.text, media: None }),
+        })
+        .collect()
 }
 
 fn summary_view(s: &ConversationSummary) -> SummaryView {
@@ -633,16 +654,18 @@ pub fn send(conversation: Option<String>, prompt: String, model: Option<String>)
     core()?.send(conversation.as_deref(), &prompt, model).map(started).map_err(err)
 }
 
-/// Reads a text file as an attachment (`path` on this device). Binary and big files are refused.
+/// Reads a file as an attachment (`path` on this device): text, or a PNG, JPEG, GIF or WebP image,
+/// or WAV or MP3 audio. Other binaries and big files are refused.
 #[frb(sync)]
 pub fn attach_file(path: String) -> Result<AttachmentView, String> {
-    Attachment::from_path(std::path::Path::new(&path)).map(|a| attachment_view(&a)).map_err(err)
+    Attachment::from_path(std::path::Path::new(&path)).map(|a| attachment_view(&a, true)).map_err(err)
 }
 
-/// An attachment from bytes the picker returned (`name` is shown; the bytes must be UTF-8 text).
+/// An attachment from bytes the picker returned (`name` is shown; the bytes are UTF-8 text, an
+/// image or audio, as for [`attach_file`]).
 #[frb(sync)]
 pub fn attach_bytes(name: String, bytes: Vec<u8>) -> Result<AttachmentView, String> {
-    Attachment::from_bytes(&name, &bytes).map(|a| attachment_view(&a)).map_err(err)
+    Attachment::from_bytes(&name, &bytes).map(|a| attachment_view(&a, true)).map_err(err)
 }
 
 /// A reply's Markdown as JSON (`bragi_core::markdown::Document`): the same parse the desktop
@@ -653,15 +676,15 @@ pub fn markdown_json(text: String, streaming: bool) -> String {
     if streaming { bragi_core::markdown::parse_streaming(&text) } else { bragi_core::markdown::parse(&text) }.to_json()
 }
 
-/// [`send`] with text files attached.
+/// [`send`] with files attached (text, images, audio).
 pub fn send_with(conversation: Option<String>, prompt: String, model: Option<String>, files: Vec<AttachmentView>) -> Result<ChatStarted, String> {
-    core()?.send_with(conversation.as_deref(), &prompt, model, attachments(files)).map(started).map_err(err)
+    core()?.send_with(conversation.as_deref(), &prompt, model, attachments(files)?).map(started).map_err(err)
 }
 
 /// Agent mode: runs `prompt` as a task on `node` (the first inference node when none); stream it
 /// with `follow_chat`, which also carries `tool`, `approval` and `notice` events.
 pub fn send_agent(conversation: Option<String>, prompt: String, node: Option<String>, files: Vec<AttachmentView>) -> Result<ChatStarted, String> {
-    core()?.send_agent(conversation.as_deref(), &prompt, node, None, attachments(files)).map(started).map_err(err)
+    core()?.send_agent(conversation.as_deref(), &prompt, node, None, attachments(files)?).map(started).map_err(err)
 }
 
 /// Answers an agent task's approval card: `choice` is `deny`, `once` or `task`. False when the

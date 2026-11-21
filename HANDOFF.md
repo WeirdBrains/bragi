@@ -2,6 +2,25 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-18, Weirdnet 0.5 and image and audio attachments (branch only)
+
+**What changed**
+- `weirdnet-agent` 0.5.0 (the only Weirdnet crate Bragi's code calls that has a new release; `weirdnet-net`, `-sync` and `-device-link` stay as they are). A message's `content` is now text or parts, so the call sites that read it use `.text()`.
+- Images (PNG, JPEG, GIF, WebP, up to 5 MiB) and audio (WAV, MP3, up to 10 MiB) can be attached to a message, next to text files. They go to the model as content parts (`image_url` with a data URL, `input_audio`), stay with the message and sync like a text attachment, and every later turn sends them again (the model has the whole conversation). A picture or sound can be sent with no words.
+- The catalog shows which models read images and audio (`ModelInfo::vision` and `audio`, from `CatalogModel::inputs`). With no model picked, the first warm one that reads them is used; a picked model that can't is refused up front with the models that can named. Agent mode takes text and text files only (a task's input is a string) and says so.
+- Desktop: the attach path box takes an image or audio file; chips and message lines say `(image)` or `(audio)`. Mobile: the same attach button opens the system picker, which already lets you pick any file; chips and bubbles show the kind.
+- The bridge: `AttachmentView` gains `kind`, `mime` and `data` (history views leave `data` empty); `ModelView` gains `vision` and `audio`; `flutter_rust_bridge_codegen generate` was re-run.
+- Demo nodes: `gemma-4-e4b` takes images and audio, the others text only; a model that was sent media says "I can see N image(s) and M sound(s)." so the tests can check what arrived.
+- Kept minimal for LF-12 (chat files) to build on: media travels inline in the request and is stored in the message, so it stays small. Larger files need content roots.
+
+**Checks run:** see the push; `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace, `flutter analyze` and the Flutter tests in demo mode.
+
+**Not tested:** a real phone; a real picture sent to a real vision model (the demo and mock nodes only); two real devices syncing a message with a picture; the system picker on Android and iOS (the demo build attaches a sample text file instead); a visual check of the desktop chips (no GUI run for this change). Ymir sends the parts on to llama.cpp in its LF-18 branch, which is separate.
+
+**What's left:** thumbnails of attached pictures in the chat; a player for attached audio; recording audio; remote image URLs (nodes never fetch them); files larger than a message takes (LF-12).
+
+**What's next:** LF-12 (chat files); LF-16, the Ymir MCP server, comes after this branch.
+
 ## 2026-11-21: LF-3, Bragi v0.1.1 cut
 
 **What changed**

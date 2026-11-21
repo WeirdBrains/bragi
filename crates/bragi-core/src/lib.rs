@@ -23,7 +23,7 @@ pub mod reactions;
 pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
-pub use crate::attach::Attachment;
+pub use crate::attach::{Attachment, Media};
 pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;
 pub use crate::core::{

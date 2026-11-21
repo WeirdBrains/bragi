@@ -16,5 +16,5 @@ const milestones = <Milestone>[
   Milestone('B2', 'Pool client', 'done', 'Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells.', ['weirdnet-agent']),
   Milestone('B3', 'Platforms', 'in-progress', 'iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight) and signing with a release key.', []),
   Milestone('B4', 'Sync and optional extras', 'in-progress', 'Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. Next: push wake-ups and an optional on-device model.', ['weirdnet-sync', 'weirdnet-push']),
-  Milestone('B5', 'Breadth', 'in-progress', 'Text attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.', ['weirdnet-agent']),
+  Milestone('B5', 'Breadth', 'in-progress', 'Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.', ['weirdnet-agent']),
 ];

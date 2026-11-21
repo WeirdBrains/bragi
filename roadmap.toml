@@ -43,5 +43,5 @@ crates = ["weirdnet-sync", "weirdnet-push"]
 id = "B5"
 title = "Breadth"
 status = "in-progress"
-summary = "Text attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there."
+summary = "Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there."
 crates = ["weirdnet-agent"]

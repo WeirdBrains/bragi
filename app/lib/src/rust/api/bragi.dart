@@ -111,11 +111,13 @@ Future<ChatStarted> send({
   model: model,
 );
 
-/// Reads a text file as an attachment (`path` on this device). Binary and big files are refused.
+/// Reads a file as an attachment (`path` on this device): text, or a PNG, JPEG, GIF or WebP image,
+/// or WAV or MP3 audio. Other binaries and big files are refused.
 AttachmentView attachFile({required String path}) =>
     RustLib.instance.api.crateApiBragiAttachFile(path: path);
 
-/// An attachment from bytes the picker returned (`name` is shown; the bytes must be UTF-8 text).
+/// An attachment from bytes the picker returned (`name` is shown; the bytes are UTF-8 text, an
+/// image or audio, as for [`attach_file`]).
 AttachmentView attachBytes({required String name, required List<int> bytes}) =>
     RustLib.instance.api.crateApiBragiAttachBytes(name: name, bytes: bytes);
 
@@ -127,7 +129,7 @@ String markdownJson({required String text, required bool streaming}) => RustLib
     .api
     .crateApiBragiMarkdownJson(text: text, streaming: streaming);
 
-/// [`send`] with text files attached.
+/// [`send`] with files attached (text, images, audio).
 Future<ChatStarted> sendWith({
   String? conversation,
   required String prompt,
@@ -233,15 +235,32 @@ Future<void> undoDelete({required String undo}) =>
 /// Deletes all history, with no undo. Returns how many conversations.
 Future<int> clearHistory() => RustLib.instance.api.crateApiBragiClearHistory();
 
-/// A text file attached to a message.
+/// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
+/// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
+/// `data` the base64 file. A message read back from history has `data` empty (its size is
+/// not worth carrying to the screen; the name and kind are shown).
 class AttachmentView {
   final String name;
   final String text;
+  final String kind;
+  final String mime;
+  final String data;
 
-  const AttachmentView({required this.name, required this.text});
+  const AttachmentView({
+    required this.name,
+    required this.text,
+    required this.kind,
+    required this.mime,
+    required this.data,
+  });
 
   @override
-  int get hashCode => name.hashCode ^ text.hashCode;
+  int get hashCode =>
+      name.hashCode ^
+      text.hashCode ^
+      kind.hashCode ^
+      mime.hashCode ^
+      data.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -249,7 +268,10 @@ class AttachmentView {
       other is AttachmentView &&
           runtimeType == other.runtimeType &&
           name == other.name &&
-          text == other.text;
+          text == other.text &&
+          kind == other.kind &&
+          mime == other.mime &&
+          data == other.data;
 }
 
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `thought`, `resumed`, `usage`,
@@ -595,6 +617,10 @@ class ModelView {
   /// The model that answers while this one loads, if a node names one.
   final String? standin;
 
+  /// Whether it reads images, and whether it reads audio.
+  final bool vision;
+  final bool audio;
+
   const ModelView({
     required this.id,
     required this.status,
@@ -603,6 +629,8 @@ class ModelView {
     this.context,
     required this.nodes,
     this.standin,
+    required this.vision,
+    required this.audio,
   });
 
   @override
@@ -613,7 +641,9 @@ class ModelView {
       tokensPerSec.hashCode ^
       context.hashCode ^
       nodes.hashCode ^
-      standin.hashCode;
+      standin.hashCode ^
+      vision.hashCode ^
+      audio.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -626,7 +656,9 @@ class ModelView {
           tokensPerSec == other.tokensPerSec &&
           context == other.context &&
           nodes == other.nodes &&
-          standin == other.standin;
+          standin == other.standin &&
+          vision == other.vision &&
+          audio == other.audio;
 }
 
 /// [`PairState`] flattened: `state` is `unpaired`, `offering`, `confirm`, `waiting`, `linked`

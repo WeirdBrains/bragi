@@ -14,7 +14,7 @@ use weirdnet_agent::pool::{Interrupted, LinkedNodes, NetDialer, NodeSource, Pool
 use weirdnet_agent::remote::catalog::Catalog;
 use weirdnet_agent::remote::infer::v2::Request;
 use weirdnet_agent::remote::{Dialer, RemoteError};
-use weirdnet_agent::{CancelToken, Message};
+use weirdnet_agent::{CancelToken, Content, ContentPart, Message, Modalities};
 use weirdnet_device_link::{HostNode, HostStatus, Pairing};
 use weirdnet_net::{Keypair, Multiaddr, NodeConfig, PeerHint, PeerId};
 
@@ -584,12 +584,20 @@ impl Core {
 
     // ---- chat ------------------------------------------------------------------------------
 
-    fn pick_model(&self, model: Option<String>) -> Result<String> {
+    /// The model for a turn: the one the user picked, else the first warm one that reads `needed`
+    /// (images, audio). A picked model the catalog says can't read them is refused here, with the
+    /// models that can in the message, instead of failing in the pool.
+    fn pick_model(&self, model: Option<String>, needed: Modalities) -> Result<String> {
+        let catalog = self.state().catalog;
         match model {
-            Some(m) if !m.is_empty() => Ok(m),
-            _ => {
-                self.state().catalog.default_model().map(str::to_string).ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message()))
-            }
+            Some(m) if !m.is_empty() => match catalog.models.iter().find(|i| i.id == m) {
+                Some(info) if !info.takes(needed) => Err(CoreError::new(ErrorKind::BadRequest, catalog.refusal(&m, needed))),
+                _ => Ok(m),
+            },
+            _ => catalog.default_model_for(needed).map(str::to_string).ok_or_else(|| match catalog.models.is_empty() {
+                true => CoreError::new(ErrorKind::Unavailable, self.no_node_message()),
+                false => CoreError::new(ErrorKind::BadRequest, "none of the models on your nodes can read images or audio"),
+            }),
         }
     }
 
@@ -603,7 +611,8 @@ impl Core {
     /// a named block ahead of the prompt, and the message keeps them for later turns and other devices.
     pub fn send_with(&self, conversation: Option<&str>, prompt: &str, model: Option<String>, attachments: Vec<Attachment>) -> Result<ChatHandle> {
         let net = self.net()?;
-        let model = self.pick_model(model)?;
+        let needed = crate::attach::needs(&attachments);
+        let model = self.pick_model(model, needed)?;
         let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
         Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new(), String::new()))
     }
@@ -619,13 +628,19 @@ impl Core {
     ) -> Result<(String, Vec<Message>)> {
         crate::attach::check(&attachments)?;
         let prompt = prompt.trim();
-        if prompt.is_empty() {
+        if prompt.is_empty() && !attachments.iter().any(|a| a.media.is_some()) {
             return Err(CoreError::new(ErrorKind::BadRequest, "type a message first"));
         }
         let now = now_ms();
         let mut c = match conversation {
             Some(id) => self.inner.history.load(id)?,
-            None => Conversation { id: random_id("c"), title: title_for(prompt), created_ms: now, updated_ms: now, messages: Vec::new() },
+            None => Conversation {
+                id: random_id("c"),
+                title: title_for(if prompt.is_empty() { attachments.first().map_or("New chat", |a| a.name.as_str()) } else { prompt }),
+                created_ms: now,
+                updated_ms: now,
+                messages: Vec::new(),
+            },
         };
         c.messages.push(ChatMessage {
             id: String::new(),
@@ -680,10 +695,11 @@ impl Core {
             return Err(CoreError::new(ErrorKind::BadRequest, "the last answer finished; nothing to continue"));
         }
         let n = c.messages.len();
+        let needed = conversation_needs(&c.messages);
         let last = &mut c.messages[n - 1];
         let model = match model.or_else(|| last.model.clone()) {
             Some(m) => m,
-            None => self.pick_model(None)?,
+            None => self.pick_model(None, needed)?,
         };
         let shown = last.text.clone();
         let shown_reasoning = last.reasoning.clone();
@@ -1109,10 +1125,31 @@ pub(crate) fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     msgs.iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
         .map(|m| match m.role {
-            Role::User => Message::user(crate::reactions::with_note(m, crate::attach::render(&m.text, &m.attachments))),
+            Role::User => Message::user(user_content(m)),
             Role::Assistant => Message::assistant(crate::reactions::with_note(m, m.text.clone()), Vec::new()),
         })
         .collect()
+}
+
+/// What a model needs to read the whole conversation: text unless some message has images or audio.
+fn conversation_needs(msgs: &[ChatMessage]) -> Modalities {
+    msgs.iter().fold(Modalities::TEXT, |n, m| n.union(crate::attach::needs(&m.attachments)))
+}
+
+/// A user message as the model gets it: text, or text and parts when images or sound are attached.
+/// Reactions go in as a note at the end of the text.
+fn user_content(m: &ChatMessage) -> Content {
+    match crate::attach::content(&m.text, &m.attachments) {
+        Content::Text(t) => Content::Text(crate::reactions::with_note(m, t)),
+        Content::Parts(mut parts) => {
+            if let Some(ContentPart::Text { text }) = parts.first_mut() {
+                *text = crate::reactions::with_note(m, std::mem::take(text));
+            } else if !m.reactions.is_empty() {
+                parts.insert(0, ContentPart::text(crate::reactions::with_note(m, String::new()).trim_start().to_string()));
+            }
+            Content::Parts(parts)
+        }
+    }
 }
 
 /// What the pool said about an answer, kept with the message.
@@ -1292,7 +1329,7 @@ mod context_tests {
         let question = ChatMessage { role: Role::User, text: "17*23?".into(), reasoning: String::new(), thinking_ms: None, ..answer.clone() };
         let sent = agent_messages(&[question.clone(), answer.clone()]);
         assert_eq!(sent.len(), 2);
-        assert_eq!(sent[1].content, "391");
+        assert_eq!(sent[1].content.text(), "391");
         // An answer that only reasoned before it was stopped isn't sent at all.
         answer.text.clear();
         assert_eq!(agent_messages(&[question, answer]).len(), 1);
@@ -1328,11 +1365,11 @@ mod reaction_context_tests {
     fn reactions_reach_the_model_as_a_note_and_leave_when_removed() {
         let mut v = vec![msg(Role::User, "hi", &[]), msg(Role::Assistant, "hello", &["👍", "🎉"])];
         let m = agent_messages(&v);
-        assert_eq!(m[0].content, "hi");
-        assert_eq!(m[1].content, "hello\n\n[The user reacted to this reply with 👍 🎉]");
+        assert_eq!(m[0].content.text(), "hi");
+        assert_eq!(m[1].content.text(), "hello\n\n[The user reacted to this reply with 👍 🎉]");
         v[1].reactions.clear();
-        assert_eq!(agent_messages(&v)[1].content, "hello");
+        assert_eq!(agent_messages(&v)[1].content.text(), "hello");
         v[0].reactions.push("🤔".into());
-        assert_eq!(agent_messages(&v)[0].content, "hi\n\n[The user reacted to their own message with 🤔]");
+        assert_eq!(agent_messages(&v)[0].content.text(), "hi\n\n[The user reacted to their own message with 🤔]");
     }
 }
