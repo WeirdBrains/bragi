@@ -100,7 +100,11 @@ void main() {
 
     /// Lets a core call and the redraw finish.
     Future<void> settle() async {
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 300)));
+      // Each core call resolves on a real event-loop turn, and a screen refresh makes several in a row.
+      for (var i = 0; i < 12; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.pump();
+      }
       await tester.pumpAndSettle();
     }
 
