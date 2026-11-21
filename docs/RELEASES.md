@@ -35,7 +35,7 @@ Flutter.
 ## WiX
 
 The Windows installers use WiX Toolset 7, which is licensed under the Open Source Maintenance Fee EULA v1.1
-(https://docs.firegiant.com/wix/osmf/). Weird Brains LLC accepted it on 2026-11-12, so every `wix`
+(https://docs.firegiant.com/wix/osmf/). [Weird Brains](https://weirdbrains.com) LLC accepted it on 2026-11-12, so every `wix`
 command passes `-acceptEula wix7`. The WiX CLI MSI is pinned by version and SHA-256 in the workflow.
 
 ## Android signing

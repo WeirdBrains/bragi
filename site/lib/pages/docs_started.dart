@@ -8,9 +8,8 @@ const _html = r'''
 your Weirdnet identity, and chatting. You need a running Ymir pool first: follow the
 <a href="${ymirGuide}">Ymir deployment guide</a>, steps 1 and 2.</p>
 <p><strong>What is released.</strong> Bragi ${version} has downloads for Linux, macOS, Windows, Android and iOS on the
-<a href="${download}">Download</a> page. None is store-listed or code-signed yet: the Android apks use a test key and the
-iOS ipa is unsigned, for sideloading. Bragi has so far run against Ymir nodes on one computer, not yet across separate
-real machines.</p>
+<a href="${download}">Download</a> page. The Android apks are signed with a debug key and the iOS ipa is unsigned, for
+sideloading; Bragi is not on a store.</p>
 
 <h2 id="install">Install Bragi</h2>
 <p>Download the file for your platform from the <a href="${download}">Download</a> page: a deb, rpm, Arch package or
@@ -42,15 +41,14 @@ dials it at once and remembers it.</p>
 <p><strong>The other device shows the code:</strong> a linked Bragi can admit a new Ymir node. Run
 <code>ymirctl pool link</code> on the node, open the <code>weirdnet-ymir://link/…</code> code in Bragi, compare the six
 digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
-<p>There is no QR scanner yet, so codes are pasted (Ctrl+V or Ctrl+Shift+V in the box for a code from another device). This linking is covered by automated tests and by an end-to-end test
-of a headless Bragi against real Ymir nodes on one computer; it has not yet been tried across separate machines.</p>
+<p>Paste a code from another device into the box (Ctrl+V or Ctrl+Shift+V).</p>
 
 <h2 id="chat">Chat</h2>
 <ul>
 <li>Bragi lists the chat models offered by every inference node in your pool, warm ones first. If the list is empty, check that a device in the pool runs the Ymir <code>inference</code> role (<code>ymirctl status</code>) and that Bragi can reach it (see <em>Nodes on another network</em> above).</li>
 <li>Pick a model and ask. The answer streams in token by token.</li>
 <li><strong>Stop</strong> cancels the request and keeps what arrived; <strong>Continue</strong> picks the answer up again. A real model may rephrase a little at the seam.</li>
-<li>History is saved on the device, one file per conversation. Syncing it between your devices is in progress.</li>
+<li>History is saved on the device, one file per conversation. It syncs between your linked devices.</li>
 </ul>
 <p>Phones are reachable only while the app is open, and Bragi needs the Ymir pool to be reachable over Weirdnet, either on
 the same network or through a relay.</p>
