@@ -2,6 +2,18 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-3, Bragi v0.1.1 cut
+
+**What changed**
+- Cut v0.1.1 from `c703af8` with the vendored release script (`scripts/weirdnet_release.py`): the version bump (0.1.0+2 to 0.1.1+3, so the Android versionCode is 3 per ABI offset 2003/1003/4003), the CHANGELOG section for everything since 0.1.0, the `release: v0.1.1` commit, the `v0.1.1` tag, and one normal push of `main` and the tag. The Release workflow builds every platform from the tag.
+- v0.1.1 holds: node addresses in links and pasted by hand, the clearer no-node message, the Link a device notice fix, the scrolling chat with a fixed composer, Markdown replies, the collapsible Thinking section, delete from history with undo, and emoji reactions.
+
+**Checks** (before the bump commit, whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test`, `flutter analyze` and the Flutter tests in demo mode.
+**Not tested**: a real phone, two real devices syncing, a live reasoning model, signed builds (no signing keys exist; the minisign job only prints a notice, the Android APKs use the debug key).
+
+**Left**: the release steps after CI (GitHub release, TAUR `bragi-bin`, Nix `release.json`, the site's `latestVersion`) are logged in a later entry as they finish.
+**Next**: LF-18, then the v1.0.0 work on a branch.
+
 ## 2026-11-21: LF-23, emoji reactions (v0.1.1)
 
 **What changed**
