@@ -126,3 +126,17 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Left**: nothing known.
 **Next**: LF-22 (chat scrolling).
+
+## 2026-11-21: Weirdnet 0.5 image and audio work merged to main
+
+**What changed**
+
+- `feature/weirdnet-0.5-content-parts` (head `389844e`) is merged into main with a merge commit: Weirdnet 0.5 agent, content parts, and image and audio attachments in the composer (core, bridge, desktop, phone). The branch is kept.
+
+**Checks run:** `cargo fmt --check`, `cargo build --workspace`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, `flutter analyze` and `flutter test --dart-define=BRAGI_DEMO=true` (with the bridge library) on the merge result, all passing.
+
+**Not tested:** real GPU vision, phone. The Platforms workflow has not run on this code.
+
+**What's left:** other branches should merge main.
+
+**What's next:** the OpenAI endpoints work.
