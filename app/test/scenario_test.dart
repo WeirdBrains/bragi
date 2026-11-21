@@ -269,6 +269,29 @@ void main() {
     expect(c.messages[2].text, prompt2);
     await tester.pump(const Duration(seconds: 10));
 
+    // Reactions on the model's answer: quick pick, a second one, the pill turns one off again.
+    await tester.ensureVisible(find.byKey(const Key('bubble-3')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.byKey(const Key('bubble-3')));
+    await until('the reaction bar', () => shown('reaction-bar'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('react-👍')));
+    await until('the first reaction', () => c.messages[3].reactions.length == 1);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.byKey(const Key('bubble-3')));
+    await until('the reaction bar', () => shown('react-🤔'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('react-🤔')));
+    await until('the second reaction', () => c.messages[3].reactions.length == 2);
+    expect(c.messages[3].reactions, ['👍', '🤔']);
+    expect(c.messages[2].reactions, isEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('pill-👍')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('pill-👍')));
+    await until('the reaction off', () => c.messages[3].reactions.length == 1);
+    expect(c.messages[3].reactions, ['🤔']);
+    await tester.pump(const Duration(seconds: 10));
+
     final before = c.conversations.length;
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
     await until('the drawer', () => shown('delete-conv-${target.id}'));

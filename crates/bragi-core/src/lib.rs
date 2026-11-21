@@ -19,6 +19,7 @@ pub mod highlight;
 pub mod history;
 pub mod identity;
 pub mod markdown;
+pub mod reactions;
 pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
@@ -31,3 +32,4 @@ pub use crate::core::{
 };
 pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};
+pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};

@@ -73,6 +73,11 @@ pub struct ChatMessage {
     /// The answer came from an agent task on a node, not a plain model reply.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub agent: bool,
+    /// Emoji the user reacted with, in the order they were added (no repeats). Absent in
+    /// records written before reactions existed. They ride along in the stored record, so
+    /// the user's other devices and a Ymir pool reading the context see them too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<String>,
     pub at_ms: i64,
 }
 
@@ -191,6 +196,9 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if let Some(ms) = m.thinking_ms {
         ext.insert("thinking_ms".into(), ms.into());
     }
+    if !m.reactions.is_empty() {
+        ext.insert("reactions".into(), serde_json::to_value(&m.reactions).unwrap_or_default());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
@@ -219,6 +227,7 @@ fn from_stored(m: &Stored) -> ChatMessage {
         attachments: get("attachments").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         tools: get("tools").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         agent: get("agent").and_then(|v| v.as_bool()).unwrap_or(false),
+        reactions: get("reactions").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         at_ms: m.at_ms,
     }
 }
@@ -379,6 +388,7 @@ mod tests {
                 attachments: Vec::new(),
                 tools: Vec::new(),
                 agent: false,
+                reactions: Vec::new(),
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })
@@ -489,5 +499,53 @@ mod tests {
         raw.text = "<think>hm</think>\n\n391".into();
         let back = from_stored(&raw);
         assert_eq!((back.reasoning.as_str(), back.text.as_str()), ("hm", "391"));
+    }
+}
+
+#[cfg(test)]
+mod reaction_tests {
+    use super::*;
+
+    #[test]
+    fn reactions_round_trip_and_old_records_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = Arc::new(Identity::create(&dir.path().join("identity"), "t").unwrap());
+        let h = History::open(dir.path()).unwrap();
+        h.attach(id);
+        let m = |role, text: &str| ChatMessage {
+            id: String::new(),
+            role,
+            text: text.into(),
+            reasoning: String::new(),
+            thinking_ms: None,
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
+            reactions: Vec::new(),
+            at_ms: 5,
+        };
+        let mut c = Conversation {
+            id: "c1".into(),
+            title: "t".into(),
+            created_ms: 5,
+            updated_ms: 5,
+            messages: vec![m(Role::User, "a"), m(Role::Assistant, "b")],
+        };
+        h.save(&c).unwrap();
+        // A record written before reactions existed has none.
+        assert!(h.load("c1").unwrap().messages.iter().all(|m| m.reactions.is_empty()));
+        c = h.load("c1").unwrap();
+        c.messages[1].reactions = vec!["👍".into(), "❤️".into()];
+        h.save(&c).unwrap();
+        assert_eq!(h.load("c1").unwrap().messages[1].reactions, ["👍", "❤️"]);
+        // Old JSON without the field still parses.
+        let j = r#"{"role":"user","text":"x","state":"complete","at_ms":1}"#;
+        assert!(serde_json::from_str::<ChatMessage>(j).unwrap().reactions.is_empty());
     }
 }

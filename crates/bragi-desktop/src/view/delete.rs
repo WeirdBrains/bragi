@@ -134,23 +134,27 @@ impl BragiView {
         let group = SharedString::from(format!("msg-{i}"));
         let can = !m.id.is_empty() && !self.streaming_here();
         let (id1, id2) = (m.id.clone(), m.id.clone());
-        div().id(SharedString::from(format!("row-{i}"))).group(group.clone()).flex().flex_col().gap(px(2.)).child(bubble).when(can, |d| {
-            d.on_mouse_down(MouseButton::Right, cx.listener(move |v, _, _, cx| v.ask_delete_message(&id1, cx))).child(
-                div().flex().flex_row().when(m.role == Role::User, |d| d.justify_end()).child(
-                    div()
-                        .id(SharedString::from(format!("delete-msg-{i}")))
-                        .px(px(6.))
-                        .text_size(px(11.))
-                        .text_color(rgb(t.text_secondary))
-                        .opacity(0.)
-                        .group_hover(group, |s| s.opacity(1.))
-                        .hover(|s| s.text_color(rgb(t.error)))
-                        .cursor_pointer()
-                        .on_click(cx.listener(move |v, _, _, cx| v.ask_delete_message(&id2, cx)))
-                        .child("Delete"),
-                ),
-            )
-        })
+        let reactions = self.reactions(m, group.clone(), cx);
+        div().id(SharedString::from(format!("row-{i}"))).group(group.clone()).flex().flex_col().gap(px(2.)).child(bubble).child(reactions).when(
+            can,
+            |d| {
+                d.on_mouse_down(MouseButton::Right, cx.listener(move |v, _, _, cx| v.ask_delete_message(&id1, cx))).child(
+                    div().flex().flex_row().when(m.role == Role::User, |d| d.justify_end()).child(
+                        div()
+                            .id(SharedString::from(format!("delete-msg-{i}")))
+                            .px(px(6.))
+                            .text_size(px(11.))
+                            .text_color(rgb(t.text_secondary))
+                            .opacity(0.)
+                            .group_hover(group, |s| s.opacity(1.))
+                            .hover(|s| s.text_color(rgb(t.error)))
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |v, _, _, cx| v.ask_delete_message(&id2, cx)))
+                            .child("Delete"),
+                    ),
+                )
+            },
+        )
     }
 
     /// The × on a conversation in the list.

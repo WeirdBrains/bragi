@@ -24,8 +24,13 @@ use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
 mod delete;
+mod react;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
+
+/// The picker's emoji beyond the quick bar.
+const EXTRA_REACTIONS: [&str; 20] =
+    ["🙏", "👏", "🔥", "😮", "😢", "😡", "🚀", "✅", "❌", "💡", "👀", "🙌", "💯", "🤯", "😅", "🥳", "😍", "🤝", "⭐", "💀"];
 
 /// The process exit code: 0 ok, 1 the scenario failed.
 static EXIT: AtomicU8 = AtomicU8::new(0);
@@ -84,6 +89,8 @@ pub struct BragiView {
     recheck: bool,
     /// The scrollbar thumb is being dragged.
     dragging: bool,
+    /// The message whose extra-emoji picker is open.
+    react_picker: Option<String>,
     close_only: bool,
     /// The monospace family for code, and the code block or message just copied ("Copied").
     mono: SharedString,
@@ -181,6 +188,7 @@ impl BragiView {
             stick: true,
             recheck: false,
             dragging: false,
+            react_picker: None,
             close_only: tiling_wm(),
             confirm: None,
             confirm_input,
@@ -351,6 +359,22 @@ impl BragiView {
         let frac = ((y - b.origin.y) / b.size.height).clamp(0., 1.);
         self.scroll.set_offset(gpui::point(self.scroll.offset().x, -max * frac));
         self.recheck = true;
+        cx.notify();
+    }
+
+    /// Toggles a reaction on a message of the open conversation (the same one again removes it).
+    pub fn react(&mut self, message: &str, emoji: &str, cx: &mut Context<Self>) {
+        self.react_picker = None;
+        let Some(c) = &self.current else { return };
+        match self.core.react(&c.id, message, emoji) {
+            Ok(_) => self.current = self.core.conversation(&c.id).ok(),
+            Err(e) => self.notice = Some(e.message),
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_react_picker(&mut self, message: &str, cx: &mut Context<Self>) {
+        self.react_picker = if self.react_picker.as_deref() == Some(message) { None } else { Some(message.to_string()) };
         cx.notify();
     }
 
@@ -930,6 +954,7 @@ impl BragiView {
             (None, false) if m.role == Role::Assistant => Some(flags.join(" · ")),
             (meta, _) => meta,
         };
+        let _ = cx;
         div().flex().flex_row().when(mine, |d| d.justify_end()).child(
             div()
                 .flex()
@@ -1431,6 +1456,24 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("agent task");
     shot(cx, "18-agent-answer").await;
+    // Reactions: add two, turn one off again with the same click, see the pills and the picker.
+    let id = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.id).unwrap_or_default()).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        v.react(&id, "👍", cx);
+        v.react(&id, "🎉", cx);
+        v.react(&id, "🎉", cx);
+        v.react(&id, "🤔", cx);
+    })
+    .map_err(|e| e.to_string())?;
+    let got = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.reactions).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if got != ["👍", "🤔"] {
+        return Err(format!("reactions: {got:?}"));
+    }
+    step("reactions");
+    shot(cx, "19-reactions").await;
+    this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
+    shot(cx, "20-reaction-picker").await;
+    this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
 
     // A node address pasted into Link a device: the placeholder fits the field, progress is
     // not red, a node that never answers turns into advice, and a found one says so and clears.

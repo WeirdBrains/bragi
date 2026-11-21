@@ -194,6 +194,21 @@ Future<List<SummaryView>> conversations({
 Future<ConversationView> conversation({required String id}) =>
     RustLib.instance.api.crateApiBragiConversation(id: id);
 
+/// The quick reaction bar, in order.
+List<String> quickReactions() =>
+    RustLib.instance.api.crateApiBragiQuickReactions();
+
+/// Toggles a reaction on a message; returns the message's reactions afterwards.
+Future<List<String>> react({
+  required String conversation,
+  required String message,
+  required String emoji,
+}) => RustLib.instance.api.crateApiBragiReact(
+  conversation: conversation,
+  message: message,
+  emoji: emoji,
+);
+
 Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
 
@@ -470,6 +485,9 @@ class MessageView {
   /// A user message followed by its answer: deleting it offers to delete the answer too.
   final bool hasReply;
 
+  /// Emoji the user reacted with, in the order added.
+  final List<String> reactions;
+
   /// `user` or `assistant`.
   final String role;
   final String text;
@@ -501,6 +519,7 @@ class MessageView {
   const MessageView({
     required this.id,
     required this.hasReply,
+    required this.reactions,
     required this.role,
     required this.text,
     required this.reasoning,
@@ -521,6 +540,7 @@ class MessageView {
   int get hashCode =>
       id.hashCode ^
       hasReply.hashCode ^
+      reactions.hashCode ^
       role.hashCode ^
       text.hashCode ^
       reasoning.hashCode ^
@@ -543,6 +563,7 @@ class MessageView {
           runtimeType == other.runtimeType &&
           id == other.id &&
           hasReply == other.hasReply &&
+          reactions == other.reactions &&
           role == other.role &&
           text == other.text &&
           reasoning == other.reasoning &&

@@ -238,6 +238,8 @@ pub(crate) struct Inner {
     pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
     /// The node search's generation (a newer search or a dismissal ends the older one) and limit.
     pub(crate) search: Mutex<(u64, Duration)>,
+    /// Reactions added and removed, for whoever wants to forward them (see [`crate::reactions`]).
+    pub(crate) reactions: tokio::sync::broadcast::Sender<crate::reactions::ReactionEvent>,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -361,6 +363,7 @@ impl Core {
                 requests: Mutex::new(HashMap::new()),
                 cards: Mutex::new(HashMap::new()),
                 search: Mutex::new((0, NODE_SEARCH_LIMIT)),
+                reactions: tokio::sync::broadcast::channel(64).0,
             }),
             _runtime: runtime,
         };
@@ -639,6 +642,7 @@ impl Core {
             attachments,
             tools: Vec::new(),
             agent: false,
+            reactions: Vec::new(),
             at_ms: now,
         });
         let messages = agent_messages(&c.messages);
@@ -657,6 +661,7 @@ impl Core {
             attachments: Vec::new(),
             tools: Vec::new(),
             agent: false,
+            reactions: Vec::new(),
             at_ms: now,
         });
         c.updated_ms = now;
@@ -790,6 +795,41 @@ impl Core {
 
     pub fn conversation(&self, id: &str) -> Result<Conversation> {
         self.inner.history.load(id)
+    }
+
+    /// Toggles `emoji` on a message of a conversation: added if absent, removed if present.
+    /// Returns the message's reactions afterwards. Saved to history (so it syncs) and sent to
+    /// [`Core::reaction_events`]; the next turn's context carries it as a short note.
+    pub fn react(&self, conversation: &str, message: &str, emoji: &str) -> Result<Vec<String>> {
+        let emoji = crate::reactions::check(emoji)?;
+        let mut c = self.inner.history.load(conversation)?;
+        let m =
+            c.messages.iter_mut().find(|m| m.id == message).ok_or_else(|| CoreError::new(ErrorKind::NotFound, format!("no message `{message}`")))?;
+        if m.state == MessageState::Streaming {
+            return Err(CoreError::new(ErrorKind::Refused, "wait for the answer to finish"));
+        }
+        let on = crate::reactions::toggle(&mut m.reactions, &emoji)?;
+        let event = crate::reactions::ReactionEvent {
+            conversation: c.id.clone(),
+            message: m.id.clone(),
+            role: m.role,
+            model: m.model.clone(),
+            node: m.node.clone(),
+            emoji: emoji.clone(),
+            on,
+            feedback: crate::reactions::Feedback::of(&emoji),
+            at_ms: now_ms(),
+        };
+        let now = m.reactions.clone();
+        self.inner.history.save(&c)?;
+        let _ = self.inner.reactions.send(event);
+        Ok(now)
+    }
+
+    /// The reaction feed: one event per add or remove. This is the hook a shell or a bridge uses
+    /// to forward 👍/👎 as feedback (Ymir has no feedback path yet, so nothing is sent today).
+    pub fn reaction_events(&self) -> tokio::sync::broadcast::Receiver<crate::reactions::ReactionEvent> {
+        self.inner.reactions.subscribe()
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<()> {
@@ -1069,8 +1109,8 @@ pub(crate) fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
     msgs.iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
         .map(|m| match m.role {
-            Role::User => Message::user(crate::attach::render(&m.text, &m.attachments)),
-            Role::Assistant => Message::assistant(m.text.clone(), Vec::new()),
+            Role::User => Message::user(crate::reactions::with_note(m, crate::attach::render(&m.text, &m.attachments))),
+            Role::Assistant => Message::assistant(crate::reactions::with_note(m, m.text.clone()), Vec::new()),
         })
         .collect()
 }
@@ -1246,6 +1286,7 @@ mod context_tests {
             attachments: Vec::new(),
             tools: Vec::new(),
             agent: false,
+            reactions: Vec::new(),
             at_ms: 0,
         };
         let question = ChatMessage { role: Role::User, text: "17*23?".into(), reasoning: String::new(), thinking_ms: None, ..answer.clone() };
@@ -1255,5 +1296,43 @@ mod context_tests {
         // An answer that only reasoned before it was stopped isn't sent at all.
         answer.text.clear();
         assert_eq!(agent_messages(&[question, answer]).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod reaction_context_tests {
+    use super::*;
+
+    fn msg(role: Role, text: &str, reactions: &[&str]) -> ChatMessage {
+        ChatMessage {
+            id: "m".into(),
+            role,
+            text: text.into(),
+            reasoning: String::new(),
+            thinking_ms: None,
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
+            reactions: reactions.iter().map(|s| s.to_string()).collect(),
+            at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn reactions_reach_the_model_as_a_note_and_leave_when_removed() {
+        let mut v = vec![msg(Role::User, "hi", &[]), msg(Role::Assistant, "hello", &["👍", "🎉"])];
+        let m = agent_messages(&v);
+        assert_eq!(m[0].content, "hi");
+        assert_eq!(m[1].content, "hello\n\n[The user reacted to this reply with 👍 🎉]");
+        v[1].reactions.clear();
+        assert_eq!(agent_messages(&v)[1].content, "hello");
+        v[0].reactions.push("🤔".into());
+        assert_eq!(agent_messages(&v)[0].content, "hi\n\n[The user reacted to their own message with 🤔]");
     }
 }

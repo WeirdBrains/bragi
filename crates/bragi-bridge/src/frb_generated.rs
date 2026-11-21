@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1101638581;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1958042942;
 
 // Section: executor
 
@@ -806,6 +806,56 @@ fn wire__crate__api__bragi__peers_impl(
         },
     )
 }
+fn wire__crate__api__bragi__quick_reactions_impl(
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync::<flutter_rust_bridge::for_generated::SseCodec, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "quick_reactions",
+            port: None,
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Sync,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            transform_result_sse::<_, ()>((move || {
+                let output_ok = Ok::<_, ()>(crate::api::bragi::quick_reactions())?;
+                std::result::Result::Ok(output_ok)
+            })())
+        },
+    )
+}
+fn wire__crate__api__bragi__react_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "react",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_conversation = <String>::sse_decode(&mut deserializer);
+            let api_message = <String>::sse_decode(&mut deserializer);
+            let api_emoji = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::react(api_conversation, api_message, api_emoji)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__bragi__resumed_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1358,6 +1408,7 @@ impl SseDecode for crate::api::bragi::MessageView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_id = <String>::sse_decode(deserializer);
         let mut var_hasReply = <bool>::sse_decode(deserializer);
+        let mut var_reactions = <Vec<String>>::sse_decode(deserializer);
         let mut var_role = <String>::sse_decode(deserializer);
         let mut var_text = <String>::sse_decode(deserializer);
         let mut var_reasoning = <String>::sse_decode(deserializer);
@@ -1375,6 +1426,7 @@ impl SseDecode for crate::api::bragi::MessageView {
         return crate::api::bragi::MessageView {
             id: var_id,
             has_reply: var_hasReply,
+            reactions: var_reactions,
             role: var_role,
             text: var_text,
             reasoning: var_reasoning,
@@ -1586,15 +1638,16 @@ fn pde_ffi_dispatcher_primary_impl(
         27 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
         28 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
         29 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__bragi__react_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1617,9 +1670,10 @@ fn pde_ffi_dispatcher_sync_impl(
         20 => wire__crate__api__bragi__is_node_address_impl(ptr, rust_vec_len, data_len),
         21 => wire__crate__api__bragi__markdown_json_impl(ptr, rust_vec_len, data_len),
         30 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__bragi__quick_reactions_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1740,6 +1794,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
         [
             self.id.into_into_dart().into_dart(),
             self.has_reply.into_into_dart().into_dart(),
+            self.reactions.into_into_dart().into_dart(),
             self.role.into_into_dart().into_dart(),
             self.text.into_into_dart().into_dart(),
             self.reasoning.into_into_dart().into_dart(),
@@ -2026,6 +2081,7 @@ impl SseEncode for crate::api::bragi::MessageView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
         <bool>::sse_encode(self.has_reply, serializer);
+        <Vec<String>>::sse_encode(self.reactions, serializer);
         <String>::sse_encode(self.role, serializer);
         <String>::sse_encode(self.text, serializer);
         <String>::sse_encode(self.reasoning, serializer);

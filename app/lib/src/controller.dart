@@ -139,6 +139,15 @@ class BragiController extends ChangeNotifier {
     messages = List.of(current!.messages);
   });
 
+  /// Toggles a reaction on a message of the open conversation (the same one again removes it).
+  Future<void> react(MessageView m, String emoji) => _try(() async {
+    final c = current;
+    if (c == null || m.id.isEmpty) return;
+    await api.react(c.id, m.id, emoji);
+    current = await api.conversation(c.id);
+    messages = List.of(current!.messages);
+  });
+
   Future<void> send(String prompt) async {
     if (streaming || prompt.trim().isEmpty) return;
     final files = attachments;
@@ -302,6 +311,7 @@ class BragiController extends ChangeNotifier {
     }) => MessageView(
           id: last.id,
           hasReply: last.hasReply,
+          reactions: last.reactions,
           role: last.role,
           text: text ?? last.text,
           reasoning: reasoning ?? last.reasoning,

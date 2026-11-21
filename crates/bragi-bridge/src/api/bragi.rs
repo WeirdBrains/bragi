@@ -139,6 +139,8 @@ pub struct MessageView {
     pub id: String,
     /// A user message followed by its answer: deleting it offers to delete the answer too.
     pub has_reply: bool,
+    /// Emoji the user reacted with, in the order added.
+    pub reactions: Vec<String>,
     /// `user` or `assistant`.
     pub role: String,
     pub text: String,
@@ -389,6 +391,7 @@ fn conversation_view(c: &Conversation) -> ConversationView {
             .map(|m| MessageView {
                 id: m.id.clone(),
                 has_reply: c.reply_to(&m.id).is_some(),
+                reactions: m.reactions.clone(),
                 role: if m.role == Role::User { "user" } else { "assistant" }.into(),
                 text: m.text.clone(),
                 reasoning: m.reasoning.clone(),
@@ -707,6 +710,17 @@ pub fn conversations(offset: u32, limit: u32) -> Result<Vec<SummaryView>, String
 
 pub fn conversation(id: String) -> Result<ConversationView, String> {
     core()?.conversation(&id).map(|c| conversation_view(&c)).map_err(err)
+}
+
+/// The quick reaction bar, in order.
+#[flutter_rust_bridge::frb(sync)]
+pub fn quick_reactions() -> Vec<String> {
+    bragi_core::QUICK_REACTIONS.iter().map(|s| s.to_string()).collect()
+}
+
+/// Toggles a reaction on a message; returns the message's reactions afterwards.
+pub fn react(conversation: String, message: String, emoji: String) -> Result<Vec<String>, String> {
+    core()?.react(&conversation, &message, &emoji).map_err(err)
 }
 
 pub fn delete_conversation(id: String) -> Result<(), String> {

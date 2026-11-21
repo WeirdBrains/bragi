@@ -27,20 +27,58 @@ void showUndo(BuildContext context, BragiController c, String what) {
   );
 }
 
-/// The long-press menu on a message.
+/// More emoji behind the quick bar's "more" button.
+const _moreReactions = ['🙏', '👏', '🔥', '😮', '😢', '😡', '🚀', '✅', '❌', '💡', '👀', '🙌'];
+
+/// The long-press menu on a message: the reaction bar (quick picks and a picker; one already on turns
+/// off) and Delete.
 Future<void> messageMenu(BuildContext context, BragiController c, MessageView m) async {
-  final picked = await showModalBottomSheet<bool>(
+  final picked = await showModalBottomSheet<String>(
     context: context,
     builder: (sheet) => SafeArea(
-      child: ListTile(
-        key: const Key('menu-delete'),
-        leading: const Icon(Icons.delete_outline, color: BragiColors.error),
-        title: const Text('Delete'),
-        onTap: () => Navigator.of(sheet).pop(true),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Wrap(
+              key: const Key('reaction-bar'),
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final e in [...c.api.quickReactions(), ..._moreReactions])
+                  InkWell(
+                    key: Key('react-$e'),
+                    borderRadius: BorderRadius.circular(18),
+                    onTap: () => Navigator.of(sheet).pop(e),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: m.reactions.contains(e) ? BragiColors.selection : null,
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 24)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          ListTile(
+            key: const Key('menu-delete'),
+            leading: const Icon(Icons.delete_outline, color: BragiColors.error),
+            title: const Text('Delete'),
+            onTap: () => Navigator.of(sheet).pop(''),
+          ),
+        ],
       ),
     ),
   );
-  if (picked == true && context.mounted) await confirmDeleteMessage(context, c, m);
+  if (picked == null) return;
+  if (picked.isEmpty) {
+    if (context.mounted) await confirmDeleteMessage(context, c, m);
+  } else {
+    await c.react(m, picked);
+  }
 }
 
 /// Asks before deleting a message; a question with an answer after it asks about that too.

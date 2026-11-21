@@ -42,6 +42,8 @@ abstract class BragiApi {
   Future<rust.DeletedView> deleteConversations(List<String> ids);
   Future<void> undoDelete(String undo);
   Future<int> clearHistory();
+  Future<List<String>> react(String conversation, String message, String emoji);
+  List<String> quickReactions();
   Future<void> paused();
   Future<void> resumed();
   /// A reply's Markdown parsed by bragi-core, as JSON (see `markdown.dart`).
@@ -106,6 +108,10 @@ class RustBragiApi implements BragiApi {
   Future<void> undoDelete(String undo) => rust.undoDelete(undo: undo);
   @override
   Future<int> clearHistory() => rust.clearHistory();
+  Future<List<String>> react(String conversation, String message, String emoji) =>
+      rust.react(conversation: conversation, message: message, emoji: emoji);
+  @override
+  List<String> quickReactions() => rust.quickReactions();
   @override
   Future<void> paused() => rust.paused();
   @override

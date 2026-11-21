@@ -361,7 +361,10 @@ class _Bubble extends StatelessWidget {
     final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
+      child: GestureDetector(
+        key: const Key('bubble'),
+        onLongPress: () => _bar(context),
+        child: Container(
         constraints: const BoxConstraints(maxWidth: 560),
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -396,6 +399,31 @@ class _Bubble extends StatelessWidget {
               )
             else
               MarkdownView(key: const Key('bubble-markdown'), doc: controller.markdown(message.text, streaming || message.state == 'streaming')),
+            if (message.reactions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final e in message.reactions)
+                      InkWell(
+                        key: Key('pill-$e'),
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: streaming ? null : () => controller.react(message, e),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: BragiColors.selection,
+                            border: Border.all(color: BragiColors.border),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(e, style: const TextStyle(fontSize: 14)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             if (!mine && !streaming && message.text.isNotEmpty)
               Align(
                 alignment: Alignment.centerRight,
@@ -411,6 +439,7 @@ class _Bubble extends StatelessWidget {
               ),
           ],
         ),
+      ),
       ),
     );
   }
