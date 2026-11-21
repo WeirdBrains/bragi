@@ -202,7 +202,7 @@ void main() {
     // ---- Sessions: a chat bound to Mock Alpha, and one bound to Mock B (same server) ----
     Navigator.of(tester.element(find.byKey(const Key('settings-list')))).pop();
     await tester.pumpAndSettle();
-    expect(c.targets.map((t) => t.label), ['Weirdnet pool', 'Mock Alpha']);
+    expect(c.targets.map((t) => t.label), ['Weirdnet pool', 'Mock Alpha · mock-1']);
     Future<void> chatTo(TargetView? t, String text) async {
       c.newChat();
       if (t != null) c.pickTarget(t);
