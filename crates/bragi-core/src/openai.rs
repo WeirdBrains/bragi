@@ -59,7 +59,8 @@ pub fn normalize_url(url: &str) -> Result<String> {
 pub fn is_insecure(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("http://") else { return false };
     let host = rest.split('/').next().unwrap_or_default();
-    let name = if host.starts_with('[') { host.split(']').next().unwrap_or("").trim_start_matches('[') } else { host.split(':').next().unwrap_or("") };
+    let name =
+        if host.starts_with('[') { host.split(']').next().unwrap_or("").trim_start_matches('[') } else { host.split(':').next().unwrap_or("") };
     !(name == "localhost" || name == "127.0.0.1" || name == "::1")
 }
 

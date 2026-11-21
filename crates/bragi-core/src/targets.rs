@@ -285,7 +285,8 @@ impl Core {
         let handle = match &target {
             Target::Pool => self.send_pool(conversation, prompt, model, attachments)?,
             Target::Endpoint { id, model: m } => {
-                let ep = self.inner.endpoints.get(id).ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))?;
+                let ep =
+                    self.inner.endpoints.get(id).ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))?;
                 let m = Some(m.clone()).filter(|m| !m.is_empty()).or(model);
                 self.send_endpoints(conversation, prompt, attachments, vec![ep], m)?
             }
@@ -300,10 +301,10 @@ impl Core {
     }
 
     fn default_target(&self) -> Target {
-        if self.net().is_err() {
-            if let Some(t) = self.targets().into_iter().nth(1) {
-                return t.target;
-            }
+        if self.net().is_err()
+            && let Some(t) = self.targets().into_iter().nth(1)
+        {
+            return t.target;
         }
         Target::Pool
     }

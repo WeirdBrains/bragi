@@ -13,7 +13,6 @@ pub mod catalog;
 pub mod chat;
 pub mod context;
 mod core;
-mod targets;
 pub mod demo;
 pub mod endpoints;
 pub mod error;
@@ -24,6 +23,7 @@ pub mod markdown;
 pub mod openai;
 pub mod reactions;
 pub mod sessions;
+mod targets;
 pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
@@ -35,9 +35,9 @@ pub use crate::core::{
     Transport, is_node_address, node_config, normalize_link,
 };
 pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
-pub use crate::openai::TestReport;
-pub use crate::sessions::{Folder, SessionMeta, Target};
-pub use crate::targets::{DeleteReport, LinkView, SessionSummary, TargetOption};
 pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};
+pub use crate::openai::TestReport;
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};
+pub use crate::sessions::{Folder, SessionMeta, Target};
+pub use crate::targets::{DeleteReport, LinkView, SessionSummary, TargetOption};

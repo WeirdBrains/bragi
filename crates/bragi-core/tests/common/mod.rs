@@ -123,17 +123,33 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                 let (method, path) = (first.next().unwrap_or("").to_string(), first.next().unwrap_or("").to_string());
                 let auth = head.lines().find_map(|l| l.to_ascii_lowercase().starts_with("authorization:").then(|| l[14..].trim().to_string()));
                 log.lock().unwrap().push(Seen { method, path: path.clone(), auth: auth.clone(), body });
-                if let Some(k) = key {
-                    if auth.as_deref() != Some(&format!("Bearer {k}")) {
-                        let b = r#"{"error":{"message":"Incorrect API key provided"}}"#;
-                        let _ = sock.write_all(format!("HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{b}", b.len()).as_bytes()).await;
-                        return;
-                    }
+                if let Some(k) = key
+                    && auth.as_deref() != Some(&format!("Bearer {k}"))
+                {
+                    let b = r#"{"error":{"message":"Incorrect API key provided"}}"#;
+                    let _ = sock
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{b}",
+                                b.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
+                    return;
                 }
                 if path.ends_with("/models") {
                     let data: Vec<String> = models.iter().map(|m| format!(r#"{{"id":"{m}","object":"model"}}"#)).collect();
                     let b = format!(r#"{{"object":"list","data":[{}]}}"#, data.join(","));
-                    let _ = sock.write_all(format!("HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{b}", b.len()).as_bytes()).await;
+                    let _ = sock
+                        .write_all(
+                            format!(
+                                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{b}",
+                                b.len()
+                            )
+                            .as_bytes(),
+                        )
+                        .await;
                     return;
                 }
                 if !path.ends_with("/chat/completions") {
@@ -142,10 +158,17 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                 }
                 let sse = |delta: String, finish: &str| format!("data: {{\"choices\":[{{\"delta\":{delta},\"finish_reason\":{finish}}}]}}\n\n");
                 let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n";
-                let words = |w: &[&str], field: &str| w.iter().map(|w| sse(format!("{{\"{field}\":{}}}", serde_json::json!(w)), "null")).collect::<String>();
-                let done = format!("{}data: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":7,\"completion_tokens\":3}}}}\n\ndata: [DONE]\n\n", sse("{}".into(), "\"stop\""));
+                let words =
+                    |w: &[&str], field: &str| w.iter().map(|w| sse(format!("{{\"{field}\":{}}}", serde_json::json!(w)), "null")).collect::<String>();
+                let done = format!(
+                    "{}data: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":7,\"completion_tokens\":3}}}}\n\ndata: [DONE]\n\n",
+                    sse("{}".into(), "\"stop\"")
+                );
                 let out = match chat {
-                    Chat::Status(code, body) => format!("HTTP/1.1 {code} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()),
+                    Chat::Status(code, body) => format!(
+                        "HTTP/1.1 {code} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                        body.len()
+                    ),
                     Chat::Words(w) => format!("{head}{}{done}", words(&w, "content")),
                     Chat::Reasoning(r, w) => format!("{head}{}{}{done}", words(&r, "reasoning_content"), words(&w, "content")),
                     Chat::CutOff(w) => format!("{head}{}", words(&w, "content")),

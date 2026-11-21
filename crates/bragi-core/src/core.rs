@@ -743,7 +743,10 @@ impl Core {
                 let e = CoreError::from(&i.error);
                 let fallbacks = core.inner.endpoints.fallbacks();
                 if !i.streamed() && streamed.text.is_empty() && e.kind != ErrorKind::Cancelled && !fallbacks.is_empty() {
-                    let _ = out.send(ChatEvent::Retry { attempt: 1, message: format!("The pool couldn't answer ({}); trying a fallback endpoint", e.message) });
+                    let _ = out.send(ChatEvent::Retry {
+                        attempt: 1,
+                        message: format!("The pool couldn't answer ({}); trying a fallback endpoint", e.message),
+                    });
                     core.answer_from_endpoints(&conv, &rid, fallbacks, None, messages, &cancel, &out, shown).await;
                     return;
                 }
@@ -780,7 +783,15 @@ impl Core {
     }
 
     /// [`finish`](Self::finish) for an answer that didn't come from the pool (no cache or stand-in flags).
-    pub(crate) fn finish_turn(&self, conversation: &str, text: String, streamed: &Streamed, state: MessageState, node: Option<String>, model: Option<String>) {
+    pub(crate) fn finish_turn(
+        &self,
+        conversation: &str,
+        text: String,
+        streamed: &Streamed,
+        state: MessageState,
+        node: Option<String>,
+        model: Option<String>,
+    ) {
         self.finish(conversation, text, streamed, state, node, model, Flags::default());
     }
 

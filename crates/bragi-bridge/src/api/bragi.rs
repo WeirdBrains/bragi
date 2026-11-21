@@ -952,7 +952,12 @@ pub async fn test_endpoint(id: String) -> Result<TestResultView, String> {
 pub async fn test_endpoint_address(base_url: String, api_key: Option<String>) -> Result<TestResultView, String> {
     let core = core()?;
     let c = core.clone();
-    core.handle().spawn(async move { c.test_endpoint_address(&base_url, api_key).await }).await.map_err(|e| e.to_string())?.map(test_view).map_err(err)
+    core.handle()
+        .spawn(async move { c.test_endpoint_address(&base_url, api_key).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(test_view)
+        .map_err(err)
 }
 
 pub async fn endpoint_models(id: String) -> Result<Vec<String>, String> {
