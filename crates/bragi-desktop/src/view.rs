@@ -47,6 +47,9 @@ struct Card {
     tier: String,
 }
 
+/// A reply's text, whether it was parsed while streaming, and its parsed Markdown.
+type ParsedReply = (String, bool, Rc<bragi_core::markdown::Document>);
+
 pub struct BragiView {
     core: Core,
     theme: Theme,
@@ -79,7 +82,7 @@ pub struct BragiView {
     mono: SharedString,
     copied_block: Option<SharedString>,
     /// Each shown reply's parsed Markdown, by message key, kept until its text changes.
-    markdown: RefCell<HashMap<String, (String, bool, Rc<bragi_core::markdown::Document>)>>,
+    markdown: RefCell<HashMap<String, ParsedReply>>,
     _tasks: Vec<Task<()>>,
 }
 

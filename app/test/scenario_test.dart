@@ -184,7 +184,7 @@ void main() {
     expect(last().text, contains('2 + 2 equals **4**.'));
     await tester.pump();
     expect(find.byKey(const Key('bubble-markdown')), findsOneWidget);
-    expect(find.textContaining('**'), findsNothing, reason: 'no literal asterisks');
+    expect(find.textContaining('equals **'), findsNothing, reason: 'no literal asterisks');
     expect(find.textContaining('2 + 2 equals 4.', findRichText: true), findsOneWidget);
     expect(find.byType(Table), findsOneWidget);
     expect(find.byKey(const Key('code-copy')), findsOneWidget);

@@ -498,7 +498,11 @@ impl Lexer<'_> {
                 if c == '\'' && self.l.char_quote && !self.l.quotes.contains('\'') {
                     // A char literal: 'a', '\n', '\u{1F600}'. Otherwise ('a lifetime) plain.
                     let body = &rest[1..];
-                    let len = if body.starts_with('\\') { body[1..].find('\'').map(|e| e + 2) } else { body.chars().next().map(|ch| ch.len_utf8()) };
+                    let len = if let Some(esc) = body.strip_prefix('\\') {
+                        esc.find('\'').map(|e| e + 2)
+                    } else {
+                        body.chars().next().map(|ch| ch.len_utf8())
+                    };
                     if let Some(len) = len
                         && body[len.min(body.len())..].starts_with('\'')
                         && len <= 12
