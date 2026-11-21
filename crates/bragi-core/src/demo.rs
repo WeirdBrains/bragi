@@ -200,8 +200,22 @@ struct FakeBackend {
     faults: Arc<Faults>,
 }
 
+trait Parts {
+    /// How many images and how many sounds the request's messages carry.
+    fn messages_parts(&self) -> (usize, usize);
+}
+
+impl Parts for Request {
+    fn messages_parts(&self) -> (usize, usize) {
+        let parts: Vec<weirdnet_agent::ContentPart> = self.inline_messages().unwrap_or_default().iter().flat_map(|m| m.content.parts()).collect();
+        let images = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::ImageUrl { .. })).count();
+        let sounds = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::InputAudio { .. })).count();
+        (images, sounds)
+    }
+}
+
 fn last_user(req: &Request) -> String {
-    req.inline_messages().and_then(|m| m.iter().rev().find(|m| m.role == Role::User)).map(|m| m.content.clone()).unwrap_or_default()
+    req.inline_messages().and_then(|m| m.iter().rev().find(|m| m.role == Role::User)).map(|m| m.content.text().into_owned()).unwrap_or_default()
 }
 
 #[async_trait]
@@ -218,6 +232,11 @@ impl InferBackend for FakeBackend {
         let prompt = last_user(request);
         let answering = self.standin.clone().unwrap_or_else(|| self.model.clone());
         let mut text = answer_for(&answering, &prompt);
+        // A model that reads what it was sent says so (WARM_MODEL, like Gemma 4, takes images and audio; the others are text only).
+        let seen = request.messages_parts();
+        if seen.0 + seen.1 > 0 {
+            text = format!("I can see {} image(s) and {} sound(s). {text}", seen.0, seen.1);
+        }
         let reasoning = reasoning_for(&prompt);
         let inline = prompt.starts_with(THINK_INLINE_PROMPT);
         // A continued answer's prefix is the answer without its block; a resumed one is the raw text.
@@ -327,12 +346,13 @@ impl ModelBackend for AgentModel {
         match messages.last() {
             Some(m) if m.role == Role::Tool => {
                 // The runtime wraps tool output in `<untrusted_tool_result>` and adds a trace note.
-                let said: Vec<&str> = m.content.lines().filter(|l| !l.starts_with('<') && !l.starts_with('[')).collect();
+                let body = m.content.text();
+                let said: Vec<&str> = body.lines().filter(|l| !l.starts_with('<') && !l.starts_with('[')).collect();
                 self.say(deltas, cancel, &format!("The notes tool said: {}. That is everything it found.", said.join(" "))).await?;
                 Ok(ModelTurn { text: String::new(), tool_calls: Vec::new() })
             }
             other => {
-                let ask: String = other.map(|m| m.content.clone()).unwrap_or_default().chars().take(40).collect();
+                let ask: String = other.map(|m| m.content.text().into_owned()).unwrap_or_default().chars().take(40).collect();
                 self.say(deltas, cancel, "Let me check your notes. ").await?;
                 let call = ToolCall { id: "call-1".into(), name: DEMO_TOOL.into(), arguments: serde_json::json!({ "query": ask }) };
                 Ok(ModelTurn { text: String::new(), tool_calls: vec![call] })
@@ -462,6 +482,7 @@ impl DemoNode {
             .map(|(id, state)| {
                 let warm = *state == ModelState::Warm;
                 let m = CatalogModel::new(id.clone(), Purpose::Chat, *state).with_context(32768);
+                let m = if id == WARM_MODEL { m.with_inputs(weirdnet_agent::Modalities::new(true, true)) } else { m };
                 if warm { m.with_replicas(1).with_speed(if id == BIG_MODEL { 22.0 } else { 48.0 }) } else { m.with_speed(14.0) }
             })
             .collect();

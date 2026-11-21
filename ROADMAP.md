@@ -32,6 +32,6 @@ Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 
 ## B5 Breadth (In progress)
 
-Text attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.
+Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.
 
 Weirdnet crates: `weirdnet-agent`.

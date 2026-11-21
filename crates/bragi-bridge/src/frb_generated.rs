@@ -1209,7 +1209,10 @@ impl SseDecode for crate::api::bragi::AttachmentView {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_text = <String>::sse_decode(deserializer);
-        return crate::api::bragi::AttachmentView { name: var_name, text: var_text };
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_mime = <String>::sse_decode(deserializer);
+        let mut var_data = <String>::sse_decode(deserializer);
+        return crate::api::bragi::AttachmentView { name: var_name, text: var_text, kind: var_kind, mime: var_mime, data: var_data };
     }
 }
 
@@ -1455,6 +1458,8 @@ impl SseDecode for crate::api::bragi::ModelView {
         let mut var_context = <Option<u32>>::sse_decode(deserializer);
         let mut var_nodes = <u32>::sse_decode(deserializer);
         let mut var_standin = <Option<String>>::sse_decode(deserializer);
+        let mut var_vision = <bool>::sse_decode(deserializer);
+        let mut var_audio = <bool>::sse_decode(deserializer);
         return crate::api::bragi::ModelView {
             id: var_id,
             status: var_status,
@@ -1463,6 +1468,8 @@ impl SseDecode for crate::api::bragi::ModelView {
             context: var_context,
             nodes: var_nodes,
             standin: var_standin,
+            vision: var_vision,
+            audio: var_audio,
         };
     }
 }
@@ -1683,7 +1690,14 @@ fn pde_ffi_dispatcher_sync_impl(
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::bragi::AttachmentView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
-        [self.name.into_into_dart().into_dart(), self.text.into_into_dart().into_dart()].into_dart()
+        [
+            self.name.into_into_dart().into_dart(),
+            self.text.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.mime.into_into_dart().into_dart(),
+            self.data.into_into_dart().into_dart(),
+        ]
+        .into_dart()
     }
 }
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::AttachmentView {}
@@ -1830,6 +1844,8 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ModelView {
             self.context.into_into_dart().into_dart(),
             self.nodes.into_into_dart().into_dart(),
             self.standin.into_into_dart().into_dart(),
+            self.vision.into_into_dart().into_dart(),
+            self.audio.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1928,6 +1944,9 @@ impl SseEncode for crate::api::bragi::AttachmentView {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.name, serializer);
         <String>::sse_encode(self.text, serializer);
+        <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.mime, serializer);
+        <String>::sse_encode(self.data, serializer);
     }
 }
 
@@ -2109,6 +2128,8 @@ impl SseEncode for crate::api::bragi::ModelView {
         <Option<u32>>::sse_encode(self.context, serializer);
         <u32>::sse_encode(self.nodes, serializer);
         <Option<String>>::sse_encode(self.standin, serializer);
+        <bool>::sse_encode(self.vision, serializer);
+        <bool>::sse_encode(self.audio, serializer);
     }
 }
 

@@ -1531,11 +1531,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   AttachmentView dco_decode_attachment_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 2)
-      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    if (arr.length != 5)
+      throw Exception('unexpected arr length: expect 5 but see ${arr.length}');
     return AttachmentView(
       name: dco_decode_String(arr[0]),
       text: dco_decode_String(arr[1]),
+      kind: dco_decode_String(arr[2]),
+      mime: dco_decode_String(arr[3]),
+      data: dco_decode_String(arr[4]),
     );
   }
 
@@ -1738,8 +1741,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   ModelView dco_decode_model_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 7)
-      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    if (arr.length != 9)
+      throw Exception('unexpected arr length: expect 9 but see ${arr.length}');
     return ModelView(
       id: dco_decode_String(arr[0]),
       status: dco_decode_String(arr[1]),
@@ -1748,6 +1751,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       context: dco_decode_opt_box_autoadd_u_32(arr[4]),
       nodes: dco_decode_u_32(arr[5]),
       standin: dco_decode_opt_String(arr[6]),
+      vision: dco_decode_bool(arr[7]),
+      audio: dco_decode_bool(arr[8]),
     );
   }
 
@@ -1887,7 +1892,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_name = sse_decode_String(deserializer);
     var var_text = sse_decode_String(deserializer);
-    return AttachmentView(name: var_name, text: var_text);
+    var var_kind = sse_decode_String(deserializer);
+    var var_mime = sse_decode_String(deserializer);
+    var var_data = sse_decode_String(deserializer);
+    return AttachmentView(
+      name: var_name,
+      text: var_text,
+      kind: var_kind,
+      mime: var_mime,
+      data: var_data,
+    );
   }
 
   @protected
@@ -2159,6 +2173,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_context = sse_decode_opt_box_autoadd_u_32(deserializer);
     var var_nodes = sse_decode_u_32(deserializer);
     var var_standin = sse_decode_opt_String(deserializer);
+    var var_vision = sse_decode_bool(deserializer);
+    var var_audio = sse_decode_bool(deserializer);
     return ModelView(
       id: var_id,
       status: var_status,
@@ -2167,6 +2183,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       context: var_context,
       nodes: var_nodes,
       standin: var_standin,
+      vision: var_vision,
+      audio: var_audio,
     );
   }
 
@@ -2362,6 +2380,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.name, serializer);
     sse_encode_String(self.text, serializer);
+    sse_encode_String(self.kind, serializer);
+    sse_encode_String(self.mime, serializer);
+    sse_encode_String(self.data, serializer);
   }
 
   @protected
@@ -2588,6 +2609,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_opt_box_autoadd_u_32(self.context, serializer);
     sse_encode_u_32(self.nodes, serializer);
     sse_encode_opt_String(self.standin, serializer);
+    sse_encode_bool(self.vision, serializer);
+    sse_encode_bool(self.audio, serializer);
   }
 
   @protected

@@ -126,7 +126,7 @@ impl BragiView {
         let theme = Theme::default();
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
-        let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
+        let attach_input = cx.new(|cx| TextInput::new("Path of a text, image or audio file…", theme, cx));
         let confirm_input = cx.new(|cx| TextInput::new(delete::CLEAR_WORD, theme, cx));
         cx.subscribe_in(&confirm_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
             TextInputEvent::Submit { .. } => this.confirm_delete(false, cx),
@@ -975,7 +975,7 @@ impl BragiView {
                         .bg(rgb(t.surface_variant))
                         .text_size(px(12.))
                         .text_color(rgb(t.text_secondary))
-                        .child(format!("attached: {} ({} lines)", a.name, a.text.lines().count()))
+                        .child(format!("attached: {}", a.label()))
                 }))
                 .children(self.thinking(i, m, cx))
                 .child(self.message_text(i, m, cx)),
@@ -1144,7 +1144,7 @@ impl BragiView {
                         .text_size(px(12.))
                         .cursor_pointer()
                         .on_click(cx.listener(move |v, _, _, cx| v.detach(i, cx)))
-                        .child(format!("{} ({} lines) ×", a.name, a.text.lines().count())),
+                        .child(format!("{} ×", a.label())),
                 );
             }
             above = above.child(chips);

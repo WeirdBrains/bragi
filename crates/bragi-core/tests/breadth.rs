@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use bragi_core::demo::{DemoNode, WARM_MODEL};
+use bragi_core::demo::{BIG_MODEL, COLD_MODEL, DemoNode, WARM_MODEL};
 use bragi_core::{AppState, Attachment, ChatEvent, ChatHandle, Choice, Core, ErrorKind, MessageState, PairState, ToolState};
 
 async fn until(core: &Core, what: &str, f: impl Fn(&AppState) -> bool) -> AppState {
@@ -94,6 +94,67 @@ async fn an_attached_text_file_reaches_the_model_and_stays_with_the_message() {
     assert_eq!(e.kind, ErrorKind::BadRequest);
     assert!(Attachment::from_bytes("pic.png", &[0x89, 0x50, 0, 0]).unwrap_err().message.contains("not a text file"));
     core.shutdown();
+}
+
+/// A 1x1 PNG and a WAV header: enough to be recognised as an image and as sound.
+const PNG: &[u8] = &[
+    0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, b'I', b'H', b'D', b'R', 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4,
+    0x89,
+];
+
+fn wav() -> Vec<u8> {
+    [b"RIFF".as_slice(), &[36, 0, 0, 0], b"WAVEfmt ", &[0; 16]].concat()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_image_and_a_sound_reach_a_model_that_reads_them_and_not_one_that_does_not() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_demo, core) = cloud(tmp.path()).await;
+    let img = Attachment::from_bytes("shot.png", PNG).unwrap();
+    let snd = Attachment::from_bytes("hi.wav", &wav()).unwrap();
+
+    // The catalog says which models read what, and a model picked for a picture is one that does.
+    let models = core.state().catalog;
+    let info = |id: &str| models.models.iter().find(|m| m.id == id).unwrap().clone();
+    assert!(info(WARM_MODEL).vision && info(WARM_MODEL).audio);
+    assert!(!info(BIG_MODEL).vision && !info(COLD_MODEL).audio);
+
+    // No model named: the pool's first that reads images. The typed words may be empty with a picture.
+    let h = core.send_with(None, "", None, vec![img.clone(), snd.clone()]).unwrap();
+    let a = collect(h).await;
+    done(&a);
+    assert!(a.text.contains("I can see 1 image(s) and 1 sound(s)."), "{}", a.text);
+    let id = core.conversations(0, 10).unwrap()[0].id.clone();
+    let c = core.conversation(&id).unwrap();
+    assert_eq!(c.messages[0].attachments, vec![img.clone(), snd.clone()], "the message keeps them");
+    assert_eq!(c.title, "shot.png");
+
+    // A later text-only turn still sends them: the model has the whole conversation.
+    let a = collect(core.send_with(Some(&id), "What was in it?", Some(WARM_MODEL.into()), vec![]).unwrap()).await;
+    assert!(a.text.contains("I can see 1 image(s) and 1 sound(s)."), "{}", a.text);
+
+    // A model that can't read them is refused before anything is sent, naming the ones that can.
+    let e = core.send_with(None, "look", Some(BIG_MODEL.into()), vec![img.clone()]).err().expect("refused");
+    assert_eq!(e.kind, ErrorKind::BadRequest);
+    assert!(e.message.contains("can't read images") && e.message.contains(WARM_MODEL), "{}", e.message);
+    // The same for sound alone on a model that reads images but not audio is not tested here: the demo has none.
+
+    // Agent mode takes text only for now.
+    let e = core.send_agent(None, "look", None, None, vec![img]).err().expect("refused");
+    assert_eq!(e.kind, ErrorKind::BadRequest);
+    assert!(e.message.contains("agent mode"), "{}", e.message);
+    // A picture or sound with the wrong label, and bad base64, are refused.
+    assert!(Attachment::from_media("a.png", "audio", "wav", &base64_png()).is_err());
+    assert!(Attachment::from_media("a.png", "image", "image/png", "!!!").is_err());
+    assert!(Attachment::from_media("a.png", "image", "image/png", &base64_png()).is_ok());
+    core.shutdown();
+}
+
+fn base64_png() -> String {
+    match Attachment::from_bytes("a.png", PNG).unwrap().media {
+        Some(bragi_core::Media::Image { data, .. }) => data,
+        _ => unreachable!(),
+    }
 }
 
 /// Runs an agent task, answering every approval card with `choice` (`None`: leaves it open and

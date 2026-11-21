@@ -166,7 +166,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     for (final (i, a) in c.attachments.indexed)
                       InputChip(
                         key: Key('chip-$i'),
-                        label: Text('${a.name} (${a.text.trimRight().split('\n').length} lines)'),
+                        label: Text(_attachmentLabel(a)),
+                        avatar: a.kind == 'text' ? null : Icon(a.kind == 'image' ? Icons.image_outlined : Icons.graphic_eq, size: 16),
                         onDeleted: () => c.detach(i),
                       ),
                   ],
@@ -181,7 +182,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   IconButton(
                     key: const Key('attach'),
-                    tooltip: 'Attach a text file',
+                    tooltip: 'Attach a file, image or audio',
                     onPressed: _attach,
                     icon: const Icon(Icons.attach_file),
                   ),
@@ -373,7 +374,7 @@ class _Bubble extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  'attached: ${a.name} (${a.text.trimRight().split('\n').length} lines)',
+                  'attached: ${_attachmentLabel(a)}',
                   key: const Key('bubble-attachment'),
                   style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
                 ),
@@ -640,3 +641,10 @@ class _History extends StatelessWidget {
     );
   }
 }
+
+/// A chip or bubble line for an attachment: a text file by its length, an image or sound by its kind.
+String _attachmentLabel(AttachmentView a) => switch (a.kind) {
+  'image' => '${a.name} (image)',
+  'audio' => '${a.name} (audio)',
+  _ => '${a.name} (${a.text.trimRight().split('\n').length} lines)',
+};

@@ -149,7 +149,9 @@ class BragiController extends ChangeNotifier {
   });
 
   Future<void> send(String prompt) async {
-    if (streaming || prompt.trim().isEmpty) return;
+    if (streaming) return;
+    // Words are needed unless an image or a sound is attached.
+    if (prompt.trim().isEmpty && !attachments.any((a) => a.kind != 'text')) return;
     final files = attachments;
     attachments = const [];
     await _try(() async {
@@ -170,7 +172,8 @@ class BragiController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Adds a text file the picker returned. A binary or big one is refused with the core's words.
+  /// Adds a file the picker returned: text, an image (PNG, JPEG, GIF, WebP) or audio (WAV, MP3). Another
+  /// binary, or a big one, is refused with the core's words.
   void attachFile(String name, List<int> bytes) {
     try {
       attachments = [...attachments, api.attachBytes(name, bytes)];

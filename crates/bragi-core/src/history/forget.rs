@@ -280,7 +280,7 @@ mod tests {
         let mut c = conv("big", &["read this", "done"]);
         // Big enough to be chunked.
         let text: String = (0..6000).map(|i| format!("attached line {i}\n")).collect();
-        c.messages[0].attachments.push(crate::attach::Attachment { name: "notes.md".into(), text });
+        c.messages[0].attachments.push(crate::attach::Attachment { name: "notes.md".into(), text, media: None });
         h.save(&c).unwrap();
         h.save(&conv("keep", &["kept", "yes"])).unwrap();
         assert!(on_disk(&id).1 > 0, "the attachment is chunked");

@@ -2,6 +2,7 @@
 //! merged. A model on several nodes is one row.
 
 use serde::{Deserialize, Serialize};
+use weirdnet_agent::Modalities;
 use weirdnet_agent::remote::catalog::{Catalog, CatalogModel, ModelState, Purpose};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,6 +28,19 @@ pub struct ModelInfo {
     /// The model that answers while this one loads, if a node's policy names one.
     #[serde(default)]
     pub standin: Option<String>,
+    /// Whether some node's copy of it reads images.
+    #[serde(default)]
+    pub vision: bool,
+    /// Whether some node's copy of it reads audio.
+    #[serde(default)]
+    pub audio: bool,
+}
+
+impl ModelInfo {
+    /// Whether it reads what `needed` asks for (text always).
+    pub fn takes(&self, needed: Modalities) -> bool {
+        Modalities::new(self.vision, self.audio).covers(needed)
+    }
 }
 
 /// One inference node's share of the pool.
@@ -67,6 +81,8 @@ fn info(m: &CatalogModel) -> ModelInfo {
         context: m.context,
         nodes: Vec::new(),
         standin: None,
+        vision: m.inputs.vision,
+        audio: m.inputs.audio,
     }
 }
 
@@ -111,6 +127,8 @@ impl CatalogView {
                             (a, b) => a.or(b),
                         };
                         i.context = i.context.max(m.context);
+                        i.vision |= m.inputs.vision;
+                        i.audio |= m.inputs.audio;
                         if i.standin.is_none() {
                             i.standin = m.standin.clone();
                         }
@@ -130,6 +148,23 @@ impl CatalogView {
     /// The model to use when the user hasn't picked one: the first warm one, else the first.
     pub fn default_model(&self) -> Option<&str> {
         self.models.first().map(|m| m.id.as_str())
+    }
+
+    /// Like [`default_model`](Self::default_model), among the models that read `needed`.
+    pub fn default_model_for(&self, needed: Modalities) -> Option<&str> {
+        self.models.iter().find(|m| m.takes(needed)).map(|m| m.id.as_str())
+    }
+
+    /// Why `model` can't take `needed`, and which models can.
+    pub fn refusal(&self, model: &str, needed: Modalities) -> String {
+        let what =
+            self.models.iter().find(|m| m.id == model).and_then(|m| Modalities::new(m.vision, m.audio).lacking(needed)).unwrap_or("this input");
+        let ok: Vec<&str> = self.models.iter().filter(|m| m.takes(needed)).map(|m| m.id.as_str()).collect();
+        if ok.is_empty() {
+            format!("{model} can't read {what}, and none of the models on your nodes can")
+        } else {
+            format!("{model} can't read {what}; pick one that can: {}", ok.join(", "))
+        }
     }
 
     /// The nodes to ask for `model`, best first (empty if no node lists it).
