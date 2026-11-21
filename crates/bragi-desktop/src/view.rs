@@ -905,7 +905,7 @@ impl BragiView {
         markdown::render(&doc, &style, &key).into_any_element()
     }
 
-    fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement {
+    fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let mine = m.role == Role::User;
         let meta = match (m.role, m.state) {
@@ -1070,7 +1070,8 @@ impl BragiView {
         match &self.current {
             Some(c) => {
                 for (i, m) in c.messages.iter().enumerate() {
-                    body = body.child(self.message_row(i, m, self.bubble(i, m, cx), cx));
+                    let bubble = self.bubble(i, m, cx);
+                    body = body.child(self.message_row(i, m, bubble, cx));
                 }
             }
             None => {

@@ -2,6 +2,23 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-20: LF-21, delete a message, a conversation or all history (v0.1.1)
+
+**What changed**
+- Desktop and phone can delete a single message (hover or long-press; deleting a question asks whether its answer goes too), a whole conversation (history list) and all history (Settings, behind a typed confirm). Message and conversation deletes show an Undo for a few seconds; clear-all has no undo.
+- Deletes go through `bragi-core` (new `history/forget.rs`), and the Flutter bridge was regenerated for the new calls. Deleting removes the data from disk: the messages, their thinking and attachments, older stored versions and the on-disk index and cache entries.
+- Synced deletes travel as tombstones with the next sync, so a deleted item does not come back from a linked device. No `weirdnet-*` crate was changed.
+- A deleted message and its thinking never go back into the model context.
+- The bubble layout keeps room beside the text for reactions (LF-23).
+
+**Commits**: [`4196f94`](https://github.com/WeirdBrains/bragi/commit/4196f94) (the feature), then the commit that adds this entry, the phone test updates and a build fix for the desktop bubble.
+
+**Checks** (whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test` (including `tests/delete.rs`), `flutter analyze`, and the Flutter scenario test in demo mode (message delete with Undo, conversation delete, clear all).
+**Not tested**: a real phone; a delete synced between two real devices (covered by the core tests only).
+
+**Left**: nothing known.
+**Next**: LF-23, reactions.
+
 ## 2026-11-20: LF-19, the model's thinking (v0.1.1)
 
 **What changed**

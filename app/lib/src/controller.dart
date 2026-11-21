@@ -300,6 +300,8 @@ class BragiController extends ChangeNotifier {
       int? resumes,
       List<String>? tools,
     }) => MessageView(
+          id: last.id,
+          hasReply: last.hasReply,
           role: last.role,
           text: text ?? last.text,
           reasoning: reasoning ?? last.reasoning,
