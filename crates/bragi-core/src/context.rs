@@ -154,11 +154,37 @@ impl ContextStore {
         self.put(&format!("{conversation}/m/{}", m.id), serde_json::to_vec(m)?)
     }
 
-    /// Hides a conversation on every device (a tombstone: the records stay until retention).
+    /// Deletes a conversation on every device: a tombstone `meta` with nothing else in it (not
+    /// even the title), which Ymir reads as deleted too. Each Bragi device then drops the
+    /// conversation's messages from its own log ([`ContextStore::compact`]).
     pub fn delete(&self, conversation: &str) -> anyhow::Result<()> {
-        let mut meta = self.load_any(conversation).map(|c| c.meta).unwrap_or_default();
-        meta.deleted = true;
-        self.set_meta(conversation, meta)
+        self.set_meta(conversation, Meta { deleted: true, ..Meta::default() })
+    }
+
+    /// Deletes one message on every device: its record's latest value becomes a tombstone
+    /// (`{"deleted":true}`, no role or text), which neither Bragi nor Ymir reads as a message, so
+    /// it is not shown or sent to a model again. [`ContextStore::compact`] drops the old values.
+    pub fn delete_message(&self, conversation: &str, message: &str) -> anyhow::Result<()> {
+        check_id(conversation)?;
+        if message.is_empty() || message.contains('/') {
+            anyhow::bail!("a message id is not empty and has no `/`");
+        }
+        let tomb = serde_json::json!({ "deleted": true, "at_ms": now_ms() });
+        self.put(&format!("{conversation}/m/{message}"), serde_json::to_vec(&tomb)?)
+    }
+
+    /// Drops what no one can see any more from this device's copy: old values of every record,
+    /// and every message of a deleted conversation (waiting writes included). Returns how many
+    /// log entries were dropped. See [`Identity::compact`].
+    pub fn compact(&self) -> anyhow::Result<usize> {
+        let gone: std::collections::BTreeSet<String> = self.read_all().into_values().filter(|c| c.meta.deleted).map(|c| c.id).collect();
+        let of_gone = |record: &str| record.split_once("/m/").is_some_and(|(c, _)| gone.contains(c));
+        let before = self.pending().len();
+        self.pending().retain(|k, _| !of_gone(k));
+        if self.pending().len() != before {
+            self.save_pending();
+        }
+        self.id.compact(CONTEXT_TYPE, &of_gone)
     }
 
     /// Live conversations, newest first by `updated_ms`.

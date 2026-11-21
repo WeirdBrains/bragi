@@ -8,6 +8,7 @@ export 'rust/api/bragi.dart'
         ChatEventView,
         ChatStarted,
         ConversationView,
+        DeletedView,
         LinkCheckView,
         MessageView,
         ModelView,
@@ -37,6 +38,10 @@ abstract class BragiApi {
   bool cancel(String requestId);
   Future<List<rust.SummaryView>> conversations(int offset, int limit);
   Future<rust.ConversationView> conversation(String id);
+  Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply);
+  Future<rust.DeletedView> deleteConversations(List<String> ids);
+  Future<void> undoDelete(String undo);
+  Future<int> clearHistory();
   Future<void> paused();
   Future<void> resumed();
   /// A reply's Markdown parsed by bragi-core, as JSON (see `markdown.dart`).
@@ -92,6 +97,15 @@ class RustBragiApi implements BragiApi {
   Future<List<rust.SummaryView>> conversations(int offset, int limit) => rust.conversations(offset: offset, limit: limit);
   @override
   Future<rust.ConversationView> conversation(String id) => rust.conversation(id: id);
+  @override
+  Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply) =>
+      rust.deleteMessage(conversation: conversation, id: id, withReply: withReply);
+  @override
+  Future<rust.DeletedView> deleteConversations(List<String> ids) => rust.deleteConversations(ids: ids);
+  @override
+  Future<void> undoDelete(String undo) => rust.undoDelete(undo: undo);
+  @override
+  Future<int> clearHistory() => rust.clearHistory();
   @override
   Future<void> paused() => rust.paused();
   @override

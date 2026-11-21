@@ -255,7 +255,11 @@ impl Core {
 
     fn finish_agent(&self, conversation: &str, text: String, state: MessageState, node: String, companion: String, tools: Vec<String>) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
-        if let Some(m) = c.messages.last_mut().filter(|m| m.role == crate::history::Role::Assistant) {
+        // The answer was deleted while the task ran: nothing to write.
+        let Some(m) = c.messages.last_mut().filter(|m| m.role == crate::history::Role::Assistant && m.state == MessageState::Streaming) else {
+            return;
+        };
+        {
             m.text = text;
             m.state = state;
             m.node = Some(node);

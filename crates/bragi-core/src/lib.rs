@@ -30,4 +30,4 @@ pub use crate::core::{
     Transport, is_node_address, node_config, normalize_link,
 };
 pub use crate::error::{CoreError, ErrorKind, Result};
-pub use crate::history::{ChatMessage, Conversation, ConversationSummary, MessageState, Role};
+pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};

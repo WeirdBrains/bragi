@@ -42,6 +42,9 @@ class BragiController extends ChangeNotifier {
   List<AttachmentView> attachments = const [];
   bool agent = false;
   ApprovalCard? card;
+
+  /// The last delete, while its Undo is offered.
+  DeletedView? deleted;
   StreamSubscription<StateView>? _watch;
   final Map<String, Map<String, dynamic>> _markdown = {};
 
@@ -193,6 +196,54 @@ class BragiController extends ChangeNotifier {
     final r = requestId;
     if (r != null) api.cancel(r);
   }
+
+  /// Deletes [m] from the open conversation (and with [withReply] the answer after it), on every
+  /// linked device. Not while an answer streams. True when it went.
+  Future<bool> deleteMessage(MessageView m, {required bool withReply}) async {
+    final c = current;
+    if (c == null || streaming) return false;
+    var ok = false;
+    await _try(() async {
+      deleted = await api.deleteMessage(c.id, m.id, withReply);
+      ok = true;
+      await _refresh();
+    });
+    return ok;
+  }
+
+  /// Deletes a whole conversation from the history list.
+  Future<bool> deleteConversation(String id) async {
+    if (streaming && current?.id == id) return false;
+    var ok = false;
+    await _try(() async {
+      deleted = await api.deleteConversations([id]);
+      ok = true;
+      if (current?.id == id) newChat();
+      await _refresh();
+    });
+    return ok;
+  }
+
+  /// Puts the last delete back (the snackbar's Undo).
+  Future<void> undoDelete() async {
+    final d = deleted;
+    if (d == null) return;
+    deleted = null;
+    await _try(() async {
+      await api.undoDelete(d.undo);
+      await _refresh();
+    });
+  }
+
+  /// Deletes all history, everywhere, with no undo.
+  Future<void> clearHistory() => _try(() async {
+    if (streaming) stop();
+    final n = await api.clearHistory();
+    deleted = null;
+    newChat();
+    await _refresh();
+    notice = n == 1 ? 'Deleted 1 conversation.' : 'Deleted $n conversations.';
+  });
 
   /// The Link a device box: a link code starts a link; a node address (`/ip4/…/p2p/…`, from
   /// `ymirctl pool addresses`) is kept and dialed at once, as on the desktop. True when an

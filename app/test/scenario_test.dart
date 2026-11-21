@@ -242,6 +242,52 @@ void main() {
     expect(c.notice, isNull);
     final line = tester.widget<Text>(find.byKey(const Key('node-search')));
     expect(line.style!.color, BragiColors.warm);
+
+    // Delete from the history: a question and its answer (long-press menu, confirm, Undo), a
+    // whole conversation from the list, then everything from Settings behind a typed confirm.
+    Navigator.of(tester.element(find.byKey(const Key('link-code')))).pop();
+    await tester.pump(const Duration(milliseconds: 400));
+    final target = c.conversations.last;
+    await tester.runAsync(() => c.open(target.id));
+    await tester.pump();
+    expect(c.messages, hasLength(4));
+    expect(c.messages[2].hasReply, isTrue);
+    await tester.longPress(find.byKey(const Key('bubble-2')));
+    await until('the message menu', () => shown('menu-delete'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('menu-delete')));
+    await until('the confirm', () => shown('delete-with-reply'));
+    await tester.tap(find.byKey(const Key('delete-with-reply')));
+    await until('the delete', () => c.messages.length == 2 && shown('undo'));
+    expect(c.messages.map((m) => m.text), isNot(contains(prompt2)));
+    await tester.tap(find.byKey(const Key('undo')));
+    await until('the undo', () => c.messages.length == 4);
+    expect(c.messages[2].text, prompt2);
+    await tester.pump(const Duration(seconds: 10));
+
+    final before = c.conversations.length;
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await until('the drawer', () => shown('delete-conv-${target.id}'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(Key('delete-conv-${target.id}')));
+    await until('the confirm', () => shown('delete-confirm'));
+    await tester.tap(find.byKey(const Key('delete-confirm')));
+    await until('the conversation gone', () => c.conversations.length == before - 1);
+    expect(c.current, isNull);
+
+    await tester.tap(find.byKey(const Key('settings')));
+    await until('settings', () => shown('clear-history'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('clear-history')));
+    await until('the typed confirm', () => shown('clear-confirm-text'));
+    await tester.tap(find.byKey(const Key('clear-confirm')));
+    await tester.pump();
+    expect(c.conversations, isNotEmpty, reason: 'not before the word is typed');
+    await tester.enterText(find.byKey(const Key('clear-confirm-text')), 'delete');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('clear-confirm')));
+    await until('all history gone', () => c.conversations.isEmpty);
+    expect(c.notice, startsWith('Deleted'));
   });
 
   test('splice puts a delta at its offset', () {

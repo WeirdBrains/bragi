@@ -23,6 +23,8 @@ use crate::markdown;
 use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
+mod delete;
+
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 
 /// The process exit code: 0 ok, 1 the scenario failed.
@@ -88,6 +90,12 @@ pub struct BragiView {
     copied_block: Option<SharedString>,
     /// Each shown reply's parsed Markdown, by message key, kept until its text changes.
     markdown: RefCell<HashMap<String, ParsedReply>>,
+    /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
+    /// all history wants, the last delete while it can be undone, and the Settings view.
+    confirm: Option<delete::Confirm>,
+    confirm_input: Entity<TextInput>,
+    deleted: Option<bragi_core::Deleted>,
+    settings_open: bool,
     _tasks: Vec<Task<()>>,
 }
 
@@ -112,6 +120,13 @@ impl BragiView {
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
         let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
+        let confirm_input = cx.new(|cx| TextInput::new(delete::CLEAR_WORD, theme, cx));
+        cx.subscribe_in(&confirm_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+            TextInputEvent::Submit { .. } => this.confirm_delete(false, cx),
+            TextInputEvent::Cancel => this.cancel_confirm(cx),
+            _ => cx.notify(),
+        })
+        .detach();
         cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
             if let TextInputEvent::Submit { .. } = ev {
                 this.attach_typed(cx);
@@ -167,6 +182,10 @@ impl BragiView {
             recheck: false,
             dragging: false,
             close_only: tiling_wm(),
+            confirm: None,
+            confirm_input,
+            deleted: None,
+            settings_open: false,
             _tasks: vec![follow],
         }
     }
@@ -276,11 +295,13 @@ impl BragiView {
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
         self.core.dismiss_node_search();
         self.current = None;
+        self.settings_open = false;
         cx.notify();
     }
 
     pub fn open(&mut self, id: &str, cx: &mut Context<Self>) {
         self.current = self.core.conversation(id).ok();
+        self.settings_open = false;
         self.jump_to_latest();
         cx.notify();
     }
@@ -714,7 +735,11 @@ impl BragiView {
                     .hover(|s| s.bg(rgb(t.surface_variant)))
                     .cursor_pointer()
                     .on_click(cx.listener(move |v, _, _, cx| v.open(&id, cx)))
-                    .child(c.title.clone()),
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(div().flex_1().overflow_hidden().child(c.title.clone()))
+                    .child(self.conversation_delete(&c.id, cx)),
             );
         }
         let link_box = match &self.link_check {
@@ -762,6 +787,7 @@ impl BragiView {
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
             .child(list)
             .child(link_box)
+            .child(self.button("open-settings", "Settings", self.settings_open).on_click(cx.listener(|v, _, _, cx| v.toggle_settings(cx))))
     }
 
     fn models(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1044,7 +1070,7 @@ impl BragiView {
         match &self.current {
             Some(c) => {
                 for (i, m) in c.messages.iter().enumerate() {
-                    body = body.child(self.bubble(i, m, cx));
+                    body = body.child(self.message_row(i, m, self.bubble(i, m, cx), cx));
                 }
             }
             None => {
@@ -1155,7 +1181,9 @@ impl BragiView {
             .min_h(px(0.))
             .overflow_hidden()
             .child(self.models(cx))
-            .child(self.message_area(body, cx))
+            .when(self.settings_open, |d| d.child(self.settings(cx)))
+            .when(!self.settings_open, |d| d.child(self.message_area(body, cx)))
+            .children(self.undo_bar(cx))
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
             .children(self.state.node_search.line().map(|line| {
                 let color = match &self.state.node_search {
@@ -1201,8 +1229,10 @@ impl Render for BragiView {
             .size_full()
             .bg(rgb(t.background))
             .text_color(rgb(t.text_primary))
+            .relative()
             .child(self.title_bar(cx))
             .child(main)
+            .children(self.confirm_card(cx))
     }
 }
 
@@ -1544,6 +1574,47 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     })
     .map_err(|e| e.to_string())?;
     shot(cx, "29-thought-opened").await;
+    // Delete from the history: a question and its answer (asked, then undone), a conversation
+    // from the list, then everything from Settings behind the typed word.
+    let target = this.read_with(cx, |v, _| v.conversations.last().map(|c| c.id.clone())).map_err(|e| e.to_string())?.ok_or("no conversations")?;
+    this.update(cx, |v, cx| v.open(&target, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the first conversation", |v| v.current.as_ref().is_some_and(|c| c.messages.len() == 4)).await?;
+    let question = this.read_with(cx, |v, _| v.current.as_ref().map(|c| c.messages[2].id.clone())).map_err(|e| e.to_string())?.unwrap_or_default();
+    this.update(cx, |v, cx| v.ask_delete_message(&question, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the confirm card", |v| matches!(v.confirm, Some(delete::Confirm::Message { has_reply: true, .. }))).await?;
+    shot(cx, "30-delete-confirm").await;
+    this.update(cx, |v, cx| v.confirm_delete(true, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the delete", |v| v.deleted.is_some() && v.current.as_ref().is_some_and(|c| c.messages.len() == 2)).await?;
+    step("deleted a message and its answer");
+    shot(cx, "31-deleted-undo").await;
+    this.update(cx, |v, cx| v.undo_delete(cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the undo", |v| v.current.as_ref().is_some_and(|c| c.messages.len() == 4 && c.messages[2].id == question)).await?;
+    step("undone");
+    let before = this.read_with(cx, |v, _| v.conversations.len()).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| v.ask_delete_conversation(&target, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the confirm card", |v| matches!(v.confirm, Some(delete::Confirm::Conversation { .. }))).await?;
+    this.update(cx, |v, cx| v.confirm_delete(false, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the conversation gone", |v| v.conversations.len() == before - 1 && v.current.is_none()).await?;
+    step("deleted a conversation");
+    this.update(cx, |v, cx| {
+        v.toggle_settings(cx);
+        v.ask_clear(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    shot(cx, "32-clear-confirm").await;
+    // Not without the word.
+    this.update(cx, |v, cx| v.confirm_delete(false, cx)).map_err(|e| e.to_string())?;
+    if this.read_with(cx, |v, _| v.conversations.is_empty() || v.confirm.is_none()).map_err(|e| e.to_string())? {
+        return Err("Clear all history went ahead without the typed word".into());
+    }
+    this.update(cx, |v, cx| {
+        v.confirm_input.update(cx, |i, cx| i.set_text(delete::CLEAR_WORD, cx));
+        v.confirm_delete(false, cx)
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "all history gone", |v| v.conversations.is_empty() && v.confirm.is_none()).await?;
+    step("cleared all history");
+    shot(cx, "33-cleared").await;
     Ok(())
 }
 
