@@ -567,6 +567,7 @@ class _History extends StatelessWidget {
               onTap: () {
                 final nav = Navigator.of(context);
                 nav.pop();
+                c.reloadSettings();
                 nav.push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
               },
             ),

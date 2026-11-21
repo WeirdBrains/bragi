@@ -120,7 +120,7 @@ void main() {
       tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
       await tester.pumpAndSettle();
       await tap('settings');
-      await tester.pumpAndSettle();
+      await settle();
     }
 
     await openSettings();
