@@ -90,7 +90,7 @@ void main() {
     await until('both nodes ready', () => find.text('Ready').evaluate().length == 2);
     expect(shown('models-owner-banner'), isFalse, reason: 'a linked device is admitted');
     expect(text('No models downloaded.'), isTrue);
-    await shot('flutter-31-models-nodes');
+    await shot('flutter-51-models-nodes');
 
     // Search: a fit badge per node.
     await tester.enterText(find.byKey(const Key('models-search-field')), 'qwen');
@@ -101,7 +101,7 @@ void main() {
     expect(text('fits DeepSeek-V4-Pro-Qwen3.5-9B.Q8_0'), isTrue, reason: '24 GB holds the Q8');
     expect(text('fits DeepSeek-V4-Pro-Qwen3.5-9B.Q6_K'), isTrue, reason: '11 GB holds the Q6 only');
     expect(text('too big for 11.0 GB'), isTrue);
-    await shot('flutter-32-models-search');
+    await shot('flutter-52-models-search');
 
     // Pull the small repo's Q4 to all nodes, watch progress, cancel.
     await tester.enterText(find.byKey(const Key('models-search-field')), 'tiny');
@@ -116,7 +116,7 @@ void main() {
     await tap('pull-demo/Tiny-Chat-GGUF');
     await until('progress', () => find.byWidgetPredicate((w) => w is LinearProgressIndicator && w.value != null && w.value! > 0).evaluate().isNotEmpty);
     expect(shown('pull-cancel'), isTrue);
-    await shot('flutter-33-models-progress');
+    await shot('flutter-53-models-progress');
     await tap('pull-cancel');
     await until('the cancel', () => shown('pull-ended'));
     expect(text('Cancelled'), isTrue);
@@ -133,7 +133,7 @@ void main() {
     expect(text('can hold the biggest one'), isTrue);
     await until('the pull to finish', () => shown('pull-ended') && text('downloaded and serving'));
     await until('it listed', () => text('Tiny-Chat-Q8_0 · 5.0 MB'));
-    await shot('flutter-34-models-pulled');
+    await shot('flutter-54-models-pulled');
 
     // Remove asks first; Cancel keeps it, Remove deletes it.
     final remove = find.byWidgetPredicate((w) => w.key.toString().contains('remove-') && w.key.toString().contains('Tiny-Chat-Q8_0'));
@@ -142,7 +142,7 @@ void main() {
     await tester.tap(remove);
     await tester.pumpAndSettle();
     expect(shown('remove-dialog'), isTrue);
-    await shot('flutter-35-models-remove-confirm');
+    await shot('flutter-55-models-remove-confirm');
     await tap('remove-cancel');
     await tester.pumpAndSettle();
     expect(text('Tiny-Chat-Q8_0 · 5.0 MB'), isTrue);
@@ -151,6 +151,6 @@ void main() {
     await tap('remove-confirm');
     await until('it gone', () => !text('Tiny-Chat-Q8_0 · 5.0 MB'));
     expect(text('5.0 MB freed'), isTrue);
-    await shot('flutter-36-models-removed');
+    await shot('flutter-56-models-removed');
   });
 }
