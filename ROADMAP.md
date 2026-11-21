@@ -4,7 +4,7 @@
 
 Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc.
 
-Updated 2026-11-20. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
+Updated 2026-11-21. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
 
 ## B1 Core and both shells (Done)
 
@@ -33,5 +33,11 @@ Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 ## B5 Breadth (In progress)
 
 Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.
+
+Weirdnet crates: `weirdnet-agent`.
+
+## B6 Your own endpoints (In progress)
+
+Any OpenAI-compatible server, with an optional API key, next to the Weirdnet pool or as a fallback when it is down. Settings add, edit, delete, test and reorder both Weirdnet links and endpoints; keys are sealed on the device and never synced. Each chat is bound to one target and keeps its own history, and chats nest in folders. Built in the core and the Flutter app (desktop and phone); the GPUI desktop shell is next.
 
 Weirdnet crates: `weirdnet-agent`.

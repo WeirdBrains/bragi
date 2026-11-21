@@ -140,3 +140,15 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **What's left:** other branches should merge main.
 
 **What's next:** the OpenAI endpoints work.
+
+## 2026-11-21: LF-11, OpenAI-compatible endpoints, Settings, sessions and folders
+
+**What changed**: `bragi-core` gains OpenAI-compatible endpoints (any URL, optional API key sealed on the device, never logged or synced; test, reorder, fallback-only or alongside the Weirdnet pool), Weirdnet links managed from Settings, per-session targets (the pool, or an endpoint and model), and nested session folders. Deleting an endpoint asks first and rebinds or unbinds its chats; history is never deleted. The bridge and the Flutter app (desktop and phone) have the Settings screen, the target picker and the folder tree. Roadmap: new B6 line (site and ROADMAP.md regenerated).
+
+**Branch**: `feature/openai-endpoints-v2` (merged main in; not merged to main).
+
+**Checks**: fmt, clippy -D warnings and `cargo test --workspace` (mock OpenAI server: streaming, errors, auth, models list) passed; `flutter analyze` clean; `flutter test --dart-define=BRAGI_DEMO=true` passed (Settings add/edit/delete/reorder/test, delete-confirm and rebind, sessions and folders, plus the scenario test).
+**Not tested**: a real OpenAI-compatible server or real keychain; a real phone; the headless GUI screenshots were not captured.
+
+**Left**: the GPUI desktop shell has no Settings screen yet; keys use the sealed file store, not the OS keychain.
+**Next**: LF-12.
