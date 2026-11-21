@@ -361,10 +361,7 @@ class _Bubble extends StatelessWidget {
     final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: GestureDetector(
-        key: const Key('bubble'),
-        onLongPress: () => _bar(context),
-        child: Container(
+      child: Container(
         constraints: const BoxConstraints(maxWidth: 560),
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
@@ -439,7 +436,6 @@ class _Bubble extends StatelessWidget {
               ),
           ],
         ),
-      ),
       ),
     );
   }

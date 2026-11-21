@@ -108,6 +108,7 @@ class RustBragiApi implements BragiApi {
   Future<void> undoDelete(String undo) => rust.undoDelete(undo: undo);
   @override
   Future<int> clearHistory() => rust.clearHistory();
+  @override
   Future<List<String>> react(String conversation, String message, String emoji) =>
       rust.react(conversation: conversation, message: message, emoji: emoji);
   @override

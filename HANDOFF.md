@@ -2,6 +2,23 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-23, emoji reactions (v0.1.1)
+
+**What changed**
+- Any message, the model's replies too, takes emoji reactions on the desktop and phone apps. The quick bar is 👍 👎 ❤️ 😂 🎉 🤔 plus a picker for more (hover on desktop with a "+" for the picker; long-press on the phone). Reactions show as small pills under the message; click or tap a pill, or pick the same emoji again, to remove it. Up to 12 per message; only emoji are accepted.
+- They live in `bragi-core` ([`reactions.rs`](crates/bragi-core/src/reactions.rs), `Core::react`), saved on the message in the conversation record, so they sync with the conversation, survive restarts and are removed with their message by the LF-21 delete (an Undo brings them back). Older records without the field still load.
+- Per the owner's request they go to the model: the next turn carries a short note after the reacted message, such as `[The user reacted to this reply with 👎]` (or `…to their own message with 🤔`). Remove the reaction and the note is gone. Reactions are not part of Copy.
+- `Core::reaction_events()` is a broadcast of every add and remove (with the model, node, and a good/bad flag for 👍/👎), as the hook for forwarding feedback. Nothing consumes it yet; see Left.
+- Bridge regenerated (`react`, `quick_reactions`, `MessageView.reactions`). No `weirdnet-*` crate was changed.
+
+**Commits**: [`1023daa`](https://github.com/WeirdBrains/bragi/commit/1023daa) (the feature, on `wip/lf23-reactions`), then the commit that adds this entry, the phone analyzer fixes and the test.
+
+**Checks** (whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test` (including `tests/reactions.rs`: toggle, persistence, events, delete and undo), `flutter analyze`, the Flutter scenario test in demo mode (reaction bar, pills, removal), and the headless desktop scenario (virtual X server, clean environment, throwaway profile; screenshots 19 and 20 show the pills and the picker).
+**Not tested**: a real phone; reactions synced between two real devices (the reaction rides on the message record the sync tests already cover); a live model reading the note.
+
+**Left**: feedback to agents or Ymir. Read-only check of the Ymir bridge and the `weirdnet-agent` 0.5 protocol (`infer/1`, `infer/2`, `task`, `catalog` messages): there is no feedback or rating message on any of them, so reactions only reach the model as context. Sending 👍/👎 as feedback needs a new message in those crates, a decision for the Weirdnet side; `Core::reaction_events()` is ready to feed it.
+**Next**: the v0.1.1 release cut, which waits for the owner.
+
 ## 2026-11-20: LF-21, delete a message, a conversation or all history (v0.1.1)
 
 **What changed**
