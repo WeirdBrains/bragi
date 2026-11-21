@@ -156,3 +156,17 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Left**: iOS Keychain and Android Keystore (keyring-core store crates need device testing; those platforms keep the sealed file).
 **Next**: LF-12.
+
+## 2026-11-21: LF-11 endpoints, Settings and sessions merged to main
+
+**What changed**
+
+- Merged `feature/openai-endpoints-v2` into main with a merge commit. Main now has the `weirdnet-device-link =0.3.2` and `weirdnet-net =0.8.2` pins that replace the yanked versions.
+
+**Checks run:** `cargo fmt --check`, build, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, `flutter analyze` and `flutter test --dart-define=BRAGI_DEMO=true` on the merged tree.
+
+**Not tested:** macOS Keychain and Windows Credential Manager; the Platforms workflow (manual dispatch only) has not run on this merge.
+
+**What's left:** iOS Keychain and Android Keystore.
+
+**What's next:** LF-12.
