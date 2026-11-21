@@ -208,6 +208,8 @@ void main() {
       if (t != null) c.pickTarget(t);
       await tester.pump();
       await tester.enterText(find.byKey(const Key('prompt')), text);
+      ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('send')));
       await until('the answer', () => !c.streaming && c.messages.length == 2 && c.messages.last.state == 'complete');
     }
@@ -216,7 +218,7 @@ void main() {
     expect(c.messages.last.text, 'Hello from the mock');
     expect(c.messages.last.node, 'Mock Alpha');
     expect(find.byKey(const Key('target-label')).evaluate().isNotEmpty, isTrue);
-    expect(find.descendant(of: find.byKey(const Key('target-label')), matching: find.text('Mock Alpha · mock-1')), findsOneWidget);
+    expect(tester.widget<Text>(find.byKey(const Key('target-label'))).data, 'Mock Alpha · mock-1');
     final onEndpoint = c.current!.id;
     await chatTo(null, 'hello pool');
     expect(c.messages.last.text, isNot('Hello from the mock'));
