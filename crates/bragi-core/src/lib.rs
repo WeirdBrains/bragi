@@ -13,13 +13,17 @@ pub mod catalog;
 pub mod chat;
 pub mod context;
 mod core;
+mod targets;
 pub mod demo;
+pub mod endpoints;
 pub mod error;
 pub mod highlight;
 pub mod history;
 pub mod identity;
 pub mod markdown;
+pub mod openai;
 pub mod reactions;
+pub mod sessions;
 pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
@@ -30,6 +34,10 @@ pub use crate::core::{
     AppState, ChatHandle, Config, Core, LinkCheck, NODE_ADDED, NODE_FOUND_SHOWN, NODE_SEARCH_LIMIT, NodeSearch, PEERS_FILE, PairState, SCHEME,
     Transport, is_node_address, node_config, normalize_link,
 };
+pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
+pub use crate::openai::TestReport;
+pub use crate::sessions::{Folder, SessionMeta, Target};
+pub use crate::targets::{DeleteReport, LinkView, SessionSummary, TargetOption};
 pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};

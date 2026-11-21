@@ -22,6 +22,10 @@ weirdnet-sync = "0.5.2"
 weirdnet-text = "0.1"
 
 anyhow = "1"
+# OpenAI-compatible endpoints (LF-11): rustls so Android needs no system TLS; streaming bodies.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }
+# Sealed store for endpoint API keys.
+chacha20poly1305 = "0.10"
 async-trait = "0.1"
 # Image and audio attachments are sent as base64 content parts.
 base64 = "0.21"
