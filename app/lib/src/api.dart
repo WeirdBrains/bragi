@@ -8,7 +8,15 @@ export 'rust/api/bragi.dart'
         ChatEventView,
         ChatStarted,
         ConversationView,
+        DeleteReportView,
         DeletedView,
+        EndpointForm,
+        EndpointView,
+        FolderView,
+        LinkView,
+        SessionView,
+        TargetView,
+        TestResultView,
         LinkCheckView,
         MessageView,
         ModelView,
@@ -48,6 +56,29 @@ abstract class BragiApi {
   Future<void> resumed();
   /// A reply's Markdown parsed by bragi-core, as JSON (see `markdown.dart`).
   String markdownJson(String text, bool streaming);
+
+  // Settings: endpoints, Weirdnet links, targets, sessions and folders.
+  Future<List<rust.EndpointView>> endpoints();
+  Future<rust.EndpointView> addEndpoint(rust.EndpointForm form);
+  Future<rust.EndpointView> editEndpoint(String id, rust.EndpointForm form);
+  Future<rust.DeleteReportView> deleteEndpoint(String id, rust.TargetView? rebindTo);
+  Future<void> moveEndpoint(String id, int index);
+  Future<rust.TestResultView> testEndpoint(String id);
+  Future<rust.TestResultView> testEndpointAddress(String baseUrl, String? apiKey);
+  Future<List<String>> endpointModels(String id);
+  Future<List<rust.LinkView>> links();
+  Future<String> editLink(String old, String address);
+  Future<void> removeLink(String address);
+  Future<List<rust.TargetView>> targets();
+  Future<rust.ChatStarted> sendTo(String? conversation, String prompt, String? model, List<rust.AttachmentView> files, rust.TargetView? target);
+  Future<List<rust.SessionView>> sessions(int offset, int limit);
+  Future<void> bindSession(String conversation, rust.TargetView target);
+  Future<List<rust.FolderView>> folders();
+  Future<rust.FolderView> createFolder(String name, String? parent);
+  Future<void> renameFolder(String id, String name);
+  Future<void> moveFolder(String id, String? parent);
+  Future<void> deleteFolder(String id);
+  Future<void> setSessionFolder(String conversation, String? folder);
 }
 
 class RustBragiApi implements BragiApi {
@@ -119,4 +150,48 @@ class RustBragiApi implements BragiApi {
   Future<void> resumed() => rust.resumed();
   @override
   String markdownJson(String text, bool streaming) => rust.markdownJson(text: text, streaming: streaming);
+
+  @override
+  Future<List<rust.EndpointView>> endpoints() => rust.endpoints();
+  @override
+  Future<rust.EndpointView> addEndpoint(rust.EndpointForm form) => rust.addEndpoint(formIn: form);
+  @override
+  Future<rust.EndpointView> editEndpoint(String id, rust.EndpointForm form) => rust.editEndpoint(id: id, formIn: form);
+  @override
+  Future<rust.DeleteReportView> deleteEndpoint(String id, rust.TargetView? rebindTo) => rust.deleteEndpoint(id: id, rebindTo: rebindTo);
+  @override
+  Future<void> moveEndpoint(String id, int index) => rust.moveEndpoint(id: id, index: index);
+  @override
+  Future<rust.TestResultView> testEndpoint(String id) => rust.testEndpoint(id: id);
+  @override
+  Future<rust.TestResultView> testEndpointAddress(String baseUrl, String? apiKey) => rust.testEndpointAddress(baseUrl: baseUrl, apiKey: apiKey);
+  @override
+  Future<List<String>> endpointModels(String id) => rust.endpointModels(id: id);
+  @override
+  Future<List<rust.LinkView>> links() => rust.links();
+  @override
+  Future<String> editLink(String old, String address) => rust.editLink(old: old, new_: address);
+  @override
+  Future<void> removeLink(String address) => rust.removeLink(address: address);
+  @override
+  Future<List<rust.TargetView>> targets() => rust.targets();
+  @override
+  Future<rust.ChatStarted> sendTo(String? conversation, String prompt, String? model, List<rust.AttachmentView> files, rust.TargetView? target) =>
+      rust.sendTo(conversation: conversation, prompt: prompt, model: model, files: files, target: target);
+  @override
+  Future<List<rust.SessionView>> sessions(int offset, int limit) => rust.sessions(offset: offset, limit: limit);
+  @override
+  Future<void> bindSession(String conversation, rust.TargetView target) => rust.bindSession(conversation: conversation, target: target);
+  @override
+  Future<List<rust.FolderView>> folders() => rust.folders();
+  @override
+  Future<rust.FolderView> createFolder(String name, String? parent) => rust.createFolder(name: name, parent: parent);
+  @override
+  Future<void> renameFolder(String id, String name) => rust.renameFolder(id: id, name: name);
+  @override
+  Future<void> moveFolder(String id, String? parent) => rust.moveFolder(id: id, parent: parent);
+  @override
+  Future<void> deleteFolder(String id) => rust.deleteFolder(id: id);
+  @override
+  Future<void> setSessionFolder(String conversation, String? folder) => rust.setSessionFolder(conversation: conversation, folder: folder);
 }

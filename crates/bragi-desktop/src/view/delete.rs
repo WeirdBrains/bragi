@@ -52,6 +52,7 @@ impl BragiView {
 
     pub fn toggle_settings(&mut self, cx: &mut Context<Self>) {
         self.settings_open = !self.settings_open;
+        self.refresh_prefs();
         cx.notify();
     }
 
@@ -204,17 +205,20 @@ impl BragiView {
         )
     }
 
-    /// Settings: for now only history (the endpoints and sessions settings join it later).
+    /// Settings: endpoints, Weirdnet links and history.
     pub(super) fn settings(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         div()
             .id("settings")
             .flex()
             .flex_col()
-            .gap(px(12.))
+            .gap(px(14.))
             .p(px(24.))
             .flex_1()
+            .overflow_y_scroll()
             .child(div().text_size(px(18.)).child("Settings"))
+            .child(self.endpoints_section(cx))
+            .child(self.links_section(cx))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
             .child(
                 div()

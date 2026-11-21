@@ -63,7 +63,7 @@ pub fn is_node_address(text: &str) -> bool {
 }
 
 /// The addresses in `dir`'s [`PEERS_FILE`] that parse (blank lines and `#` comments skipped).
-fn load_peers(dir: &std::path::Path) -> Vec<String> {
+pub(crate) fn load_peers(dir: &std::path::Path) -> Vec<String> {
     let text = std::fs::read_to_string(dir.join(PEERS_FILE)).unwrap_or_default();
     text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#') && hints(&[l.to_string()]).is_ok()).map(str::to_string).collect()
 }
@@ -240,6 +240,10 @@ pub(crate) struct Inner {
     pub(crate) search: Mutex<(u64, Duration)>,
     /// Reactions added and removed, for whoever wants to forward them (see [`crate::reactions`]).
     pub(crate) reactions: tokio::sync::broadcast::Sender<crate::reactions::ReactionEvent>,
+    /// The user's OpenAI-compatible endpoints and their sealed keys (LF-11).
+    pub(crate) endpoints: crate::endpoints::Endpoints,
+    /// Folders, and the target each conversation is bound to (LF-11).
+    pub(crate) sessions: crate::sessions::Sessions,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -294,6 +298,10 @@ pub(crate) fn peer_hints(peers: &[String]) -> Result<Vec<(PeerId, Vec<Multiaddr>
     hints(peers)
 }
 
+pub(crate) fn check_peer(address: &str) -> Result<()> {
+    hints(&[address.trim().to_string()]).map(|_| ())
+}
+
 fn hints(peers: &[String]) -> Result<Vec<(PeerId, Vec<Multiaddr>)>> {
     let mut out: Vec<(PeerId, Vec<Multiaddr>)> = Vec::new();
     for p in peers {
@@ -343,6 +351,7 @@ impl Core {
         };
         hints(&cfg.peers)?;
         std::fs::create_dir_all(&cfg.dir)?;
+        let dir = cfg.dir.clone();
         let history = Arc::new(History::open(&cfg.dir)?);
         let (state, _) = watch::channel(AppState::default());
         let mut known = cfg.peers.clone();
@@ -364,6 +373,8 @@ impl Core {
                 cards: Mutex::new(HashMap::new()),
                 search: Mutex::new((0, NODE_SEARCH_LIMIT)),
                 reactions: tokio::sync::broadcast::channel(64).0,
+                endpoints: crate::endpoints::Endpoints::open(&dir),
+                sessions: crate::sessions::Sessions::open(&dir),
             }),
             _runtime: runtime,
         };
@@ -587,7 +598,7 @@ impl Core {
     /// The model for a turn: the one the user picked, else the first warm one that reads `needed`
     /// (images, audio). A picked model the catalog says can't read them is refused here, with the
     /// models that can in the message, instead of failing in the pool.
-    fn pick_model(&self, model: Option<String>, needed: Modalities) -> Result<String> {
+    pub(crate) fn pick_model(&self, model: Option<String>, needed: Modalities) -> Result<String> {
         let catalog = self.state().catalog;
         match model {
             Some(m) if !m.is_empty() => match catalog.models.iter().find(|i| i.id == m) {
@@ -610,11 +621,7 @@ impl Core {
     /// [`send`](Self::send) with text files attached (see [`Attachment`]): the model gets each as
     /// a named block ahead of the prompt, and the message keeps them for later turns and other devices.
     pub fn send_with(&self, conversation: Option<&str>, prompt: &str, model: Option<String>, attachments: Vec<Attachment>) -> Result<ChatHandle> {
-        let net = self.net()?;
-        let needed = crate::attach::needs(&attachments);
-        let model = self.pick_model(model, needed)?;
-        let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
-        Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new(), String::new()))
+        self.send_to(conversation, prompt, model, attachments, None)
     }
 
     /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
@@ -709,12 +716,20 @@ impl Core {
         let messages = agent_messages(&c.messages);
         self.inner.history.save(&c)?;
         // The partial answer is the last message: `continuing` moves it into the prefix.
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown, shown_reasoning))
+        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown, shown_reasoning, None))
     }
 
     /// Streams `req` into the last message of `conversation`. `shown` and `shown_reasoning` are
     /// what that message already holds (a continued answer); the new text and reasoning follow them.
-    fn run(&self, net: Arc<Net>, conversation: String, req: Request, shown: String, shown_reasoning: String) -> ChatHandle {
+    pub(crate) fn run(
+        &self,
+        net: Arc<Net>,
+        conversation: String,
+        req: Request,
+        shown: String,
+        shown_reasoning: String,
+        fallback: Option<Vec<Message>>,
+    ) -> ChatHandle {
         let request_id = random_id("r");
         let cancel = CancelToken::new();
         lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
@@ -723,6 +738,19 @@ impl Core {
         self.inner.handle.spawn(async move {
             let order = |model: &str| core.nodes_for(model);
             let (result, streamed) = stream(&net, &order, req, &out, &cancel, &shown, shown_reasoning.chars().count() as u64).await;
+            // The pool couldn't start the answer: an enabled fallback endpoint takes over.
+            if let (Err(i), Some(messages)) = (&result, fallback) {
+                let e = CoreError::from(&i.error);
+                let fallbacks = core.inner.endpoints.fallbacks();
+                if !i.streamed() && streamed.text.is_empty() && e.kind != ErrorKind::Cancelled && !fallbacks.is_empty() {
+                    let _ = out.send(ChatEvent::Retry {
+                        attempt: 1,
+                        message: format!("The pool couldn't answer ({}); trying a fallback endpoint", e.message),
+                    });
+                    core.answer_from_endpoints(&conv, &rid, fallbacks, None, messages, &cancel, &out, shown).await;
+                    return;
+                }
+            }
             let text = format!("{shown}{}", streamed.text);
             let (state, node, model, last, flags) = match &result {
                 Ok(a) => (
@@ -752,6 +780,19 @@ impl Core {
         let c = self.state().catalog;
         let n = c.nodes_for(model);
         if n.is_empty() { c.nodes.iter().map(|n| n.id.clone()).collect() } else { n }
+    }
+
+    /// [`finish`](Self::finish) for an answer that didn't come from the pool (no cache or stand-in flags).
+    pub(crate) fn finish_turn(
+        &self,
+        conversation: &str,
+        text: String,
+        streamed: &Streamed,
+        state: MessageState,
+        node: Option<String>,
+        model: Option<String>,
+    ) {
+        self.finish(conversation, text, streamed, state, node, model, Flags::default());
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1153,6 +1194,7 @@ fn user_content(m: &ChatMessage) -> Content {
 }
 
 /// What the pool said about an answer, kept with the message.
+#[derive(Default)]
 struct Flags {
     cache_hit: bool,
     standin: Option<String>,

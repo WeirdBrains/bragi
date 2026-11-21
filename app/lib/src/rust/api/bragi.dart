@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `form`, `message_state_name`, `mode_of`, `mode_str`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`, `target_of`, `target_view`, `test_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -235,6 +235,104 @@ Future<void> undoDelete({required String undo}) =>
 /// Deletes all history, with no undo. Returns how many conversations.
 Future<int> clearHistory() => RustLib.instance.api.crateApiBragiClearHistory();
 
+Future<List<EndpointView>> endpoints() =>
+    RustLib.instance.api.crateApiBragiEndpoints();
+
+Future<EndpointView> addEndpoint({required EndpointForm formIn}) =>
+    RustLib.instance.api.crateApiBragiAddEndpoint(formIn: formIn);
+
+Future<EndpointView> editEndpoint({
+  required String id,
+  required EndpointForm formIn,
+}) => RustLib.instance.api.crateApiBragiEditEndpoint(id: id, formIn: formIn);
+
+/// Deletes an endpoint. `rebind_to` is where its sessions go; `None` marks them unbound. No history is deleted.
+Future<DeleteReportView> deleteEndpoint({
+  required String id,
+  TargetView? rebindTo,
+}) => RustLib.instance.api.crateApiBragiDeleteEndpoint(
+  id: id,
+  rebindTo: rebindTo,
+);
+
+Future<void> moveEndpoint({required String id, required int index}) =>
+    RustLib.instance.api.crateApiBragiMoveEndpoint(id: id, index: index);
+
+Future<TestResultView> testEndpoint({required String id}) =>
+    RustLib.instance.api.crateApiBragiTestEndpoint(id: id);
+
+/// Tests an address and key that aren't saved yet.
+Future<TestResultView> testEndpointAddress({
+  required String baseUrl,
+  String? apiKey,
+}) => RustLib.instance.api.crateApiBragiTestEndpointAddress(
+  baseUrl: baseUrl,
+  apiKey: apiKey,
+);
+
+Future<List<String>> endpointModels({required String id}) =>
+    RustLib.instance.api.crateApiBragiEndpointModels(id: id);
+
+Future<List<LinkView>> links() => RustLib.instance.api.crateApiBragiLinks();
+
+Future<String> editLink({required String old, required String new_}) =>
+    RustLib.instance.api.crateApiBragiEditLink(old: old, new_: new_);
+
+Future<void> removeLink({required String address}) =>
+    RustLib.instance.api.crateApiBragiRemoveLink(address: address);
+
+/// What a new session can be bound to: the pool, and endpoints offered alongside it.
+Future<List<TargetView>> targets() =>
+    RustLib.instance.api.crateApiBragiTargets();
+
+/// [`send_with`] to a target (`None`: the session's own, or the default for a new one).
+Future<ChatStarted> sendTo({
+  String? conversation,
+  required String prompt,
+  String? model,
+  required List<AttachmentView> files,
+  TargetView? target,
+}) => RustLib.instance.api.crateApiBragiSendTo(
+  conversation: conversation,
+  prompt: prompt,
+  model: model,
+  files: files,
+  target: target,
+);
+
+Future<List<SessionView>> sessions({required int offset, required int limit}) =>
+    RustLib.instance.api.crateApiBragiSessions(offset: offset, limit: limit);
+
+Future<void> bindSession({
+  required String conversation,
+  required TargetView target,
+}) => RustLib.instance.api.crateApiBragiBindSession(
+  conversation: conversation,
+  target: target,
+);
+
+Future<List<FolderView>> folders() =>
+    RustLib.instance.api.crateApiBragiFolders();
+
+Future<FolderView> createFolder({required String name, String? parent}) =>
+    RustLib.instance.api.crateApiBragiCreateFolder(name: name, parent: parent);
+
+Future<void> renameFolder({required String id, required String name}) =>
+    RustLib.instance.api.crateApiBragiRenameFolder(id: id, name: name);
+
+Future<void> moveFolder({required String id, String? parent}) =>
+    RustLib.instance.api.crateApiBragiMoveFolder(id: id, parent: parent);
+
+/// Deletes a folder; its sessions and subfolders move up a level. No history is deleted.
+Future<void> deleteFolder({required String id}) =>
+    RustLib.instance.api.crateApiBragiDeleteFolder(id: id);
+
+Future<void> setSessionFolder({required String conversation, String? folder}) =>
+    RustLib.instance.api.crateApiBragiSetSessionFolder(
+      conversation: conversation,
+      folder: folder,
+    );
+
 /// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
 /// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
 /// `data` the base64 file. A message read back from history has `data` empty (its size is
@@ -450,6 +548,24 @@ class ConversationView {
           continuable == other.continuable;
 }
 
+class DeleteReportView {
+  final int rebound;
+  final int unbound;
+
+  const DeleteReportView({required this.rebound, required this.unbound});
+
+  @override
+  int get hashCode => rebound.hashCode ^ unbound.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DeleteReportView &&
+          runtimeType == other.runtimeType &&
+          rebound == other.rebound &&
+          unbound == other.unbound;
+}
+
 /// What a delete removed; `undo` undoes it within `undo_ms`.
 class DeletedView {
   final String undo;
@@ -482,6 +598,125 @@ class DeletedView {
           undoMs == other.undoMs;
 }
 
+/// What the add/edit form sends. `key_change` is `keep`, `set` (with `api_key`) or `clear`.
+class EndpointForm {
+  final String name;
+  final String baseUrl;
+  final String? model;
+  final String mode;
+  final bool enabled;
+  final String? apiKey;
+  final String keyChange;
+
+  const EndpointForm({
+    required this.name,
+    required this.baseUrl,
+    this.model,
+    required this.mode,
+    required this.enabled,
+    this.apiKey,
+    required this.keyChange,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      baseUrl.hashCode ^
+      model.hashCode ^
+      mode.hashCode ^
+      enabled.hashCode ^
+      apiKey.hashCode ^
+      keyChange.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EndpointForm &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          baseUrl == other.baseUrl &&
+          model == other.model &&
+          mode == other.mode &&
+          enabled == other.enabled &&
+          apiKey == other.apiKey &&
+          keyChange == other.keyChange;
+}
+
+/// An OpenAI-compatible endpoint as Settings draws it. `mode` is `fallback` or `alongside`.
+/// The API key is never here, only whether one is set.
+class EndpointView {
+  final String id;
+  final String name;
+  final String baseUrl;
+  final String? model;
+  final String mode;
+  final bool enabled;
+  final bool hasKey;
+  final bool insecure;
+
+  /// Sessions bound to it (for the delete confirmation).
+  final int sessions;
+
+  const EndpointView({
+    required this.id,
+    required this.name,
+    required this.baseUrl,
+    this.model,
+    required this.mode,
+    required this.enabled,
+    required this.hasKey,
+    required this.insecure,
+    required this.sessions,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      baseUrl.hashCode ^
+      model.hashCode ^
+      mode.hashCode ^
+      enabled.hashCode ^
+      hasKey.hashCode ^
+      insecure.hashCode ^
+      sessions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EndpointView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          baseUrl == other.baseUrl &&
+          model == other.model &&
+          mode == other.mode &&
+          enabled == other.enabled &&
+          hasKey == other.hasKey &&
+          insecure == other.insecure &&
+          sessions == other.sessions;
+}
+
+class FolderView {
+  final String id;
+  final String name;
+  final String? parent;
+
+  const FolderView({required this.id, required this.name, this.parent});
+
+  @override
+  int get hashCode => id.hashCode ^ name.hashCode ^ parent.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FolderView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          parent == other.parent;
+}
+
 class LinkCheckView {
   final String sas;
   final String device;
@@ -498,6 +733,30 @@ class LinkCheckView {
           runtimeType == other.runtimeType &&
           sas == other.sas &&
           device == other.device;
+}
+
+class LinkView {
+  final String address;
+  final String peer;
+  final bool online;
+
+  const LinkView({
+    required this.address,
+    required this.peer,
+    required this.online,
+  });
+
+  @override
+  int get hashCode => address.hashCode ^ peer.hashCode ^ online.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LinkView &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          peer == other.peer &&
+          online == other.online;
 }
 
 class MessageView {
@@ -709,6 +968,49 @@ class PairView {
           message == other.message;
 }
 
+class SessionView {
+  final String id;
+  final String title;
+  final PlatformInt64 updatedMs;
+  final String? folder;
+  final TargetView? target;
+  final String targetLabel;
+  final bool unbound;
+
+  const SessionView({
+    required this.id,
+    required this.title,
+    required this.updatedMs,
+    this.folder,
+    this.target,
+    required this.targetLabel,
+    required this.unbound,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      title.hashCode ^
+      updatedMs.hashCode ^
+      folder.hashCode ^
+      target.hashCode ^
+      targetLabel.hashCode ^
+      unbound.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          title == other.title &&
+          updatedMs == other.updatedMs &&
+          folder == other.folder &&
+          target == other.target &&
+          targetLabel == other.targetLabel &&
+          unbound == other.unbound;
+}
+
 class StateView {
   final PairView pair;
   final bool online;
@@ -779,4 +1081,61 @@ class SummaryView {
           id == other.id &&
           title == other.title &&
           updatedMs == other.updatedMs;
+}
+
+/// A target for a session: `kind` is `pool` or `endpoint` (with `endpoint` and `model`).
+class TargetView {
+  final String kind;
+  final String? endpoint;
+  final String? model;
+  final String label;
+
+  const TargetView({
+    required this.kind,
+    this.endpoint,
+    this.model,
+    required this.label,
+  });
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^ endpoint.hashCode ^ model.hashCode ^ label.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TargetView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          endpoint == other.endpoint &&
+          model == other.model &&
+          label == other.label;
+}
+
+class TestResultView {
+  final bool ok;
+  final List<String> models;
+  final BigInt latencyMs;
+  final String message;
+
+  const TestResultView({
+    required this.ok,
+    required this.models,
+    required this.latencyMs,
+    required this.message,
+  });
+
+  @override
+  int get hashCode =>
+      ok.hashCode ^ models.hashCode ^ latencyMs.hashCode ^ message.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TestResultView &&
+          runtimeType == other.runtimeType &&
+          ok == other.ok &&
+          models == other.models &&
+          latencyMs == other.latencyMs &&
+          message == other.message;
 }

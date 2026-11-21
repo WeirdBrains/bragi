@@ -10,6 +10,8 @@ import 'api.dart';
 import 'controller.dart';
 import 'markdown.dart';
 import 'delete_ui.dart';
+import 'sessions_ui.dart';
+import 'settings_ui.dart';
 import 'theme.dart';
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -89,8 +91,8 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: _Models(controller: c),
+          preferredSize: const Size.fromHeight(92),
+          child: Column(children: [TargetBar(controller: c), _Models(controller: c)]),
         ),
       ),
       drawer: _History(controller: c, link: _link),
@@ -555,29 +557,7 @@ class _History extends StatelessWidget {
               child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
             ),
             Expanded(
-              child: ListView(
-                children: [
-                  for (final s in c.conversations)
-                    ListTile(
-                      key: Key('conv-${s.id}'),
-                      dense: true,
-                      selected: c.current?.id == s.id,
-                      title: Text(s.title, overflow: TextOverflow.ellipsis),
-                      trailing: IconButton(
-                        key: Key('delete-conv-${s.id}'),
-                        tooltip: 'Delete conversation',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        onPressed: () => confirmDeleteConversation(context, c, s),
-                      ),
-                      onLongPress: () => confirmDeleteConversation(context, c, s),
-                      onTap: () {
-                        c.open(s.id);
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                ],
-              ),
+              child: SessionsTree(controller: c),
             ),
             ListTile(
               key: const Key('settings'),
@@ -587,6 +567,7 @@ class _History extends StatelessWidget {
               onTap: () {
                 final nav = Navigator.of(context);
                 nav.pop();
+                c.reloadSettings();
                 nav.push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
               },
             ),
