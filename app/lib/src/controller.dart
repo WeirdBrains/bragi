@@ -31,6 +31,17 @@ class BragiController extends ChangeNotifier {
   List<SummaryView> conversations = const [];
   ConversationView? current;
 
+  /// Settings and sessions (LF-11): endpoints, Weirdnet links, what a session can be bound to,
+  /// and the conversations with their folder and target.
+  List<EndpointView> endpoints = const [];
+  List<LinkView> links = const [];
+  List<TargetView> targets = const [];
+  List<FolderView> folders = const [];
+  List<SessionView> sessions = const [];
+
+  /// Where the next new chat goes (`null`: the default); a session already bound uses its own.
+  TargetView? newChatTarget;
+
   /// The current conversation's messages, the last one growing while it streams.
   List<MessageView> messages = const [];
   String? _model;
@@ -95,6 +106,7 @@ class BragiController extends ChangeNotifier {
     _refreshing = true;
     try {
       conversations = await api.conversations(0, 100);
+      await _refreshSettings();
       final c = current;
       if (c != null) {
         current = await api.conversation(c.id);
@@ -106,6 +118,138 @@ class BragiController extends ChangeNotifier {
     _refreshing = false;
     notifyListeners();
   }
+
+  Future<void> _refreshSettings() async {
+    endpoints = await api.endpoints();
+    links = await api.links();
+    targets = await api.targets();
+    folders = await api.folders();
+    sessions = await api.sessions(0, 100);
+    final t = newChatTarget;
+    // A target that was deleted or switched to fallback-only is no longer offered.
+    if (t != null && !targets.any((x) => x.kind == t.kind && x.endpoint == t.endpoint && x.model == t.model)) newChatTarget = null;
+  }
+
+  /// The open conversation's session (its folder and target), if it has one listed.
+  SessionView? get session {
+    final id = current?.id;
+    if (id == null) return null;
+    for (final s in sessions) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  /// The words for where the next message goes.
+  String get targetLabel => session?.targetLabel ?? newChatTarget?.label ?? 'Weirdnet pool';
+
+  /// The open session lost its endpoint: the next send needs a target.
+  bool get needsTarget => session?.unbound ?? false;
+
+  void pickTarget(TargetView t) {
+    final c = current;
+    if (c == null) {
+      newChatTarget = t;
+      notifyListeners();
+    } else {
+      _try(() async {
+        await api.bindSession(c.id, t);
+        await _refresh();
+      });
+    }
+  }
+
+  Future<void> reloadSettings() => _try(() async {
+    await _refreshSettings();
+  });
+
+  /// Adds (when [id] is null) or replaces an endpoint. Returns whether it went; the notice says why not.
+  Future<bool> saveEndpoint(String? id, EndpointForm form) async {
+    var ok = false;
+    await _try(() async {
+      if (id == null) {
+        await api.addEndpoint(form);
+      } else {
+        await api.editEndpoint(id, form);
+      }
+      ok = true;
+      await _refreshSettings();
+    });
+    return ok;
+  }
+
+  /// Deletes an endpoint; its sessions move to [rebindTo] or become unbound. History stays.
+  Future<DeleteReportView?> deleteEndpoint(String id, TargetView? rebindTo) async {
+    DeleteReportView? r;
+    await _try(() async {
+      r = await api.deleteEndpoint(id, rebindTo);
+      await _refresh();
+    });
+    return r;
+  }
+
+  Future<void> moveEndpoint(String id, int index) => _try(() async {
+    await api.moveEndpoint(id, index);
+    await _refreshSettings();
+  });
+
+  Future<TestResultView?> testEndpoint(String id) async {
+    TestResultView? r;
+    await _try(() async => r = await api.testEndpoint(id));
+    return r;
+  }
+
+  Future<TestResultView?> testAddress(String url, String? key) async {
+    TestResultView? r;
+    await _try(() async => r = await api.testEndpointAddress(url, key));
+    return r;
+  }
+
+  Future<bool> editLink(String old, String address) async {
+    var ok = false;
+    await _try(() async {
+      await api.editLink(old, address);
+      ok = true;
+      await _refreshSettings();
+    });
+    return ok;
+  }
+
+  Future<void> removeLink(String address) => _try(() async {
+    await api.removeLink(address);
+    await _refreshSettings();
+  });
+
+  Future<bool> createFolder(String name, String? parent) async {
+    var ok = false;
+    await _try(() async {
+      await api.createFolder(name, parent);
+      ok = true;
+      await _refreshSettings();
+    });
+    return ok;
+  }
+
+  Future<void> renameFolder(String id, String name) => _try(() async {
+    await api.renameFolder(id, name);
+    await _refreshSettings();
+  });
+
+  Future<void> moveFolder(String id, String? parent) => _try(() async {
+    await api.moveFolder(id, parent);
+    await _refreshSettings();
+  });
+
+  /// Deletes a folder; what it holds moves up a level.
+  Future<void> deleteFolder(String id) => _try(() async {
+    await api.deleteFolder(id);
+    await _refreshSettings();
+  });
+
+  Future<void> moveSession(String conversation, String? folder) => _try(() async {
+    await api.setSessionFolder(conversation, folder);
+    await _refreshSettings();
+  });
 
   Future<void> _try(Future<void> Function() f) async {
     try {
@@ -130,6 +274,7 @@ class BragiController extends ChangeNotifier {
 
   void newChat() {
     current = null;
+    newChatTarget = null;
     messages = const [];
     notifyListeners();
   }
@@ -158,7 +303,7 @@ class BragiController extends ChangeNotifier {
       try {
         final started = agent
             ? await api.sendAgent(current?.id, prompt, null, files)
-            : await api.sendWith(current?.id, prompt, model, files);
+            : await api.sendTo(current?.id, prompt, model, files, current == null ? newChatTarget : null);
         await _follow(started);
       } catch (_) {
         attachments = files;

@@ -112,7 +112,7 @@ Future<void> confirmDeleteMessage(BuildContext context, BragiController c, Messa
 }
 
 /// Asks before deleting a conversation from the history list.
-Future<void> confirmDeleteConversation(BuildContext context, BragiController c, SummaryView s) async {
+Future<void> confirmDeleteConversation(BuildContext context, BragiController c, ({String id, String title}) s) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (d) => AlertDialog(
@@ -204,29 +204,6 @@ class _ClearDialogState extends State<_ClearDialog> {
           child: const Text('Clear all history'),
         ),
       ],
-    );
-  }
-}
-
-/// Settings. For now only history; the endpoints and sessions settings join it later.
-class SettingsScreen extends StatelessWidget {
-  const SettingsScreen({super.key, required this.controller});
-
-  final BragiController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Settings')),
-      body: ListView(
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
-          ),
-          ClearHistoryTile(controller: controller),
-        ],
-      ),
     );
   }
 }

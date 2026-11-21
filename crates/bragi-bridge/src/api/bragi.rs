@@ -772,3 +772,267 @@ pub fn undo_delete(undo: String) -> Result<(), String> {
 pub fn clear_history() -> Result<u32, String> {
     core()?.clear_history().map(|n| n as u32).map_err(err)
 }
+
+// ---- settings: endpoints, links, targets, sessions, folders (LF-11) ------------------------------
+
+/// An OpenAI-compatible endpoint as Settings draws it. `mode` is `fallback` or `alongside`.
+/// The API key is never here, only whether one is set.
+#[derive(Debug, Clone)]
+pub struct EndpointView {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: Option<String>,
+    pub mode: String,
+    pub enabled: bool,
+    pub has_key: bool,
+    pub insecure: bool,
+    /// Sessions bound to it (for the delete confirmation).
+    pub sessions: u32,
+}
+
+/// What the add/edit form sends. `key_change` is `keep`, `set` (with `api_key`) or `clear`.
+#[derive(Debug, Clone)]
+pub struct EndpointForm {
+    pub name: String,
+    pub base_url: String,
+    pub model: Option<String>,
+    pub mode: String,
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub key_change: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TestResultView {
+    pub ok: bool,
+    pub models: Vec<String>,
+    pub latency_ms: u64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LinkView {
+    pub address: String,
+    pub peer: String,
+    pub online: bool,
+}
+
+/// A target for a session: `kind` is `pool` or `endpoint` (with `endpoint` and `model`).
+#[derive(Debug, Clone)]
+pub struct TargetView {
+    pub kind: String,
+    pub endpoint: Option<String>,
+    pub model: Option<String>,
+    pub label: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FolderView {
+    pub id: String,
+    pub name: String,
+    pub parent: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SessionView {
+    pub id: String,
+    pub title: String,
+    pub updated_ms: i64,
+    pub folder: Option<String>,
+    pub target: Option<TargetView>,
+    pub target_label: String,
+    pub unbound: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteReportView {
+    pub rebound: u32,
+    pub unbound: u32,
+}
+
+fn mode_of(s: &str) -> Result<bragi_core::EndpointMode, String> {
+    match s {
+        "fallback" => Ok(bragi_core::EndpointMode::Fallback),
+        "alongside" => Ok(bragi_core::EndpointMode::Alongside),
+        other => Err(format!("unknown mode `{other}`")),
+    }
+}
+
+fn mode_str(m: bragi_core::EndpointMode) -> String {
+    match m {
+        bragi_core::EndpointMode::Fallback => "fallback".into(),
+        bragi_core::EndpointMode::Alongside => "alongside".into(),
+    }
+}
+
+fn endpoint_view(core: &Core, e: bragi_core::EndpointView) -> EndpointView {
+    EndpointView {
+        sessions: core.endpoint_sessions(&e.id) as u32,
+        id: e.id,
+        name: e.name,
+        base_url: e.base_url,
+        model: e.model,
+        mode: mode_str(e.mode),
+        enabled: e.enabled,
+        has_key: e.has_key,
+        insecure: e.insecure,
+    }
+}
+
+fn form(f: EndpointForm) -> Result<(bragi_core::EndpointInput, bragi_core::KeyChange, Option<String>), String> {
+    let key = match f.key_change.as_str() {
+        "keep" => bragi_core::KeyChange::Keep,
+        "clear" => bragi_core::KeyChange::Clear,
+        "set" => bragi_core::KeyChange::Set(f.api_key.clone().unwrap_or_default()),
+        other => return Err(format!("unknown key change `{other}`")),
+    };
+    let input = bragi_core::EndpointInput { name: f.name, base_url: f.base_url, model: f.model, mode: mode_of(&f.mode)?, enabled: f.enabled };
+    Ok((input, key, f.api_key))
+}
+
+fn target_of(t: &TargetView) -> Result<bragi_core::Target, String> {
+    match t.kind.as_str() {
+        "pool" => Ok(bragi_core::Target::Pool),
+        "endpoint" => Ok(bragi_core::Target::Endpoint {
+            id: t.endpoint.clone().ok_or("an endpoint target needs an endpoint")?,
+            model: t.model.clone().unwrap_or_default(),
+        }),
+        other => Err(format!("unknown target `{other}`")),
+    }
+}
+
+fn target_view(t: &bragi_core::Target, label: String) -> TargetView {
+    match t {
+        bragi_core::Target::Pool => TargetView { kind: "pool".into(), endpoint: None, model: None, label },
+        bragi_core::Target::Endpoint { id, model } => {
+            TargetView { kind: "endpoint".into(), endpoint: Some(id.clone()), model: Some(model.clone()), label }
+        }
+    }
+}
+
+pub fn endpoints() -> Result<Vec<EndpointView>, String> {
+    let core = core()?;
+    Ok(core.endpoints().into_iter().map(|e| endpoint_view(&core, e)).collect())
+}
+
+pub fn add_endpoint(form_in: EndpointForm) -> Result<EndpointView, String> {
+    let core = core()?;
+    let (input, _, key) = form(form_in)?;
+    core.add_endpoint(input, key).map(|e| endpoint_view(&core, e)).map_err(err)
+}
+
+pub fn edit_endpoint(id: String, form_in: EndpointForm) -> Result<EndpointView, String> {
+    let core = core()?;
+    let (input, key, _) = form(form_in)?;
+    core.edit_endpoint(&id, input, key).map(|e| endpoint_view(&core, e)).map_err(err)
+}
+
+/// Deletes an endpoint. `rebind_to` is where its sessions go; `None` marks them unbound. No history is deleted.
+pub fn delete_endpoint(id: String, rebind_to: Option<TargetView>) -> Result<DeleteReportView, String> {
+    let to = rebind_to.as_ref().map(target_of).transpose()?;
+    core()?.delete_endpoint(&id, to).map(|r| DeleteReportView { rebound: r.rebound as u32, unbound: r.unbound as u32 }).map_err(err)
+}
+
+pub fn move_endpoint(id: String, index: u32) -> Result<(), String> {
+    core()?.move_endpoint(&id, index as usize).map_err(err)
+}
+
+fn test_view(r: bragi_core::TestReport) -> TestResultView {
+    TestResultView { ok: r.ok, models: r.models, latency_ms: r.latency_ms, message: r.message }
+}
+
+pub async fn test_endpoint(id: String) -> Result<TestResultView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.test_endpoint(&id).await }).await.map_err(|e| e.to_string())?.map(test_view).map_err(err)
+}
+
+/// Tests an address and key that aren't saved yet.
+pub async fn test_endpoint_address(base_url: String, api_key: Option<String>) -> Result<TestResultView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.test_endpoint_address(&base_url, api_key).await }).await.map_err(|e| e.to_string())?.map(test_view).map_err(err)
+}
+
+pub async fn endpoint_models(id: String) -> Result<Vec<String>, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.endpoint_models(&id).await }).await.map_err(|e| e.to_string())?.map_err(err)
+}
+
+pub fn links() -> Vec<LinkView> {
+    core().map(|c| c.links().into_iter().map(|l| LinkView { address: l.address, peer: l.peer, online: l.online }).collect()).unwrap_or_default()
+}
+
+pub fn edit_link(old: String, new: String) -> Result<String, String> {
+    core()?.edit_link(&old, &new).map_err(err)
+}
+
+pub fn remove_link(address: String) -> Result<(), String> {
+    core()?.remove_link(&address).map_err(err)
+}
+
+/// What a new session can be bound to: the pool, and endpoints offered alongside it.
+pub fn targets() -> Vec<TargetView> {
+    core().map(|c| c.targets().into_iter().map(|t| target_view(&t.target, t.label)).collect()).unwrap_or_default()
+}
+
+/// [`send_with`] to a target (`None`: the session's own, or the default for a new one).
+pub fn send_to(
+    conversation: Option<String>,
+    prompt: String,
+    model: Option<String>,
+    files: Vec<AttachmentView>,
+    target: Option<TargetView>,
+) -> Result<ChatStarted, String> {
+    let target = target.as_ref().map(target_of).transpose()?;
+    let attachments = attachments(files)?;
+    core()?.send_to(conversation.as_deref(), &prompt, model, attachments, target).map(started).map_err(err)
+}
+
+pub fn sessions(offset: u32, limit: u32) -> Result<Vec<SessionView>, String> {
+    Ok(core()?
+        .sessions(offset as usize, limit as usize)
+        .map_err(err)?
+        .into_iter()
+        .map(|s| SessionView {
+            target: s.target.as_ref().map(|t| target_view(t, s.target_label.clone())),
+            id: s.id,
+            title: s.title,
+            updated_ms: s.updated_ms,
+            folder: s.folder,
+            target_label: s.target_label,
+            unbound: s.unbound,
+        })
+        .collect())
+}
+
+pub fn bind_session(conversation: String, target: TargetView) -> Result<(), String> {
+    core()?.bind_session(&conversation, target_of(&target)?).map_err(err)
+}
+
+pub fn folders() -> Vec<FolderView> {
+    core().map(|c| c.folders().into_iter().map(|f| FolderView { id: f.id, name: f.name, parent: f.parent }).collect()).unwrap_or_default()
+}
+
+pub fn create_folder(name: String, parent: Option<String>) -> Result<FolderView, String> {
+    core()?.create_folder(&name, parent.as_deref()).map(|f| FolderView { id: f.id, name: f.name, parent: f.parent }).map_err(err)
+}
+
+pub fn rename_folder(id: String, name: String) -> Result<(), String> {
+    core()?.rename_folder(&id, &name).map_err(err)
+}
+
+pub fn move_folder(id: String, parent: Option<String>) -> Result<(), String> {
+    core()?.move_folder(&id, parent.as_deref()).map_err(err)
+}
+
+/// Deletes a folder; its sessions and subfolders move up a level. No history is deleted.
+pub fn delete_folder(id: String) -> Result<(), String> {
+    core()?.delete_folder(&id).map_err(err)
+}
+
+pub fn set_session_folder(conversation: String, folder: Option<String>) -> Result<(), String> {
+    core()?.set_session_folder(&conversation, folder.as_deref()).map_err(err)
+}
