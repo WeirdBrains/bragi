@@ -192,8 +192,8 @@ void main() {
     expect(await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')), isFalse);
     expect(c.notice, contains('peer'));
     expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
-    // Anything else the user does cleared the line.
-    expect(c.nodeSearchLine, isNull);
+    // Anything else the user does cleared the line (it arrives with the next state).
+    await until('the line cleared', () => c.nodeSearchLine == null);
 
     // A linked node: looking, then "Connected to …" in the success colour (it used to stay red forever).
     final first = (await tester.runAsync(() async => rust.demoNodeAddress()))!;
