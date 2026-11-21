@@ -11,7 +11,8 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **Checks** (before the bump commit, whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test`, `flutter analyze` and the Flutter tests in demo mode.
 **Not tested**: a real phone, two real devices syncing, a live reasoning model, signed builds (no signing keys exist; the minisign job only prints a notice, the Android APKs use the debug key).
 
-**Left**: the release steps after CI (GitHub release, TAUR `bragi-bin`, Nix `release.json`, the site's `latestVersion`) are logged in a later entry as they finish.
+**Published**: the [v0.1.1 release](https://github.com/WeirdBrains/bragi/releases/tag/v0.1.1) has 31 files and a `SHA256SUMS`, built by the Release workflow (all jobs passed) and scanned for private details first. TAUR `bragi-bin` is 0.1.1-1, `packaging/nix/release.json` and the site's `latestVersion` are 0.1.1. The Android apks are signed with the debug key (no release key exists) and the minisign job only printed its notice (no key).
+
 **Next**: LF-18, then the v1.0.0 work on a branch.
 
 ## 2026-11-21: LF-23, emoji reactions (v0.1.1)

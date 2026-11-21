@@ -3,8 +3,8 @@
 # (bragi-<ver>-<arch>-unknown-linux-gnu.tar.gz from scripts/dist-linux.sh). No Rust needed.
 # The upstream tarball is not code-signed; this package is likewise unsigned.
 pkgname=bragi-bin
-pkgver=0.1.0
-_ver=0.1.0
+pkgver=0.1.1
+_ver=0.1.1
 pkgrel=1
 pkgdesc="Chat with your private AI cloud (Ymir) over Weirdnet, desktop app, prebuilt"
 arch=('x86_64' 'aarch64')
@@ -19,8 +19,8 @@ options=('!strip' '!debug')
 source_x86_64=("$url/releases/download/v$_ver/bragi-$_ver-x86_64-unknown-linux-gnu.tar.gz")
 source_aarch64=("$url/releases/download/v$_ver/bragi-$_ver-aarch64-unknown-linux-gnu.tar.gz")
 # From the release's SHA256SUMS.
-sha256sums_x86_64=('afb7fc0317e8daaa722b3607d44884b1028a18527f8635b9ba515ed47e4f5a4e')
-sha256sums_aarch64=('ccb52b0f125b6d57da058eabcbd489f25a4c5e161dc2f4f0b5b433c823010f69')
+sha256sums_x86_64=('e7bf1f6792853a89aa6ebd05250ae8bf818e93ce45e7519e4ac73aaa1dd1fd12')
+sha256sums_aarch64=('0782e54446d40e00df999fee181966a6d1dd2ff1a8c4f61f44ca50159c1c57a3')
 
 package() {
   local bundle="$srcdir/bragi-$_ver-$CARCH-unknown-linux-gnu"
