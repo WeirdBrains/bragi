@@ -24,6 +24,7 @@ use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
 mod delete;
+mod endpoints;
 mod react;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
@@ -103,6 +104,9 @@ pub struct BragiView {
     confirm_input: Entity<TextInput>,
     deleted: Option<bragi_core::Deleted>,
     settings_open: bool,
+    /// Endpoints, links, folders and the target picker (see `endpoints`).
+    prefs: endpoints::Prefs,
+    fields: endpoints::Fields,
     _tasks: Vec<Task<()>>,
 }
 
@@ -161,7 +165,16 @@ impl BragiView {
         let state = core.state();
         let conversations = core.conversations(0, 100).unwrap_or_default();
         window.focus(&prompt.focus_handle(cx), cx);
-        Self {
+        let fields = endpoints::Fields::new(theme, cx);
+        for input in [&fields.name, &fields.url, &fields.key, &fields.model] {
+            cx.subscribe_in(input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+                TextInputEvent::Submit { .. } => this.form_save(cx),
+                TextInputEvent::Cancel => this.close_form(cx),
+                _ => {}
+            })
+            .detach();
+        }
+        let mut this = Self {
             core,
             theme,
             state,
@@ -194,8 +207,12 @@ impl BragiView {
             confirm_input,
             deleted: None,
             settings_open: false,
+            prefs: endpoints::Prefs::default(),
+            fields,
             _tasks: vec![follow],
-        }
+        };
+        this.refresh_prefs();
+        this
     }
 
     fn on_state(&mut self, s: AppState, cx: &mut Context<Self>) {
@@ -219,6 +236,7 @@ impl BragiView {
 
     fn reload(&mut self) {
         self.conversations = self.core.conversations(0, 100).unwrap_or_default();
+        self.refresh_prefs();
         if let Some(c) = &self.current {
             self.current = self.core.conversation(&c.id).ok();
         }
@@ -446,7 +464,8 @@ impl BragiView {
         let sent = if self.agent {
             self.core.send_agent(conv.as_deref(), &text, None, None, files.clone())
         } else {
-            self.core.send_with(conv.as_deref(), &text, self.model(), files.clone())
+            let target = if conv.is_none() { self.prefs.new_target.clone() } else { None };
+            self.core.send_to(conv.as_deref(), &text, self.model(), files.clone(), target)
         };
         match sent {
             Err(e) => {
@@ -743,29 +762,7 @@ impl BragiView {
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let mut list = div().id("conversations").flex().flex_col().gap(px(2.)).flex_1().overflow_y_scroll();
-        for c in &self.conversations {
-            let selected = self.current.as_ref().is_some_and(|x| x.id == c.id);
-            let id = c.id.clone();
-            list = list.child(
-                div()
-                    .id(SharedString::from(format!("conv-{}", c.id)))
-                    .px(px(10.))
-                    .py(px(7.))
-                    .rounded(px(6.))
-                    .text_size(px(13.))
-                    .text_color(rgb(if selected { t.text_primary } else { t.text_secondary }))
-                    .when(selected, |d| d.bg(rgb(t.surface_variant)))
-                    .hover(|s| s.bg(rgb(t.surface_variant)))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |v, _, _, cx| v.open(&id, cx)))
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .child(div().flex_1().overflow_hidden().child(c.title.clone()))
-                    .child(self.conversation_delete(&c.id, cx)),
-            );
-        }
+        let list = div().id("conversations").flex().flex_col().gap(px(2.)).flex_1().overflow_y_scroll().children(self.history_tree(cx));
         let link_box = match &self.link_check {
             Some(check) => div()
                 .flex()
@@ -808,7 +805,24 @@ impl BragiView {
             .border_r_1()
             .border_color(rgb(t.border))
             .child(self.button("new-chat", "+ New chat", false).on_click(cx.listener(|v, _, _, cx| v.new_chat(cx))))
-            .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(div().flex_1().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
+                    .child(
+                        div()
+                            .id("new-folder")
+                            .px(px(6.))
+                            .text_size(px(12.))
+                            .text_color(rgb(t.text_secondary))
+                            .hover(|s| s.text_color(rgb(t.accent)))
+                            .cursor_pointer()
+                            .on_click(cx.listener(|v, _, _, cx| v.folder_form(None, None, cx)))
+                            .child("+ Folder"),
+                    ),
+            )
             .child(list)
             .child(link_box)
             .child(self.button("open-settings", "Settings", self.settings_open).on_click(cx.listener(|v, _, _, cx| v.toggle_settings(cx))))
@@ -1207,6 +1221,7 @@ impl BragiView {
             .min_h(px(0.))
             .overflow_hidden()
             .child(self.models(cx))
+            .children(self.target_bar(cx))
             .when(self.settings_open, |d| d.child(self.settings(cx)))
             .when(!self.settings_open, |d| d.child(self.message_area(body, cx)))
             .children(self.undo_bar(cx))
@@ -1259,6 +1274,7 @@ impl Render for BragiView {
             .child(self.title_bar(cx))
             .child(main)
             .children(self.confirm_card(cx))
+            .children(self.prefs_overlay(cx))
     }
 }
 
