@@ -11,6 +11,7 @@ import 'controller.dart';
 import 'markdown.dart';
 import 'delete_ui.dart';
 import 'sessions_ui.dart';
+import 'models_ui.dart';
 import 'settings_ui.dart';
 import 'theme.dart';
 
@@ -558,6 +559,17 @@ class _History extends StatelessWidget {
             ),
             Expanded(
               child: SessionsTree(controller: c),
+            ),
+            ListTile(
+              key: const Key('models'),
+              dense: true,
+              leading: const Icon(Icons.memory_outlined),
+              title: const Text('Models'),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute<void>(builder: (_) => ModelsScreen(controller: c)));
+              },
             ),
             ListTile(
               key: const Key('settings'),
