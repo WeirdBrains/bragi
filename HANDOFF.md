@@ -143,12 +143,16 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 ## 2026-11-21: LF-11, OpenAI-compatible endpoints, Settings, sessions and folders
 
-**What changed**: `bragi-core` gains OpenAI-compatible endpoints (any URL, optional API key sealed on the device, never logged or synced; test, reorder, fallback-only or alongside the Weirdnet pool), Weirdnet links managed from Settings, per-session targets (the pool, or an endpoint and model), and nested session folders. Deleting an endpoint asks first and rebinds or unbinds its chats; history is never deleted. The bridge and the Flutter app (desktop and phone) have the Settings screen, the target picker and the folder tree. Roadmap: new B6 line (site and ROADMAP.md regenerated).
+**What changed**: `bragi-core` gains OpenAI-compatible endpoints (any URL, optional API key; test, reorder, fallback-only or alongside the Weirdnet pool), Weirdnet links managed from Settings, per-session targets (the pool, or an endpoint and model), and nested session folders. Deleting an endpoint asks first and rebinds or unbinds its chats; history is never deleted. Both shells have it: the Flutter app (desktop and phone) and the GPUI desktop shell (Settings sections for endpoints and links, the form and delete cards, the folder tree in the sidebar, the "Sends to" target picker, `view/endpoints.rs`). Roadmap: new B6 line (site and ROADMAP.md regenerated).
 
-**Branch**: `feature/openai-endpoints-v2` (merged main in; not merged to main).
+**API keys**: stored in the OS keychain when a shell opts in (`Core::use_os_keychain`): Secret Service (libsecret) on Linux, Keychain on macOS, Credential Manager on Windows, through the `keyring` crate. Keys already in the sealed file move over on first use. When there is no keychain (no Secret Service running; iOS and Android, which have no store wired in yet) keys stay in the sealed file store (`secrets.enc`, ChaCha20-Poly1305). Keys are never logged, never in `endpoints.json` and never synced. The demo and tests never touch a real keychain.
 
-**Checks**: fmt, clippy -D warnings and `cargo test --workspace` (mock OpenAI server: streaming, errors, auth, models list) passed; `flutter analyze` clean; `flutter test --dart-define=BRAGI_DEMO=true` passed (Settings add/edit/delete/reorder/test, delete-confirm and rebind, sessions and folders, plus the scenario test).
-**Not tested**: a real OpenAI-compatible server or real keychain; a real phone; the screenshots are headless widget-test renders (BRAGI_SHOTS), not a real window.
+**For main**: this branch pins `weirdnet-device-link =0.3.2` and `weirdnet-net =0.8.2` (the Weirdnet Lead yanked 0.3.1 and 0.8.1; content-only patches). Main still pins the yanked versions, so the same two-line `Cargo.toml` bump (and `cargo update -p weirdnet-device-link -p weirdnet-net`) is needed on main if this branch does not merge first.
 
-**Left**: the GPUI desktop shell has no Settings screen yet; keys use the sealed file store, not the OS keychain.
+**Branch**: `feature/openai-endpoints-v2` (main merged in; not merged to main).
+
+**Checks**: fmt, clippy -D warnings and `cargo test --workspace` (mock OpenAI server: streaming, errors, auth, models list; keychain move, clear, delete and fallback with an in-memory store) passed; the real Secret Service round trip passed in a private session bus with a throwaway gnome-keyring (`cargo test -p bragi-core -- --ignored os_keychain`); a live OpenAI-compatible server (the Ymir loopback bridge) passed list, test and a streamed chat (`cargo test -p bragi-core --test live -- --ignored`, with `BRAGI_LIVE_URL` and `BRAGI_LIVE_KEY`); `flutter analyze` clean; `flutter test --dart-define=BRAGI_DEMO=true` passed; the GPUI desktop scenario (`scripts/desktop-scenario.sh`, Xvfb) passed with the new endpoints, links, folders and rebind steps.
+**Not tested**: macOS Keychain and Windows Credential Manager (compiled for Linux only); a real phone; iOS and Android keychains (not implemented); the Flutter Linux window screenshots were taken from a temporary Linux platform scaffold and a demo tour that are not part of the repo.
+
+**Left**: iOS Keychain and Android Keystore (keyring-core store crates need device testing; those platforms keep the sealed file).
 **Next**: LF-12.
