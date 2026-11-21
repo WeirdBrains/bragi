@@ -2,6 +2,23 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-20: LF-19, the model's thinking (v0.1.1)
+
+**What changed**
+- A collapsible Thinking section sits above the reply on the desktop and phone apps. While the model reasons it is open and streams live with the elapsed time; once the answer starts it folds to a one-line "Thought for Ns" header (our choice: the answer stays the focus, one click or tap opens the reasoning again). Before anything arrives the reply says "Waiting for a reply…".
+- Reasoning comes from the stream's `reasoning_content` field (what llama.cpp with `--reasoning-format` and vLLM send, and what the Ymir bridge passes through as reasoning frames), or from a `<think>…</think>` block at the start of the text (Qwen3 served without a reasoning parser), split in [`think.rs`](crates/bragi-core/src/think.rs).
+- It is stored with the message (and synced with the conversation) but kept out of the answer body, out of Copy, and out of the context sent back to the model.
+- The reasoning is drawn with the same Markdown renderer as answers (desktop and phone). The bubble layout leaves room beside the text for delete (LF-21) and reactions (LF-23).
+- Bridge regenerated for the new `reasoning` event and message fields.
+
+**Commits**: [`4e1e5ae`](https://github.com/WeirdBrains/bragi/commit/4e1e5ae) (the feature, rebased onto the Markdown work), then the commit that adds this entry and draws the reasoning as Markdown on the desktop.
+
+**Checks** (whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test` (including `tests/thinking.rs` for both formats), `flutter analyze`, the Flutter scenario test in demo mode, and the headless desktop scenario (virtual X server, clean environment, throwaway profile; screenshots 27 to 29 show reasoning, the folded header and the reopened section).
+**Not tested**: a real phone; a real reasoning model through a live Ymir node (checked against recorded streams of two models and the demo model); very long reasoning on small screens.
+
+**Left**: nothing known.
+**Next**: LF-21, delete a message, a conversation or all history.
+
 ## 2026-11-20: LF-20, Markdown in replies (v0.1.1)
 
 **What changed**

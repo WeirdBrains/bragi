@@ -861,9 +861,22 @@ impl BragiView {
                     .text_size(px(13.))
                     .line_height(px(19.))
                     .text_color(rgb(t.text_secondary))
-                    .child(m.reasoning.trim().to_string()),
+                    .child(self.reasoning_markdown(index, m, cx)),
             )
         }))
+    }
+
+    /// The reasoning through the same Markdown renderer as the answer (no Copy button: thinking is not part of the answer).
+    fn reasoning_markdown(&self, index: usize, m: &ChatMessage, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let key = format!("think-{conv}-{index}");
+        let doc = self.parsed(&key, m.reasoning.trim(), m.state == MessageState::Streaming && m.thinking_ms.is_none());
+        let weak = cx.entity().downgrade();
+        let on_copy: markdown::OnCopy = Rc::new(move |id, text, cx| {
+            let _ = weak.update(cx, |v, cx| v.copy_text(id, text, cx));
+        });
+        let style = markdown::Style { theme: self.theme, mono: self.mono.clone(), copied: self.copied_block.clone(), on_copy };
+        markdown::render(&doc, &style, &key).into_any_element()
     }
 
     fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement {

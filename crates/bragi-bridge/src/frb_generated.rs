@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -839742251;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1049000826;
 
 // Section: executor
 
@@ -1470,7 +1470,7 @@ fn pde_ffi_dispatcher_primary_impl(
         33 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
         34 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
         35 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1495,6 +1495,7 @@ fn pde_ffi_dispatcher_sync_impl(
         27 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
         32 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
         36 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
