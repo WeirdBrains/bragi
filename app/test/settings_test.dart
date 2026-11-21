@@ -277,6 +277,8 @@ void main() {
     expect(find.textContaining('Its endpoint was deleted'), findsOneWidget);
     // Sending asks for a target; picking the pool rebinds it and it answers.
     await tester.enterText(find.byKey(const Key('prompt')), 'still there?');
+    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('send')));
     await settle();
     expect(c.notice, contains('endpoint was deleted'));
@@ -286,6 +288,8 @@ void main() {
     await settle();
     expect(c.needsTarget, isFalse);
     await tester.enterText(find.byKey(const Key('prompt')), 'still there?');
+    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('send')));
     await until('the answer', () => !c.streaming && c.messages.length == 4 && c.messages.last.state == 'complete');
 

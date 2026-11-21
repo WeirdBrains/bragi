@@ -175,7 +175,7 @@ class FolderChoice {
 
 /// Names a new folder (inside [parent]) or renames [rename].
 Future<void> showFolderDialog(BuildContext context, BragiController c, {String? parent, FolderView? rename}) async {
-  final name = TextEditingController(text: rename?.name ?? '');
+  var text = rename?.name ?? '';
   await showDialog<void>(
     context: context,
     builder: (d) {
@@ -186,7 +186,7 @@ Future<void> showFolderDialog(BuildContext context, BragiController c, {String? 
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(key: const Key('folder-name'), controller: name, autofocus: true, decoration: const InputDecoration(labelText: 'Name')),
+              _FolderNameField(initial: text, onChanged: (v) => text = v),
               if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, key: const Key('folder-error'), style: const TextStyle(color: BragiColors.error))),
             ],
           ),
@@ -196,13 +196,13 @@ Future<void> showFolderDialog(BuildContext context, BragiController c, {String? 
               key: const Key('folder-save'),
               onPressed: () async {
                 if (rename == null) {
-                  if (await c.createFolder(name.text, parent)) {
+                  if (await c.createFolder(text, parent)) {
                     if (d.mounted) Navigator.of(d).pop();
                   } else {
                     setState(() => error = c.notice);
                   }
                 } else {
-                  await c.renameFolder(rename.id, name.text);
+                  await c.renameFolder(rename.id, text);
                   if (c.notice != null) {
                     setState(() => error = c.notice);
                   } else if (d.mounted) {
@@ -217,7 +217,38 @@ Future<void> showFolderDialog(BuildContext context, BragiController c, {String? 
       );
     },
   );
-  name.dispose();
+}
+
+/// Owns the text controller so it is disposed with the field, after the dialog's exit animation.
+class _FolderNameField extends StatefulWidget {
+  const _FolderNameField({required this.initial, required this.onChanged});
+
+  final String initial;
+  final ValueChanged<String> onChanged;
+
+  @override
+  State<_FolderNameField> createState() => _FolderNameFieldState();
+}
+
+class _FolderNameFieldState extends State<_FolderNameField> {
+  late final _controller = TextEditingController(text: widget.initial);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      key: const Key('folder-name'),
+      controller: _controller,
+      autofocus: true,
+      onChanged: widget.onChanged,
+      decoration: const InputDecoration(labelText: 'Name'),
+    );
+  }
 }
 
 /// Lists the folders (indented) and the top level to move something into.
