@@ -41,6 +41,8 @@ pub struct NodeSpec {
     pub label: String,
     pub models: Vec<(String, ModelState)>,
     pub embedding: bool,
+    /// Model memory this node offers to model management (what fits is measured against it).
+    pub memory: u64,
     /// A model that isn't warm here is answered by a warm one, flagged (else it just answers).
     pub standins: bool,
 }
@@ -57,6 +59,7 @@ impl NodeSpec {
             label: "demo inference node".into(),
             models: vec![(WARM_MODEL.into(), ModelState::Warm), (COLD_MODEL.into(), ModelState::Loadable)],
             embedding: true,
+            memory: 24_000_000_000,
             standins: true,
         }
     }
@@ -67,6 +70,7 @@ impl NodeSpec {
             label: "demo inference node 2".into(),
             models: vec![(BIG_MODEL.into(), ModelState::Warm), (WARM_MODEL.into(), ModelState::Warm)],
             embedding: false,
+            memory: 11_000_000_000,
             standins: true,
         }
     }
@@ -431,6 +435,8 @@ pub struct DemoNode {
     tasks: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The other nodes of the cloud demo, which share this one's identity.
     siblings: Mutex<Vec<Arc<DemoNode>>>,
+    /// Serves models/1 to the user's linked devices: the same `RosterAuth` a Ymir node uses.
+    models: Mutex<Option<weirdnet_backends::models::ModelsServer>>,
 }
 
 fn other(e: impl std::fmt::Display) -> CoreError {
@@ -441,7 +447,7 @@ impl DemoNode {
     /// Starts it with a fresh test identity in `dir`, streaming a word every `delay`.
     pub async fn start(dir: &Path, delay: Duration) -> Result<Self> {
         let identity = Arc::new(Identity::create(&dir.join("identity"), "demo inference node")?);
-        Self::serve(identity, delay, NodeSpec::single(), Arc::default()).await
+        Self::serve(identity, dir, delay, NodeSpec::single(), Arc::default()).await
     }
 
     /// The cloud demo: a first node ([`NodeSpec::primary`]) and a second one of the same user
@@ -449,7 +455,7 @@ impl DemoNode {
     /// first (through [`accept`](Self::accept)) is admitted by both, and `app_config` dials both.
     pub async fn start_cloud(dir: &Path, delay: Duration) -> Result<Arc<Self>> {
         let identity = Arc::new(Identity::create(&dir.join("identity"), "demo inference node")?);
-        let first = Arc::new(Self::serve(identity, delay, NodeSpec::primary(), Arc::default()).await?);
+        let first = Arc::new(Self::serve(identity, dir, delay, NodeSpec::primary(), Arc::default()).await?);
         let second = first.add_sibling(&dir.join("second"), delay, NodeSpec::secondary()).await?;
         lock(&first.siblings).push(second);
         Ok(first)
@@ -463,11 +469,11 @@ impl DemoNode {
         let cert = Roster::self_certify(&WEIRDNET, &user, &key.public().to_peer_id().to_string(), &spec.label, 1).map_err(other)?;
         self.identity.approve(cert.clone())?;
         let identity = Arc::new(Identity::adopt(&dir.join("identity"), key, &self.identity.seed()?.0, cert, &self.identity.link_settings())?);
-        let node = Self::serve(identity, delay, spec, self.faults.clone()).await?;
+        let node = Self::serve(identity, dir, delay, spec, self.faults.clone()).await?;
         Ok(Arc::new(node))
     }
 
-    async fn serve(identity: Arc<Identity>, delay: Duration, spec: NodeSpec, faults: Arc<Faults>) -> Result<Self> {
+    async fn serve(identity: Arc<Identity>, dir: &Path, delay: Duration, spec: NodeSpec, faults: Arc<Faults>) -> Result<Self> {
         let (key, st) = (identity.node_key().clone(), identity.state());
         let node = tokio::task::spawn_blocking(move || weirdnet_sync::start_node(key, weirdnet_sync::node_config(true), st))
             .await
@@ -508,15 +514,31 @@ impl DemoNode {
                 });
             }
         });
+        let (spec_memory, auth_models) = (spec.memory, auth.clone());
         let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
-        Ok(Self { identity, node, feed, faults, server: Mutex::new(Some(server)), tasks: Mutex::new(Some(tasks)), siblings: Mutex::default() })
+        // Model management, as a Ymir model node serves it: owner-only through the roster.
+        let models_dir = dir.join("models");
+        std::fs::create_dir_all(&models_dir).map_err(other)?;
+        let service = crate::demo_models::service(&models_dir, &hub_url(), spec_memory, auth_models);
+        let models = weirdnet_backends::models::ModelsServer::start(&node, service).map_err(other)?;
+        Ok(Self {
+            identity,
+            node,
+            feed,
+            faults,
+            server: Mutex::new(Some(server)),
+            tasks: Mutex::new(Some(tasks)),
+            siblings: Mutex::default(),
+            models: Mutex::new(Some(models)),
+        })
     }
 
     /// Takes this node off the network (a node that went away).
     pub fn stop(&self) {
         lock(&self.server).take();
+        lock(&self.models).take();
         if let Some(t) = lock(&self.tasks).take() {
             t.abort();
         }
@@ -689,4 +711,36 @@ impl DemoNode {
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+static HUB: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// The demo's mock Hugging Face Hub (started with the first demo node): a few repos with real
+/// sizes for the fit verdicts, and one tiny repo whose files download, slowly enough to see
+/// progress. Nothing here touches the real Hub.
+pub fn hub_url() -> String {
+    use crate::demo_models::{MockRepo, mock_hub};
+    HUB.get_or_init(|| {
+        const GB: u64 = 1_000_000_000;
+        mock_hub(
+            vec![
+                MockRepo::new(
+                    "mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-GGUF",
+                    18_420,
+                    212,
+                    &[("DeepSeek-V4-Pro-Qwen3.5-9B.Q4_K_M.gguf", 5_600_000_000), ("DeepSeek-V4-Pro-Qwen3.5-9B.Q6_K.gguf", 7_500_000_000), ("DeepSeek-V4-Pro-Qwen3.5-9B.Q8_0.gguf", 9_790_000_000)],
+                ),
+                MockRepo::new("unsloth/Qwen3-14B-GGUF", 912_300, 640, &[("Qwen3-14B-Q4_K_M.gguf", 9 * GB), ("Qwen3-14B-Q8_0.gguf", 15_700_000_000)]),
+                MockRepo::new("bartowski/gemma-3-27b-it-GGUF", 301_800, 388, &[("gemma-3-27b-it-Q4_K_M.gguf", 16_500_000_000), ("gemma-3-27b-it-Q8_0.gguf", 28_700_000_000)]),
+                MockRepo::new("demo/Tiny-Chat-GGUF", 42, 3, &[("Tiny-Chat-Q4_K_M.gguf", 3_000_000), ("Tiny-Chat-Q8_0.gguf", 5_000_000)]).downloadable(),
+            ],
+            Duration::from_millis(60),
+        )
+    })
+    .clone()
+}
+
+/// The demo Hub's URL when a demo node started it, else `None` (a real Hub is used).
+pub fn hub_override() -> Option<String> {
+    HUB.get().cloned()
 }

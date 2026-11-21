@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod chat;
 pub mod context;
 mod core;
+mod models_core;
 pub mod demo;
 pub mod demo_models;
 pub mod endpoints;
@@ -44,3 +45,7 @@ pub use crate::openai::TestReport;
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};
 pub use crate::sessions::{Folder, SessionMeta, Target};
 pub use crate::targets::{DeleteReport, LinkView, SessionSummary, TargetOption};
+pub use crate::models::{
+    HubHit, ModelNode, ModelsEvent, NodeFit, NodeModels, NodeStatus, PullSpec, PullTarget, PulledView, QuantFit, StoredView, Verdict, human_bytes,
+};
+pub use crate::models_core::ModelsRun;
