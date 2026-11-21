@@ -24,6 +24,26 @@ class _ChatScreenState extends State<ChatScreen> {
   final _link = TextEditingController();
   final _scroll = ScrollController();
 
+  /// Follow the newest text; false once the reader scrolls up.
+  bool _stick = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final atBottom = _scroll.position.maxScrollExtent - _scroll.position.pixels <= 24;
+    if (atBottom != _stick) setState(() => _stick = atBottom);
+  }
+
+  void _jumpToLatest() {
+    setState(() => _stick = true);
+    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+  }
+
   @override
   void dispose() {
     _prompt.dispose();
@@ -56,7 +76,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (_stick && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
     return Scaffold(
       appBar: AppBar(
@@ -78,12 +98,30 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? const Center(
                       child: Text('Ask your own cloud something.', style: TextStyle(color: BragiColors.textSecondary)),
                     )
-                  : ListView.builder(
-                      key: const Key('messages'),
-                      controller: _scroll,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: c.messages.length,
-                      itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
+                  : Stack(
+                      children: [
+                        ListView.builder(
+                          key: const Key('messages'),
+                          controller: _scroll,
+                          padding: const EdgeInsets.all(12),
+                          itemCount: c.messages.length,
+                          itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
+                        ),
+                        if (!_stick)
+                          Positioned(
+                            bottom: 8,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: FilledButton.icon(
+                                key: const Key('jump-latest'),
+                                onPressed: _jumpToLatest,
+                                icon: const Icon(Icons.arrow_downward, size: 16),
+                                label: const Text('Jump to latest'),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
             ),
             if (c.notice != null)

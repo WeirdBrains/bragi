@@ -19,7 +19,7 @@ use gpui::{
 use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
-actions!(bragi, [Quit, Stop]);
+actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 
 /// The process exit code: 0 ok, 1 the scenario failed.
 static EXIT: AtomicU8 = AtomicU8::new(0);
@@ -64,6 +64,12 @@ pub struct BragiView {
     card: Option<Card>,
     notice: Option<String>,
     scroll: ScrollHandle,
+    /// Follow the newest text; false once the reader scrolls up.
+    stick: bool,
+    /// A scroll gesture moved the list: re-read whether it sits at the bottom on the next frame.
+    recheck: bool,
+    /// The scrollbar thumb is being dragged.
+    dragging: bool,
     close_only: bool,
     _tasks: Vec<Task<()>>,
 }
@@ -135,6 +141,9 @@ impl BragiView {
             card: None,
             notice: None,
             scroll: ScrollHandle::new(),
+            stick: true,
+            recheck: false,
+            dragging: false,
             close_only: tiling_wm(),
             _tasks: vec![follow],
         }
@@ -218,7 +227,55 @@ impl BragiView {
 
     pub fn open(&mut self, id: &str, cx: &mut Context<Self>) {
         self.current = self.core.conversation(id).ok();
+        self.jump_to_latest();
+        cx.notify();
+    }
+
+    /// Go to the newest message and follow it again.
+    fn jump_to_latest(&mut self) {
+        self.stick = true;
         self.scroll.scroll_to_bottom();
+    }
+
+    /// New text arrived: stay at the bottom unless the reader scrolled up.
+    fn follow_bottom(&mut self) {
+        if self.stick {
+            self.scroll.scroll_to_bottom();
+        }
+    }
+
+    fn at_bottom(&self) -> bool {
+        self.scroll.max_offset().y <= px(0.) || self.scroll.offset().y <= -self.scroll.max_offset().y + px(4.)
+    }
+
+    /// Scroll the list by `dy` (positive moves down); `None` goes to an end.
+    fn scroll_by(&mut self, dy: Option<f32>, to_top: bool, cx: &mut Context<Self>) {
+        let max = self.scroll.max_offset().y;
+        let mut o = self.scroll.offset();
+        o.y = match dy {
+            Some(d) => (o.y - px(d)).clamp(-max, px(0.)),
+            None if to_top => px(0.),
+            None => -max,
+        };
+        self.scroll.set_offset(o);
+        self.recheck = true;
+        cx.notify();
+    }
+
+    fn page(&self) -> f32 {
+        (self.scroll.bounds().size.height.as_f32() * 0.9).max(80.)
+    }
+
+    /// Put the list where the scrollbar was grabbed.
+    fn drag_to(&mut self, y: gpui::Pixels, cx: &mut Context<Self>) {
+        let b = self.scroll.bounds();
+        let max = self.scroll.max_offset().y;
+        if b.size.height <= px(0.) || max <= px(0.) {
+            return;
+        }
+        let frac = ((y - b.origin.y) / b.size.height).clamp(0., 1.);
+        self.scroll.set_offset(gpui::point(self.scroll.offset().x, -max * frac));
+        self.recheck = true;
         cx.notify();
     }
 
@@ -374,7 +431,7 @@ impl BragiView {
         self.streaming = Some(Streaming { request_id: h.request_id.clone(), conversation: h.conversation_id.clone() });
         self.current = self.core.conversation(&h.conversation_id).ok();
         self.reload();
-        self.scroll.scroll_to_bottom();
+        self.jump_to_latest();
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             while let Some(ev) = h.events.recv().await {
                 let end = matches!(ev, ChatEvent::Done { .. } | ChatEvent::Error { .. });
@@ -390,7 +447,7 @@ impl BragiView {
                 v.streaming = None;
                 v.card = None;
                 v.reload();
-                v.scroll.scroll_to_bottom();
+                v.follow_bottom();
                 cx.notify();
             });
         })
@@ -403,7 +460,7 @@ impl BragiView {
         match ev {
             ChatEvent::Delta { offset, text } => {
                 splice(&mut last.text, offset, &text);
-                self.scroll.scroll_to_bottom();
+                self.follow_bottom();
             }
             ChatEvent::Started { node, model, .. } => {
                 last.node = Some(node);
@@ -736,9 +793,73 @@ impl BragiView {
         )
     }
 
+    /// The message list, filling the space between the header and the composer: a scrollbar on
+    /// its right edge and a "jump to latest" button when the reader is above the newest text.
+    fn message_area(&self, body: impl IntoElement, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        let max = self.scroll.max_offset().y.as_f32();
+        let view = self.scroll.bounds().size.height.as_f32();
+        let mut area = div()
+            .id("message-area")
+            .relative()
+            .flex_1()
+            .min_h(px(0.))
+            .overflow_hidden()
+            .on_mouse_move(cx.listener(|v, e: &gpui::MouseMoveEvent, _, cx| {
+                if v.dragging && e.pressed_button == Some(MouseButton::Left) {
+                    v.drag_to(e.position.y, cx);
+                }
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|v, _, _, _| {
+                    v.dragging = false;
+                }),
+            )
+            .child(body);
+        if max > 0. && view > 0. {
+            let total = max + view;
+            let thumb = (view * view / total).max(28.);
+            let top = (-self.scroll.offset().y.as_f32() / max).clamp(0., 1.) * (view - thumb);
+            area = area.child(
+                div()
+                    .id("scrollbar")
+                    .absolute()
+                    .top(px(0.))
+                    .bottom(px(0.))
+                    .right(px(0.))
+                    .w(px(12.))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|v, e: &gpui::MouseDownEvent, _, cx| {
+                            v.dragging = true;
+                            v.drag_to(e.position.y, cx);
+                        }),
+                    )
+                    .child(div().absolute().top(px(top)).right(px(3.)).w(px(6.)).h(px(thumb)).rounded(px(3.)).bg(rgb(t.text_secondary)).opacity(0.5)),
+            );
+        }
+        if !self.stick && max > 0. {
+            area = area.child(div().absolute().bottom(px(12.)).left(px(0.)).right(px(0.)).flex().justify_center().child(
+                self.button("jump-latest", "↓ Jump to latest", true).on_click(cx.listener(|v, _, _, cx| {
+                    v.jump_to_latest();
+                    cx.notify();
+                })),
+            ));
+        }
+        area
+    }
+
     fn chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let mut body = div().id("messages").track_scroll(&self.scroll).flex().flex_col().gap(px(12.)).p(px(16.)).flex_1().overflow_y_scroll();
+        let mut body =
+            div().id("messages").track_scroll(&self.scroll).flex().flex_col().gap(px(12.)).p(px(16.)).size_full().overflow_y_scroll().on_scroll(
+                cx.listener(|v, _, _, cx| {
+                    v.recheck = true;
+                    cx.notify();
+                }),
+            );
         match &self.current {
             Some(c) => {
                 for m in &c.messages {
@@ -850,9 +971,10 @@ impl BragiView {
             .flex_col()
             .flex_1()
             .min_w(px(0.))
+            .min_h(px(0.))
             .overflow_hidden()
             .child(self.models(cx))
-            .child(body)
+            .child(self.message_area(body, cx))
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
             .children(self.state.node_search.line().map(|line| {
                 let color = match &self.state.node_search {
@@ -862,24 +984,37 @@ impl BragiView {
                 };
                 div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(color)).child(line)
             }))
-            .children(any.then_some(above))
-            .child(div().border_t_1().border_color(rgb(t.border)).child(bar))
+                        .children(any.then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
+            .child(div().flex_none().border_t_1().border_color(rgb(t.border)).child(bar))
     }
 }
 
 impl Render for BragiView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        if std::mem::take(&mut self.recheck) {
+            self.stick = self.at_bottom();
+        }
         let linked = matches!(self.state.pair, PairState::Linked { .. });
         let main = if linked {
-            div().flex().flex_row().flex_1().child(self.sidebar(cx)).child(self.chat(cx))
+            div().flex().flex_row().flex_1().min_h(px(0.)).child(self.sidebar(cx)).child(self.chat(cx))
         } else {
-            div().flex().flex_1().child(self.pairing(cx))
+            div().flex().flex_1().min_h(px(0.)).child(self.pairing(cx))
         };
         div()
             .key_context("Bragi")
             .on_action(cx.listener(|v, _: &Stop, _, cx| v.stop(cx)))
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
+            .on_action(cx.listener(|v, _: &ChatPageUp, _, cx| {
+                let d = v.page();
+                v.scroll_by(Some(-d), false, cx)
+            }))
+            .on_action(cx.listener(|v, _: &ChatPageDown, _, cx| {
+                let d = v.page();
+                v.scroll_by(Some(d), false, cx)
+            }))
+            .on_action(cx.listener(|v, _: &ChatTop, _, cx| v.scroll_by(None, true, cx)))
+            .on_action(cx.listener(|v, _: &ChatBottom, _, cx| v.scroll_by(None, false, cx)))
             .flex()
             .flex_col()
             .size_full()
@@ -1117,6 +1252,34 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     wait_for(&this, cx, "the line cleared", |v| v.state.node_search == NodeSearch::Idle).await?;
     step("node line cleared");
     shot(cx, "23-node-cleared").await;
+    // A long chat: it opens at the newest message, then the reader scrolls to the middle; the
+    // composer stays put and "jump to latest" shows.
+    this.update(cx, |v, cx| {
+        if let Some(c) = v.current.as_mut() {
+            let seed = c.messages.clone();
+            for i in 0..40 {
+                let mut m = seed[i % seed.len()].clone();
+                m.text = format!("Message {i}. {}", m.text);
+                c.messages.push(m);
+            }
+        }
+        v.jump_to_latest();
+        cx.notify();
+    })
+    .map_err(|e| e.to_string())?;
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    this.update(cx, |v, cx| {
+        let half = v.scroll.max_offset().y.as_f32() / 2.;
+        v.scroll_by(Some(-half), false, cx);
+    })
+    .map_err(|e| e.to_string())?;
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    let (stuck, max) = this.read_with(cx, |v, _| (v.stick, v.scroll.max_offset().y.as_f32())).map_err(|e| e.to_string())?;
+    if stuck || max <= 0. {
+        return Err(format!("the long chat did not scroll up (stick {stuck}, max {max})"));
+    }
+    step("scrolled to the middle");
+    shot(cx, "24-scrolled-middle").await;
     Ok(())
 }
 
@@ -1193,6 +1356,13 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
     app.run(move |cx: &mut App| {
         let mut keys = text_input::bindings();
         keys.push(KeyBinding::new("escape", Stop, Some("Bragi")));
+        // The text field's own Home/End win while it has focus; these reach the list otherwise.
+        keys.push(KeyBinding::new("pageup", ChatPageUp, Some("Bragi")));
+        keys.push(KeyBinding::new("pagedown", ChatPageDown, Some("Bragi")));
+        keys.push(KeyBinding::new("home", ChatTop, Some("Bragi")));
+        keys.push(KeyBinding::new("end", ChatBottom, Some("Bragi")));
+        keys.push(KeyBinding::new("ctrl-home", ChatTop, Some("Bragi")));
+        keys.push(KeyBinding::new("ctrl-end", ChatBottom, Some("Bragi")));
         keys.push(KeyBinding::new("ctrl-q", Quit, None));
         cx.bind_keys(keys);
         let bounds = Bounds::centered(None, size(px(1100.), px(720.)), cx);
