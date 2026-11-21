@@ -607,6 +607,14 @@ pub fn attach_bytes(name: String, bytes: Vec<u8>) -> Result<AttachmentView, Stri
     Attachment::from_bytes(&name, &bytes).map(|a| attachment_view(&a)).map_err(err)
 }
 
+/// A reply's Markdown as JSON (`bragi_core::markdown::Document`): the same parse the desktop
+/// and the terminal UI draw. `streaming` is for an answer still arriving (no half-typed markers;
+/// an open fence is code to the end). Raw HTML stays text and images are links, never fetched.
+#[frb(sync)]
+pub fn markdown_json(text: String, streaming: bool) -> String {
+    if streaming { bragi_core::markdown::parse_streaming(&text) } else { bragi_core::markdown::parse(&text) }.to_json()
+}
+
 /// [`send`] with text files attached.
 pub fn send_with(conversation: Option<String>, prompt: String, model: Option<String>, files: Vec<AttachmentView>) -> Result<ChatStarted, String> {
     core()?.send_with(conversation.as_deref(), &prompt, model, attachments(files)).map(started).map_err(err)

@@ -1,7 +1,10 @@
 //! The window: draws `bragi-core`'s [`AppState`] and the current conversation, and turns
 //! clicks and keys into `Core` actions. No behaviour lives here.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -16,6 +19,7 @@ use gpui::{
     WindowDecorations, WindowOptions, actions, div, prelude::*, px, rgb, size,
 };
 
+use crate::markdown;
 use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
@@ -71,6 +75,11 @@ pub struct BragiView {
     /// The scrollbar thumb is being dragged.
     dragging: bool,
     close_only: bool,
+    /// The monospace family for code, and the code block or message just copied ("Copied").
+    mono: SharedString,
+    copied_block: Option<SharedString>,
+    /// Each shown reply's parsed Markdown, by message key, kept until its text changes.
+    markdown: RefCell<HashMap<String, (String, bool, Rc<bragi_core::markdown::Document>)>>,
     _tasks: Vec<Task<()>>,
 }
 
@@ -134,6 +143,9 @@ impl BragiView {
             link_input,
             link_check: None,
             copied: false,
+            mono: markdown::pick_mono(&cx.text_system().all_font_names()),
+            copied_block: None,
+            markdown: RefCell::default(),
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -210,6 +222,38 @@ impl BragiView {
             });
         })
         .detach();
+    }
+
+    /// Copies `text` (a code block, or a whole reply as its raw Markdown); its button says
+    /// "Copied" for a moment.
+    pub fn copy_text(&mut self, id: SharedString, text: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        self.copied_block = Some(id.clone());
+        cx.notify();
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            let _ = this.update(cx, |v, cx| {
+                if v.copied_block.as_ref() == Some(&id) {
+                    v.copied_block = None;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// A reply's Markdown, parsed once per text (streaming text is parsed tolerantly).
+    fn parsed(&self, key: &str, text: &str, streaming: bool) -> Rc<bragi_core::markdown::Document> {
+        let mut cache = self.markdown.borrow_mut();
+        if let Some((t, s, doc)) = cache.get(key)
+            && t == text
+            && *s == streaming
+        {
+            return doc.clone();
+        }
+        let doc = Rc::new(if streaming { bragi_core::markdown::parse_streaming(text) } else { bragi_core::markdown::parse(text) });
+        cache.insert(key.to_string(), (text.to_string(), streaming, doc.clone()));
+        doc
     }
 
     pub fn confirm_code(&mut self, matches: bool, cx: &mut Context<Self>) {
@@ -739,7 +783,7 @@ impl BragiView {
         row
     }
 
-    fn bubble(&self, m: &ChatMessage) -> impl IntoElement {
+    fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let mine = m.role == Role::User;
         let meta = match (m.role, m.state) {
@@ -770,6 +814,7 @@ impl BragiView {
                 .flex_col()
                 .gap(px(4.))
                 .max_w(px(620.))
+                .when(!mine, |d| d.w_full())
                 .px(px(14.))
                 .py(px(10.))
                 .rounded(px(12.))
@@ -785,11 +830,7 @@ impl BragiView {
                         .text_color(rgb(t.text_secondary))
                         .child(format!("attached: {} ({} lines)", a.name, a.text.lines().count()))
                 }))
-                .child(div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary)).child(if m.text.is_empty() {
-                    "…".to_string()
-                } else {
-                    m.text.clone()
-                })),
+                .child(self.message_text(i, m, cx)),
         )
     }
 
@@ -851,6 +892,47 @@ impl BragiView {
         area
     }
 
+    /// A user's message as typed; a reply as Markdown, with a Copy button for its raw text.
+    fn message_text(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let t = self.theme;
+        let text = div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary));
+        if m.text.is_empty() {
+            return text.child("…").into_any_element();
+        }
+        if m.role == Role::User {
+            return text.child(m.text.clone()).into_any_element();
+        }
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let key = format!("{conv}-{i}");
+        let doc = self.parsed(&key, &m.text, m.state == MessageState::Streaming);
+        let weak = cx.entity().downgrade();
+        let on_copy: markdown::OnCopy = Rc::new(move |id, text, cx| {
+            let _ = weak.update(cx, |v, cx| v.copy_text(id, text, cx));
+        });
+        let style = markdown::Style { theme: t, mono: self.mono.clone(), copied: self.copied_block.clone(), on_copy };
+        let copy_id = SharedString::from(format!("msg-{key}"));
+        let copied = self.copied_block.as_ref() == Some(&copy_id);
+        let raw = m.text.clone();
+        let copy = div()
+            .id(SharedString::from(format!("copy-{key}")))
+            .px(px(8.))
+            .py(px(2.))
+            .rounded(px(5.))
+            .text_size(px(11.))
+            .text_color(rgb(t.text_secondary))
+            .cursor_pointer()
+            .hover(|h| h.bg(rgb(t.surface_variant)).text_color(rgb(t.text_primary)))
+            .on_click(cx.listener(move |v, _, _, cx| v.copy_text(copy_id.clone(), raw.clone(), cx)))
+            .child(if copied { "Copied" } else { "Copy" });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(text.child(markdown::render(&doc, &style, &key)))
+            .when(m.state != MessageState::Streaming, |d| d.child(div().flex().flex_row().justify_end().child(copy)))
+            .into_any_element()
+    }
+
     fn chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let mut body =
@@ -862,8 +944,8 @@ impl BragiView {
             );
         match &self.current {
             Some(c) => {
-                for m in &c.messages {
-                    body = body.child(self.bubble(m));
+                for (i, m) in c.messages.iter().enumerate() {
+                    body = body.child(self.bubble(i, m, cx));
                 }
             }
             None => {
@@ -1280,6 +1362,56 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("scrolled to the middle");
     shot(cx, "24-scrolled-middle").await;
+    // Markdown: a reply with a heading, a list, a table and a code block renders as such while it
+    // streams (a half-open fence is code already) and when done; Copy gives the raw Markdown.
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        if v.agent {
+            v.toggle_agent(cx);
+        }
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.set_prompt("Show me some Markdown.", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "a half-open fence", |v| last_assistant(v).is_some_and(|m| m.text.contains("fn main()"))).await?;
+    let streaming = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.text).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if !bragi_core::markdown::parse_streaming(&streaming).blocks.iter().any(|b| matches!(b, bragi_core::markdown::Block::Code { closed: false, .. }))
+    {
+        return Err(format!("a half-open fence did not render as code: {streaming:?}"));
+    }
+    shot(cx, "25-markdown-streaming").await;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let text = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.text).unwrap_or_default()).map_err(|e| e.to_string())?;
+    let doc = bragi_core::markdown::parse(&text);
+    use bragi_core::markdown::Block as B;
+    let has = |f: fn(&B) -> bool| doc.blocks.iter().any(f);
+    if !(has(|b| matches!(b, B::Heading { .. }))
+        && has(|b| matches!(b, B::List { .. }))
+        && has(|b| matches!(b, B::Table { .. }))
+        && has(|b| matches!(b, B::Code { closed: true, .. }))
+        && has(|b| matches!(b, B::Paragraph { spans } if spans.iter().any(|s| s.bold && s.text == "4"))))
+    {
+        return Err(format!("the Markdown reply did not parse into every block: {doc:?}"));
+    }
+    let key = this
+        .read_with(cx, |v, _| v.current.as_ref().map(|c| format!("{}-{}", c.id, c.messages.len() - 1)))
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let code = doc.code_blocks()[0].to_string();
+    let got = this
+        .update(cx, |v, cx| {
+            v.copy_text(SharedString::from(format!("msg-{key}")), text.clone(), cx);
+            let whole = cx.read_from_clipboard().and_then(|i| i.text());
+            v.copy_text(SharedString::from(format!("{key}-code")), code.clone(), cx);
+            (whole, cx.read_from_clipboard().and_then(|i| i.text()))
+        })
+        .map_err(|e| e.to_string())?;
+    if got.0.as_deref() != Some(text.as_str()) || got.1.as_deref() != Some(code.as_str()) {
+        return Err("Copy did not give the raw Markdown and the code".into());
+    }
+    step("markdown");
+    shot(cx, "26-markdown").await;
     Ok(())
 }
 

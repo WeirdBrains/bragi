@@ -133,6 +133,9 @@ fn split_attachments(prompt: &str) -> (Vec<(String, usize)>, &str) {
 }
 
 pub fn answer_for(model: &str, prompt: &str) -> String {
+    if prompt.contains("Markdown") {
+        return format!("{model} here. 2 + 2 equals **4**.\n\n{MARKDOWN_SAMPLE}");
+    }
     let (files, question) = split_attachments(prompt);
     if !files.is_empty() {
         let list = files.iter().map(|(n, l)| format!("{n} ({l} lines)")).collect::<Vec<_>>().join(", ");
@@ -147,6 +150,28 @@ pub fn answer_for(model: &str, prompt: &str) -> String {
          A cut-off answer can be continued from where it stopped, on this device or another one."
     )
 }
+
+/// What the demo answers to a prompt that mentions Markdown: every kind of block the shells draw.
+pub const MARKDOWN_SAMPLE: &str = "## What Bragi renders
+
+- **Bold**, *italic* and ~~struck~~ text
+- `inline code` and [links](https://github.com/WeirdBrains/bragi)
+- [x] task lists
+
+| Shell | Toolkit | Markdown |
+|:------|:-------:|---------:|
+| Desktop | GPUI | yes |
+| Phone | Flutter | yes |
+
+```rust
+fn main() {
+    // One parse for every shell.
+    let doc = bragi_core::markdown::parse(\"**4**\");
+    println!(\"{} blocks\", doc.blocks.len());
+}
+```
+
+> Nothing leaves your devices.";
 
 /// Answers with [`answer_for`], one word every `delay`, honouring cancel, resume and the
 /// scripted [`Faults`]. A repeated prompt is a cache hit; a model that isn't warm here is

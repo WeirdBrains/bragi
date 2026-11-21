@@ -2,10 +2,12 @@
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
 import 'controller.dart';
+import 'markdown.dart';
 import 'theme.dart';
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -98,15 +100,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? const Center(
                       child: Text('Ask your own cloud something.', style: TextStyle(color: BragiColors.textSecondary)),
                     )
+                  // Replies stay selectable; each reply's copy button gives its raw Markdown.
                   : Stack(
                       children: [
-                        ListView.builder(
+                        SelectionArea(child: ListView.builder(
                           key: const Key('messages'),
                           controller: _scroll,
                           padding: const EdgeInsets.all(12),
                           itemCount: c.messages.length,
-                          itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
-                        ),
+                          itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1, markdown: c.markdown),
+                        )),
                         if (!_stick)
                           Positioned(
                             bottom: 8,
@@ -320,10 +323,13 @@ class _Models extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.streaming});
+  const _Bubble({required this.message, required this.streaming, required this.markdown});
 
   final MessageView message;
   final bool streaming;
+
+  /// Parses a reply's Markdown (bragi-core, through the controller's cache).
+  final Map<String, dynamic> Function(String text, bool streaming) markdown;
 
   @override
   Widget build(BuildContext context) {
@@ -370,7 +376,23 @@ class _Bubble extends StatelessWidget {
                 key: const Key('bubble-meta'),
                 style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
               ),
-            Text(message.text.isEmpty ? '…' : message.text, style: const TextStyle(fontSize: 15, height: 1.4)),
+            if (mine || message.text.isEmpty)
+              Text(message.text.isEmpty ? '…' : message.text, style: const TextStyle(fontSize: 15, height: 1.4))
+            else
+              MarkdownView(key: const Key('bubble-markdown'), doc: markdown(message.text, streaming || message.state == 'streaming')),
+            if (!mine && !streaming && message.text.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  key: const Key('copy-message'),
+                  tooltip: 'Copy as Markdown',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  color: BragiColors.textSecondary,
+                  onPressed: () => Clipboard.setData(ClipboardData(text: message.text)),
+                  icon: const Icon(Icons.copy),
+                ),
+              ),
           ],
         ),
       ),

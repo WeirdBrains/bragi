@@ -20,6 +20,8 @@ dependencies:
   qr: ^4.0.1
   file_picker: ^10.3.10
   material_ui: ^1.11.0
+  # Links in replies open in the system browser.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

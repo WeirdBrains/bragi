@@ -112,6 +112,14 @@ AttachmentView attachFile({required String path}) =>
 AttachmentView attachBytes({required String name, required List<int> bytes}) =>
     RustLib.instance.api.crateApiBragiAttachBytes(name: name, bytes: bytes);
 
+/// A reply's Markdown as JSON (`bragi_core::markdown::Document`): the same parse the desktop
+/// and the terminal UI draw. `streaming` is for an answer still arriving (no half-typed markers;
+/// an open fence is code to the end). Raw HTML stays text and images are links, never fetched.
+String markdownJson({required String text, required bool streaming}) => RustLib
+    .instance
+    .api
+    .crateApiBragiMarkdownJson(text: text, streaming: streaming);
+
 /// [`send`] with text files attached.
 Future<ChatStarted> sendWith({
   String? conversation,

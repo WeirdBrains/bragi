@@ -8,6 +8,7 @@
 
 // Copied whole from Morph and kept in step until they move to a shared weirdnet-* UI crate.
 #[allow(dead_code)]
+mod markdown;
 mod text_input;
 mod theme;
 mod view;

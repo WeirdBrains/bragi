@@ -174,6 +174,25 @@ void main() {
     expect(find.textContaining('agent task · used notes.search'), findsOneWidget);
     expect(c.card, isNull);
 
+    // Markdown: bragi-core parses the reply; bold, a list, a table and a code block render as
+    // such, never with their markers, and the reply's copy button gives the raw Markdown.
+    c.newChat();
+    await tester.tap(find.byKey(const Key('agent')));
+    await tester.pump();
+    expect(c.agent, isFalse);
+    await ask('Show me some Markdown.', 2);
+    expect(last().text, contains('2 + 2 equals **4**.'));
+    await tester.pump();
+    expect(find.byKey(const Key('bubble-markdown')), findsOneWidget);
+    expect(find.textContaining('**'), findsNothing, reason: 'no literal asterisks');
+    expect(find.textContaining('2 + 2 equals 4.', findRichText: true), findsOneWidget);
+    expect(find.byType(Table), findsOneWidget);
+    expect(find.byKey(const Key('code-copy')), findsOneWidget);
+    expect(find.textContaining('What Bragi renders', findRichText: true), findsOneWidget);
+    final doc = c.markdown(last().text, false);
+    expect((doc['blocks'] as List).map((b) => (b as Map)['type']), containsAll(['heading', 'list', 'table', 'code', 'quote']));
+    expect((c.markdown('2 + 2 equals **4', true)['blocks'] as List).first['spans'][1], containsPair('bold', true));
+
     // A node address pasted into Link a device is kept and dialed (core: add_node), as on the
     // desktop; one without a peer id is refused in the core's words.
     const address = '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';

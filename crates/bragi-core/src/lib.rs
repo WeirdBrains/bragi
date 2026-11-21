@@ -15,8 +15,10 @@ pub mod context;
 mod core;
 pub mod demo;
 pub mod error;
+pub mod highlight;
 pub mod history;
 pub mod identity;
+pub mod markdown;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
 pub use crate::attach::Attachment;

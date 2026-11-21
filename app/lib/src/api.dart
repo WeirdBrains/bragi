@@ -38,6 +38,8 @@ abstract class BragiApi {
   Future<rust.ConversationView> conversation(String id);
   Future<void> paused();
   Future<void> resumed();
+  /// A reply's Markdown parsed by bragi-core, as JSON (see `markdown.dart`).
+  String markdownJson(String text, bool streaming);
 }
 
 class RustBragiApi implements BragiApi {
@@ -91,4 +93,6 @@ class RustBragiApi implements BragiApi {
   Future<void> paused() => rust.paused();
   @override
   Future<void> resumed() => rust.resumed();
+  @override
+  String markdownJson(String text, bool streaming) => rust.markdownJson(text: text, streaming: streaming);
 }

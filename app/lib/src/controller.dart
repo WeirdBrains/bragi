@@ -1,6 +1,7 @@
 // What the screens show, kept in step with bragi-core. No behaviour of its own: every
 // action is one core call, and streamed text is placed where the core says.
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -42,6 +43,17 @@ class BragiController extends ChangeNotifier {
   bool agent = false;
   ApprovalCard? card;
   StreamSubscription<StateView>? _watch;
+  final Map<String, Map<String, dynamic>> _markdown = {};
+
+  /// A reply's Markdown as bragi-core parses it, kept per text (a streaming answer is re-parsed
+  /// on each delta, tolerantly).
+  Map<String, dynamic> markdown(String text, bool streaming) {
+    final key = '${streaming ? 's' : 'd'}$text';
+    final hit = _markdown[key];
+    if (hit != null) return hit;
+    if (_markdown.length > 200) _markdown.clear();
+    return _markdown[key] = jsonDecode(api.markdownJson(text, streaming)) as Map<String, dynamic>;
+  }
 
   String get pairState => state?.pair.state ?? 'unpaired';
 

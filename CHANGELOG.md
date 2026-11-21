@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Replies render as Markdown on the desktop and the phone: bold, italic and strikethrough, headings, lists and task lists, quotes, tables, links (opened in your browser, address shown on hover), rules, inline code, and code blocks with highlighting, their language and a Copy button. It renders as the answer streams, without flicker or broken half-open code blocks. Each reply has a Copy button for its raw Markdown. Raw HTML stays text and images are never fetched.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added
