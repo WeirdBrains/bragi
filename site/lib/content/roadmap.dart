@@ -7,14 +7,14 @@ class Milestone {
 }
 
 const roadmapIntro = 'Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir\'s design doc.';
-const roadmapUpdated = '2026-11-19';
+const roadmapUpdated = '2026-11-20';
 const roadmapDesignUrl = 'https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones';
 const unpublishedCrates = <String>['weirdnet-push'];
 
 const milestones = <Milestone>[
   Milestone('B1', 'Core and both shells', 'done', 'Pair with your own devices, list the models your cloud offers, stream a chat, stop it and continue it, and keep local history. Works in the Linux desktop app (GPUI) and the Android app (Flutter), both on one shared Rust core.', ['weirdnet-agent', 'weirdnet-device-link', 'weirdnet-sync', 'weirdnet-net', 'weirdnet-relay']),
   Milestone('B2', 'Pool client', 'done', 'Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells.', ['weirdnet-agent']),
-  Milestone('B3', 'Platforms', 'in-progress', 'iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid. Android release builds, F-Droid metadata and a Linux tarball are built; macOS, Windows and iOS build in CI (unsigned) but have not been run on a machine.', []),
-  Milestone('B4', 'Sync and optional extras', 'in-progress', 'Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells with test identities. Optional on-device model and push wake-ups are not built.', ['weirdnet-sync', 'weirdnet-push']),
-  Milestone('B5', 'Breadth', 'in-progress', 'Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is blocked: the FreeBSD CI job ran and the desktop app does not build there (a GPUI bug).', ['weirdnet-agent']),
+  Milestone('B3', 'Platforms', 'in-progress', 'iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight) and signing with a release key.', []),
+  Milestone('B4', 'Sync and optional extras', 'in-progress', 'Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. Next: push wake-ups and an optional on-device model.', ['weirdnet-sync', 'weirdnet-push']),
+  Milestone('B5', 'Breadth', 'in-progress', 'Text attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.', ['weirdnet-agent']),
 ];
