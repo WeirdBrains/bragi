@@ -26,6 +26,7 @@ use crate::theme::Theme;
 mod delete;
 mod endpoints;
 mod react;
+mod settings_scenario;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 
@@ -1490,6 +1491,8 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
     shot(cx, "20-reaction-picker").await;
     this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
+
+    settings_scenario::run(&this, cx, pause).await?;
 
     // A node address pasted into Link a device: the placeholder fits the field, progress is
     // not red, a node that never answers turns into advice, and a found one says so and clears.
