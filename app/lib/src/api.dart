@@ -13,13 +13,20 @@ export 'rust/api/bragi.dart'
         EndpointForm,
         EndpointView,
         FolderView,
+        HubHitView,
         LinkView,
         SessionView,
         TargetView,
         TestResultView,
         LinkCheckView,
         MessageView,
+        ModelNodeView,
         ModelView,
+        ModelsEventView,
+        NodeFitView,
+        NodeModelsView,
+        QuantFitView,
+        StoredModelView,
         PairView,
         StateView,
         SummaryView;
@@ -79,6 +86,15 @@ abstract class BragiApi {
   Future<void> moveFolder(String id, String? parent);
   Future<void> deleteFolder(String id);
   Future<void> setSessionFolder(String conversation, String? folder);
+
+  // Models on the user's Ymir pool (LF-30).
+  Future<List<rust.NodeModelsView>> modelsOverview();
+  /// Starts a Hub search with a fit per node; stream it with [followModels].
+  Future<String> modelsSearch(String query);
+  /// Starts a pull to `target` (`auto`, `all` or a node's peer id); stream it with [followModels]; [cancel] stops it.
+  Future<String> modelsPull(String repo, String? model, String target, bool serve);
+  Stream<rust.ModelsEventView> followModels(String runId);
+  Future<BigInt> modelsRemove(String peer, String id, bool confirmed);
 }
 
 class RustBragiApi implements BragiApi {
@@ -194,4 +210,16 @@ class RustBragiApi implements BragiApi {
   Future<void> deleteFolder(String id) => rust.deleteFolder(id: id);
   @override
   Future<void> setSessionFolder(String conversation, String? folder) => rust.setSessionFolder(conversation: conversation, folder: folder);
+
+  @override
+  Future<List<rust.NodeModelsView>> modelsOverview() => rust.modelsOverview();
+  @override
+  Future<String> modelsSearch(String query) async => rust.modelsSearch(query: query);
+  @override
+  Future<String> modelsPull(String repo, String? model, String target, bool serve) async =>
+      rust.modelsPull(repo: repo, model: model, target: target, serve: serve);
+  @override
+  Stream<rust.ModelsEventView> followModels(String runId) => rust.followModels(runId: runId);
+  @override
+  Future<BigInt> modelsRemove(String peer, String id, bool confirmed) => rust.modelsRemove(peer: peer, id: id, confirmed: confirmed);
 }

@@ -1043,3 +1043,235 @@ pub fn delete_folder(id: String) -> Result<(), String> {
 pub fn set_session_folder(conversation: String, folder: Option<String>) -> Result<(), String> {
     core()?.set_session_folder(&conversation, folder.as_deref()).map_err(err)
 }
+
+// ---- models on the pool (LF-30) ------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct ModelNodeView {
+    pub peer: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredModelView {
+    pub id: String,
+    pub size: u64,
+    pub complete: bool,
+    /// The id the node serves it under, when it does.
+    pub served_as: Option<String>,
+    pub state: Option<String>,
+}
+
+/// One device of the user's. `status` is `ready`, `not_model_node`, `needs_owner_device` (the node
+/// refused this device; `detail` has its reason) or `unreachable`.
+#[derive(Debug, Clone)]
+pub struct NodeModelsView {
+    pub node: ModelNodeView,
+    pub status: String,
+    pub detail: Option<String>,
+    pub models: Vec<StoredModelView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct HubHitView {
+    pub repo: String,
+    pub downloads: u64,
+    pub likes: u64,
+    pub gated: bool,
+    pub updated: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuantFitView {
+    pub id: String,
+    pub quant: Option<String>,
+    pub size: u64,
+    pub footprint: u64,
+    pub fits: bool,
+}
+
+/// A repo on one node. `verdict` is `fits`, `too_big`, `no_budget` or `unknown`; `status` and
+/// `detail` are as in [`NodeModelsView`].
+#[derive(Debug, Clone)]
+pub struct NodeFitView {
+    pub node: ModelNodeView,
+    pub status: String,
+    pub detail: Option<String>,
+    pub verdict: String,
+    pub best: Option<String>,
+    pub best_size: u64,
+    pub usable_bytes: u64,
+    pub quants: Vec<QuantFitView>,
+}
+
+/// One event of a search or a pull. `kind` is `hits`, `fit`, `search_done`, `chosen`, `progress`,
+/// `node_done`, `done`, `cancelled` or `failed`; the other fields are set when that kind has them.
+#[derive(Debug, Clone, Default)]
+pub struct ModelsEventView {
+    pub kind: String,
+    pub hits: Vec<HubHitView>,
+    pub repo: Option<String>,
+    pub fit: Option<NodeFitView>,
+    pub node: Option<ModelNodeView>,
+    /// `chosen`: the model and why. `search_done` and `failed`: the error. `node_done`: the error, if it failed.
+    pub model: Option<String>,
+    pub text: Option<String>,
+    pub size: u64,
+    pub done: u64,
+    pub total: u64,
+    pub served: bool,
+}
+
+fn node_view(n: &bragi_core::ModelNode) -> ModelNodeView {
+    ModelNodeView { peer: n.peer.clone(), label: n.label.clone() }
+}
+
+fn status_parts(s: &bragi_core::NodeStatus) -> (String, Option<String>) {
+    use bragi_core::NodeStatus as S;
+    match s {
+        S::Ready => ("ready".into(), None),
+        S::NotModelNode => ("not_model_node".into(), None),
+        S::NeedsOwnerDevice(r) => ("needs_owner_device".into(), Some(r.clone())),
+        S::Unreachable(m) => ("unreachable".into(), Some(m.clone())),
+    }
+}
+
+fn fit_view(f: &bragi_core::NodeFit) -> NodeFitView {
+    use bragi_core::Verdict as V;
+    let (status, detail) = status_parts(&f.status);
+    let verdict = match f.verdict() {
+        V::Fits => "fits",
+        V::TooBig => "too_big",
+        V::NoBudget => "no_budget",
+        _ => "unknown",
+    };
+    NodeFitView {
+        node: node_view(&f.node),
+        status,
+        detail,
+        verdict: verdict.into(),
+        best: f.best.clone(),
+        best_size: f.best_size,
+        usable_bytes: f.usable_bytes,
+        quants: f
+            .quants
+            .iter()
+            .map(|q| QuantFitView { id: q.id.clone(), quant: q.quant.clone(), size: q.size, footprint: q.footprint, fits: q.fits })
+            .collect(),
+    }
+}
+
+fn models_event_view(e: bragi_core::ModelsEvent) -> ModelsEventView {
+    use bragi_core::ModelsEvent as E;
+    let base = ModelsEventView::default();
+    match e {
+        E::Hits(h) => ModelsEventView {
+            kind: "hits".into(),
+            hits: h
+                .into_iter()
+                .map(|h| HubHitView { repo: h.repo, downloads: h.downloads, likes: h.likes, gated: h.gated, updated: h.updated })
+                .collect(),
+            ..base
+        },
+        E::Fit { repo, fit } => ModelsEventView { kind: "fit".into(), repo: Some(repo), fit: Some(fit_view(&fit)), ..base },
+        E::SearchDone { error } => ModelsEventView { kind: "search_done".into(), text: error, ..base },
+        E::Chosen { node, model, size, why } => {
+            ModelsEventView { kind: "chosen".into(), node: Some(node_view(&node)), model: Some(model), size, text: Some(why), ..base }
+        }
+        E::Progress { peer, label, done, total } => {
+            ModelsEventView { kind: "progress".into(), node: Some(ModelNodeView { peer, label }), done, total, ..base }
+        }
+        E::NodeDone { node, result } => match result {
+            Ok(p) => {
+                ModelsEventView { kind: "node_done".into(), node: Some(node_view(&node)), model: Some(p.id), size: p.size, served: p.served, ..base }
+            }
+            Err(m) => ModelsEventView { kind: "node_done".into(), node: Some(node_view(&node)), text: Some(m), ..base },
+        },
+        E::Done => ModelsEventView { kind: "done".into(), ..base },
+        E::Cancelled => ModelsEventView { kind: "cancelled".into(), ..base },
+        E::Failed { message } => ModelsEventView { kind: "failed".into(), text: Some(message), ..base },
+    }
+}
+
+fn pending_models() -> &'static Mutex<HashMap<String, UnboundedReceiver<bragi_core::ModelsEvent>>> {
+    static P: OnceLock<Mutex<HashMap<String, UnboundedReceiver<bragi_core::ModelsEvent>>>> = OnceLock::new();
+    P.get_or_init(Default::default)
+}
+
+fn keep_run(run: bragi_core::ModelsRun) -> String {
+    pending_models().lock().unwrap_or_else(|e| e.into_inner()).insert(run.id.clone(), run.events);
+    run.id
+}
+
+/// Every other device of the user's: whether it takes model management, and the models it has.
+/// `needs_owner_device` means the node refused this device: only devices linked to its owner
+/// may manage models.
+pub async fn models_overview() -> Result<Vec<NodeModelsView>, String> {
+    Ok(core()?
+        .models_overview()
+        .await
+        .map_err(err)?
+        .into_iter()
+        .map(|n| {
+            let (status, detail) = status_parts(&n.status);
+            NodeModelsView {
+                node: node_view(&n.node),
+                status,
+                detail,
+                models: n
+                    .models
+                    .into_iter()
+                    .map(|m| StoredModelView { id: m.id, size: m.size, complete: m.complete, served_as: m.served_as, state: m.state })
+                    .collect(),
+            }
+        })
+        .collect())
+}
+
+/// Starts a search of the Hugging Face Hub (GGUF repos) with a fit per node; stream it with
+/// `follow_models`. Returns the run's id.
+pub fn models_search(query: String) -> Result<String, String> {
+    core()?.models_search(&query).map(keep_run).map_err(err)
+}
+
+/// Starts a pull of `repo` (`model` is a quantization such as `Q4_K_M`'s id, or the best that fits
+/// when none) to `target`: `auto` (the node where the biggest fits), `all`, or a node's peer id.
+/// `serve` serves it from the node's Ymir right after the download. Stream it with `follow_models`;
+/// `cancel` stops it (partial files stay and resume).
+pub fn models_pull(repo: String, model: Option<String>, target: String, serve: bool) -> Result<String, String> {
+    let target = match target.as_str() {
+        "auto" => bragi_core::PullTarget::Auto,
+        "all" => bragi_core::PullTarget::All,
+        peer => bragi_core::PullTarget::Node(peer.to_string()),
+    };
+    let mut spec = bragi_core::PullSpec::new(repo, target);
+    spec.model = model;
+    spec.serve = serve;
+    core()?.models_pull(spec).map(keep_run).map_err(err)
+}
+
+/// Streams a search's or pull's events, ending after `search_done`, `done`, `cancelled` or `failed`.
+pub fn follow_models(run_id: String, sink: StreamSink<ModelsEventView>) -> Result<(), String> {
+    let core = core()?;
+    let mut rx = pending_models().lock().unwrap_or_else(|e| e.into_inner()).remove(&run_id).ok_or_else(|| "no such run".to_string())?;
+    core.handle().spawn(async move {
+        while let Some(e) = rx.recv().await {
+            let end = matches!(
+                e,
+                bragi_core::ModelsEvent::SearchDone { .. }
+                    | bragi_core::ModelsEvent::Done
+                    | bragi_core::ModelsEvent::Cancelled
+                    | bragi_core::ModelsEvent::Failed { .. }
+            );
+            if sink.add(models_event_view(e)).is_err() || end {
+                return;
+            }
+        }
+    });
+    Ok(())
+}
+
+/// Removes a stored model from a node and returns the bytes freed. `confirmed` must be true.
+pub async fn models_remove(peer: String, id: String, confirmed: bool) -> Result<u64, String> {
+    core()?.models_remove(&peer, &id, confirmed).await
+}

@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `form`, `message_state_name`, `mode_of`, `mode_str`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`, `target_of`, `target_view`, `test_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `fit_view`, `form`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `pending_models`, `pending`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -332,6 +332,48 @@ Future<void> setSessionFolder({required String conversation, String? folder}) =>
       conversation: conversation,
       folder: folder,
     );
+
+/// Every other device of the user's: whether it takes model management, and the models it has.
+/// `needs_owner_device` means the node refused this device: only devices linked to its owner
+/// may manage models.
+Future<List<NodeModelsView>> modelsOverview() =>
+    RustLib.instance.api.crateApiBragiModelsOverview();
+
+/// Starts a search of the Hugging Face Hub (GGUF repos) with a fit per node; stream it with
+/// `follow_models`. Returns the run's id.
+Future<String> modelsSearch({required String query}) =>
+    RustLib.instance.api.crateApiBragiModelsSearch(query: query);
+
+/// Starts a pull of `repo` (`model` is a quantization such as `Q4_K_M`'s id, or the best that fits
+/// when none) to `target`: `auto` (the node where the biggest fits), `all`, or a node's peer id.
+/// `serve` serves it from the node's Ymir right after the download. Stream it with `follow_models`;
+/// `cancel` stops it (partial files stay and resume).
+Future<String> modelsPull({
+  required String repo,
+  String? model,
+  required String target,
+  required bool serve,
+}) => RustLib.instance.api.crateApiBragiModelsPull(
+  repo: repo,
+  model: model,
+  target: target,
+  serve: serve,
+);
+
+/// Streams a search's or pull's events, ending after `search_done`, `done`, `cancelled` or `failed`.
+Stream<ModelsEventView> followModels({required String runId}) =>
+    RustLib.instance.api.crateApiBragiFollowModels(runId: runId);
+
+/// Removes a stored model from a node and returns the bytes freed. `confirmed` must be true.
+Future<BigInt> modelsRemove({
+  required String peer,
+  required String id,
+  required bool confirmed,
+}) => RustLib.instance.api.crateApiBragiModelsRemove(
+  peer: peer,
+  id: id,
+  confirmed: confirmed,
+);
 
 /// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
 /// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
@@ -717,6 +759,41 @@ class FolderView {
           parent == other.parent;
 }
 
+class HubHitView {
+  final String repo;
+  final BigInt downloads;
+  final BigInt likes;
+  final bool gated;
+  final String? updated;
+
+  const HubHitView({
+    required this.repo,
+    required this.downloads,
+    required this.likes,
+    required this.gated,
+    this.updated,
+  });
+
+  @override
+  int get hashCode =>
+      repo.hashCode ^
+      downloads.hashCode ^
+      likes.hashCode ^
+      gated.hashCode ^
+      updated.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HubHitView &&
+          runtimeType == other.runtimeType &&
+          repo == other.repo &&
+          downloads == other.downloads &&
+          likes == other.likes &&
+          gated == other.gated &&
+          updated == other.updated;
+}
+
 class LinkCheckView {
   final String sas;
   final String device;
@@ -861,6 +938,24 @@ class MessageView {
           atMs == other.atMs;
 }
 
+class ModelNodeView {
+  final String peer;
+  final String label;
+
+  const ModelNodeView({required this.peer, required this.label});
+
+  @override
+  int get hashCode => peer.hashCode ^ label.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ModelNodeView &&
+          runtimeType == other.runtimeType &&
+          peer == other.peer &&
+          label == other.label;
+}
+
 class ModelView {
   final String id;
 
@@ -920,6 +1015,151 @@ class ModelView {
           audio == other.audio;
 }
 
+/// One event of a search or a pull. `kind` is `hits`, `fit`, `search_done`, `chosen`, `progress`,
+/// `node_done`, `done`, `cancelled` or `failed`; the other fields are set when that kind has them.
+class ModelsEventView {
+  final String kind;
+  final List<HubHitView> hits;
+  final String? repo;
+  final NodeFitView? fit;
+  final ModelNodeView? node;
+
+  /// `chosen`: the model and why. `search_done` and `failed`: the error. `node_done`: the error, if it failed.
+  final String? model;
+  final String? text;
+  final BigInt size;
+  final BigInt done;
+  final BigInt total;
+  final bool served;
+
+  const ModelsEventView({
+    required this.kind,
+    required this.hits,
+    this.repo,
+    this.fit,
+    this.node,
+    this.model,
+    this.text,
+    required this.size,
+    required this.done,
+    required this.total,
+    required this.served,
+  });
+
+  static Future<ModelsEventView> default_() =>
+      RustLib.instance.api.crateApiBragiModelsEventViewDefault();
+
+  @override
+  int get hashCode =>
+      kind.hashCode ^
+      hits.hashCode ^
+      repo.hashCode ^
+      fit.hashCode ^
+      node.hashCode ^
+      model.hashCode ^
+      text.hashCode ^
+      size.hashCode ^
+      done.hashCode ^
+      total.hashCode ^
+      served.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ModelsEventView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          hits == other.hits &&
+          repo == other.repo &&
+          fit == other.fit &&
+          node == other.node &&
+          model == other.model &&
+          text == other.text &&
+          size == other.size &&
+          done == other.done &&
+          total == other.total &&
+          served == other.served;
+}
+
+/// A repo on one node. `verdict` is `fits`, `too_big`, `no_budget` or `unknown`; `status` and
+/// `detail` are as in [`NodeModelsView`].
+class NodeFitView {
+  final ModelNodeView node;
+  final String status;
+  final String? detail;
+  final String verdict;
+  final String? best;
+  final BigInt bestSize;
+  final BigInt usableBytes;
+  final List<QuantFitView> quants;
+
+  const NodeFitView({
+    required this.node,
+    required this.status,
+    this.detail,
+    required this.verdict,
+    this.best,
+    required this.bestSize,
+    required this.usableBytes,
+    required this.quants,
+  });
+
+  @override
+  int get hashCode =>
+      node.hashCode ^
+      status.hashCode ^
+      detail.hashCode ^
+      verdict.hashCode ^
+      best.hashCode ^
+      bestSize.hashCode ^
+      usableBytes.hashCode ^
+      quants.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NodeFitView &&
+          runtimeType == other.runtimeType &&
+          node == other.node &&
+          status == other.status &&
+          detail == other.detail &&
+          verdict == other.verdict &&
+          best == other.best &&
+          bestSize == other.bestSize &&
+          usableBytes == other.usableBytes &&
+          quants == other.quants;
+}
+
+/// One device of the user's. `status` is `ready`, `not_model_node`, `needs_owner_device` (the node
+/// refused this device; `detail` has its reason) or `unreachable`.
+class NodeModelsView {
+  final ModelNodeView node;
+  final String status;
+  final String? detail;
+  final List<StoredModelView> models;
+
+  const NodeModelsView({
+    required this.node,
+    required this.status,
+    this.detail,
+    required this.models,
+  });
+
+  @override
+  int get hashCode =>
+      node.hashCode ^ status.hashCode ^ detail.hashCode ^ models.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NodeModelsView &&
+          runtimeType == other.runtimeType &&
+          node == other.node &&
+          status == other.status &&
+          detail == other.detail &&
+          models == other.models;
+}
+
 /// [`PairState`] flattened: `state` is `unpaired`, `offering`, `confirm`, `waiting`, `linked`
 /// or `failed`; the other fields are set when that state has them.
 class PairView {
@@ -966,6 +1206,41 @@ class PairView {
           user == other.user &&
           device == other.device &&
           message == other.message;
+}
+
+class QuantFitView {
+  final String id;
+  final String? quant;
+  final BigInt size;
+  final BigInt footprint;
+  final bool fits;
+
+  const QuantFitView({
+    required this.id,
+    this.quant,
+    required this.size,
+    required this.footprint,
+    required this.fits,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      quant.hashCode ^
+      size.hashCode ^
+      footprint.hashCode ^
+      fits.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is QuantFitView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          quant == other.quant &&
+          size == other.size &&
+          footprint == other.footprint &&
+          fits == other.fits;
 }
 
 class SessionView {
@@ -1057,6 +1332,43 @@ class StateView {
           defaultModel == other.defaultModel &&
           nodeSearch == other.nodeSearch &&
           nodeSearchLine == other.nodeSearchLine;
+}
+
+class StoredModelView {
+  final String id;
+  final BigInt size;
+  final bool complete;
+
+  /// The id the node serves it under, when it does.
+  final String? servedAs;
+  final String? state;
+
+  const StoredModelView({
+    required this.id,
+    required this.size,
+    required this.complete,
+    this.servedAs,
+    this.state,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      size.hashCode ^
+      complete.hashCode ^
+      servedAs.hashCode ^
+      state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is StoredModelView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          size == other.size &&
+          complete == other.complete &&
+          servedAs == other.servedAs &&
+          state == other.state;
 }
 
 class SummaryView {

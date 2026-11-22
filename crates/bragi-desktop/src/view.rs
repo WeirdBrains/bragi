@@ -25,6 +25,8 @@ use crate::theme::Theme;
 
 mod delete;
 mod endpoints;
+mod models;
+mod models_scenario;
 mod react;
 mod settings_scenario;
 
@@ -105,6 +107,11 @@ pub struct BragiView {
     confirm_input: Entity<TextInput>,
     deleted: Option<bragi_core::Deleted>,
     settings_open: bool,
+    /// The Models screen (see `models`).
+    models_open: bool,
+    models: models::Models,
+    models_query: Entity<TextInput>,
+    models_scroll: ScrollHandle,
     /// Endpoints, links, folders and the target picker (see `endpoints`).
     prefs: endpoints::Prefs,
     fields: endpoints::Fields,
@@ -175,6 +182,13 @@ impl BragiView {
             })
             .detach();
         }
+        let models_query = cx.new(|cx| TextInput::new("Search Hugging Face (GGUF), such as deepseek or qwen", theme, cx));
+        cx.subscribe_in(&models_query, window, |this, _, ev: &TextInputEvent, _, cx| {
+            if let TextInputEvent::Submit { .. } = ev {
+                this.models_search(cx);
+            }
+        })
+        .detach();
         let mut this = Self {
             core,
             theme,
@@ -208,6 +222,10 @@ impl BragiView {
             confirm_input,
             deleted: None,
             settings_open: false,
+            models_open: false,
+            models: models::Models { serve: true, ..Default::default() },
+            models_query,
+            models_scroll: ScrollHandle::new(),
             prefs: endpoints::Prefs::default(),
             fields,
             _tasks: vec![follow],
@@ -323,12 +341,14 @@ impl BragiView {
         self.core.dismiss_node_search();
         self.current = None;
         self.settings_open = false;
+        self.models_open = false;
         cx.notify();
     }
 
     pub fn open(&mut self, id: &str, cx: &mut Context<Self>) {
         self.current = self.core.conversation(id).ok();
         self.settings_open = false;
+        self.models_open = false;
         self.jump_to_latest();
         cx.notify();
     }
@@ -826,6 +846,7 @@ impl BragiView {
             )
             .child(list)
             .child(link_box)
+            .child(self.button("open-models", "Models", self.models_open).on_click(cx.listener(|v, _, _, cx| v.toggle_models(cx))))
             .child(self.button("open-settings", "Settings", self.settings_open).on_click(cx.listener(|v, _, _, cx| v.toggle_settings(cx))))
     }
 
@@ -1221,12 +1242,18 @@ impl BragiView {
             .min_w(px(0.))
             .min_h(px(0.))
             .overflow_hidden()
-            .child(self.models(cx))
-            .children(self.target_bar(cx))
+            .when(!self.models_open, |d| d.child(self.models(cx)))
+            .children(if self.models_open { None } else { self.target_bar(cx) })
             .when(self.settings_open, |d| d.child(self.settings(cx)))
-            .when(!self.settings_open, |d| d.child(self.message_area(body, cx)))
+            .when(self.models_open, |d| d.child(self.models_screen(cx)))
+            .when(!self.settings_open && !self.models_open, |d| d.child(self.message_area(body, cx)))
             .children(self.undo_bar(cx))
-            .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
+            .children(
+                self.notice
+                    .clone()
+                    .filter(|_| !self.models_open)
+                    .map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)),
+            )
             .children(self.state.node_search.line().map(|line| {
                 let color = match &self.state.node_search {
                     NodeSearch::Found { .. } => t.success,
@@ -1235,8 +1262,8 @@ impl BragiView {
                 };
                 div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(color)).child(line)
             }))
-            .children(any.then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
-            .child(div().flex_none().border_t_1().border_color(rgb(t.border)).child(bar))
+            .children((any && !self.models_open).then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
+            .when(!self.models_open, |d| d.child(div().flex_none().border_t_1().border_color(rgb(t.border)).child(bar)))
     }
 }
 
@@ -1276,6 +1303,7 @@ impl Render for BragiView {
             .child(main)
             .children(self.confirm_card(cx))
             .children(self.prefs_overlay(cx))
+            .children(self.models_overlay(cx))
     }
 }
 
@@ -1493,6 +1521,7 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
 
     settings_scenario::run(&this, cx, pause).await?;
+    models_scenario::run(&this, cx, pause).await?;
 
     // A node address pasted into Link a device: the placeholder fits the field, progress is
     // not red, a node that never answers turns into advice, and a found one says so and clears.

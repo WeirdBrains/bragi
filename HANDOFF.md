@@ -2,6 +2,26 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-30 M4, the Models screen (branch only)
+
+**What changed**
+- [`models.rs`](crates/bragi-core/src/models.rs) in `bragi-core`: `ModelsManager` runs Ymir's `/weirdnet-backends/models/1` protocol through `weirdnet-backends` 0.3's `ModelsClient`, with this device's certificate. Search asks the Hugging Face Hub from this device (anonymous, `weirdnet-model`'s `Hub`; a node searches for us if the Hub is unreachable from here) and then asks every ready node how each hit fits (`files`), one `Fit` event per repo and node. Pull goes to one node, `auto` (the node that holds the biggest model of the repo, with the reason in words) or all ready nodes, streams `Progress`, and cancels by dropping the stream (the node keeps the partial file; pulling again resumes). List and remove are per node; remove refuses without `confirmed`.
+- [`models_core.rs`](crates/bragi-core/src/models_core.rs): `Core::models_overview`, `models_search`, `models_pull`, `models_remove`; a run is cancelled with the existing `Core::cancel`.
+- The bridge ([`bragi.rs`](crates/bragi-bridge/src/api/bragi.rs), regenerated): `models_overview`, `models_search`, `models_pull`, `follow_models`, `models_remove`.
+- Flutter: [`models_ui.dart`](app/lib/src/models_ui.dart), reached from the drawer and from Settings. Desktop (GPUI): [`models.rs`](crates/bragi-desktop/src/view/models.rs), a Models button in the sidebar. Both show nodes with their status, search with fit badges, a target picker (auto, a node, all), a quantization choice, progress bars with Cancel, per-node lists, and a remove confirm.
+- Demo: the demo nodes now serve models/1 behind the same `RosterAuth` Ymir uses ([`demo.rs`](crates/bragi-core/src/demo.rs)), with a mock Hub ([`demo_models.rs`](crates/bragi-core/src/demo_models.rs)) whose repos have real sizes for the fit verdicts and one tiny repo that downloads slowly enough to see progress.
+- Roadmap B7 in [`roadmap.toml`](roadmap.toml) (and the generated roadmap pages).
+
+**Owner auth** (read from `weirdnet-backends` 0.3, `weirdnet-agent` 0.5 and Ymir main): `ymird` serves models/1 with plain `RosterAuth` (`Roster::check_caller`), without `require_roles` and without the `[model] callers` allow-list (that list only narrows raw infer/2 on a model node). So any device linked to the owner's roster is admitted, a Bragi device included, provided it presents its certificate (it does) and the node's roster has it (the roster syncs after linking). `RosterAuth` refuses with `unknown-device`, `revoked`, `wrong-user` or `needs-admission`; Bragi shows that as "Needs owner device" with the reason, and when every node refuses it turns the controls off behind a banner. Proven in [`models.rs`](crates/bragi-core/tests/models.rs): a linked device is admitted by the demo nodes' `RosterAuth` over the real Weirdnet stack and manages models; an unlinked one gets `NotPaired`. Nothing is needed from Ymir or weirdnet for this.
+
+**Checks run** (whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test` (the mock-node tests: fit per node, auto, one node, all, progress, cancel and resume, remove with and without confirm, a node that refuses, a node that is not a model node; the live-stack test above), `flutter analyze`, the Flutter tests in demo mode with `BRAGI_BRIDGE_LIB` ([`models_test.dart`](app/test/models_test.dart), including a device every node refuses), and the headless desktop scenario (virtual X server, clean environment, throwaway profile; screenshots 40 to 46). Read-only check against the real Hub: a live search through `weirdnet-model`'s `Hub`.
+
+**Not tested**: a real Ymir node (no real pull or remove was run on any node); a real phone; iOS and Android builds with the new dependencies (`weirdnet-backends` with `node` pulls `weirdnet-model`); the Flutter screenshots use the test font (boxes for text), so the desktop screenshots are the readable ones; Windows and macOS CI for this branch (CI does not run on branch pushes).
+
+**What's left**: Ymir's design doc should list the Bragi Models screen under the Bragi milestones; a check against a real node by the owner; quantization choice by file name; showing a node's free disk space.
+
+**What's next**: the Bragi MCP server on `weirdnet-mcp` 0.6, then LF-12 (chat files).
+
 ## 2026-11-21: LF-18, Weirdnet 0.5 and image and audio attachments (branch only)
 
 **What changed**

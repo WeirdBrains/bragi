@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'api.dart';
 import 'controller.dart';
 import 'delete_ui.dart';
+import 'models_ui.dart';
 import 'theme.dart';
 
 Widget _heading(String text) => Padding(
@@ -74,6 +75,16 @@ class SettingsScreen extends StatelessWidget {
                     onPressed: () => showLinkDialog(context, c, null),
                   ),
                 ),
+              ),
+              _heading('MODELS'),
+              ListTile(
+                key: const Key('open-models'),
+                dense: true,
+                leading: const Icon(Icons.memory_outlined),
+                title: const Text('Models on your pool'),
+                subtitle: const Text('Search, pull, list and remove models on your Ymir nodes.'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ModelsScreen(controller: c))),
               ),
               _heading('HISTORY'),
               ClearHistoryTile(controller: controller),
