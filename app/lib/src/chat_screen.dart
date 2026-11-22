@@ -602,7 +602,7 @@ class _AudioRow extends StatelessWidget {
           Text(
             rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
             key: Key('time-${f.id}'),
-            style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
           ),
         ],
       ),
