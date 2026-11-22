@@ -123,7 +123,8 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if modal {
         backdrop(f, Rect { height: body.height + input.height, ..body });
         match app.view {
-            View::Link => draw_link(f, app, body),
+            // The link window may cover the message box too: its QR code wants the rows.
+            View::Link => draw_link(f, app, Rect { height: body.height + input.height, ..body }),
             View::Status => draw_status(f, app, body),
             View::Models => draw_models(f, app, body),
             View::Settings => draw_settings(f, app, body),
@@ -825,15 +826,16 @@ fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
     };
     let qw = qr.as_ref().and_then(|q| q.first()).map(|l| l.chars().count()).unwrap_or(0) as u16;
     let inner = window(f, area, if qr.is_some() { 124 } else { 92 }, area.height, "Link this terminal to your Weirdnet", "Esc back");
-    let [top, field] = Layout::vertical([Constraint::Min(3), Constraint::Length(input_height(app.link_input.text(), inner.width))]).areas(inner);
-    // The QR code goes on the right when there's room beside the words, else under them.
-    let (top, qr_area) = match &qr {
-        Some(q) if top.width >= qw + 36 && q.len() <= top.height as usize => {
-            let [a, b] = Layout::horizontal([Constraint::Min(34), Constraint::Length(qw + 2)]).areas(top);
+    // The QR code takes the right side, full height, when there's room beside the words; else
+    // it goes under them if it fits.
+    let (col, qr_area) = match &qr {
+        Some(q) if inner.width >= qw + 36 && q.len() <= inner.height as usize => {
+            let [a, b] = Layout::horizontal([Constraint::Min(34), Constraint::Length(qw + 2)]).areas(inner);
             (a, Some((b, q.clone())))
         }
-        _ => (top, None),
+        _ => (inner, None),
     };
+    let [top, field] = Layout::vertical([Constraint::Min(3), Constraint::Length(input_height(app.link_input.text(), col.width))]).areas(col);
     let w = top.width.saturating_sub(1) as usize;
     let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
     let push = |lines: &mut Vec<Line<'static>>, text: &str, style: Style| {
