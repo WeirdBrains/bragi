@@ -10,6 +10,7 @@
 // Copied whole from Morph and kept in step until they move to a shared weirdnet-* UI crate.
 mod audio;
 mod markdown;
+mod terminal;
 #[allow(dead_code)]
 mod text_input;
 mod theme;
@@ -20,14 +21,38 @@ use std::process::ExitCode;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi serve --help\n       bragi mcp --help     Bragi as an MCP server for Cursor, Claude Desktop, VS Code"
+        "usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi PATH            the terminal app, in code mode on PATH (a folder or a file; `bragi .`)\n       bragi serve --help\n       bragi mcp --help     Bragi as an MCP server for Cursor, Claude Desktop, VS Code"
     );
     ExitCode::from(2)
 }
 
+/// Whether the first argument is a path or a terminal-app command (`bragi .`, `bragi ~/src/app`,
+/// `bragi status`) rather than one of this window's options: those all start with `-`. `--path`
+/// is the explicit form, for a folder named like a command.
+fn wants_terminal(args: &[String]) -> bool {
+    let mut it = args.iter().map(String::as_str);
+    while let Some(a) = it.next() {
+        match a {
+            "--path" => return true,
+            "--home" | "--serve-port" => {
+                it.next();
+            }
+            _ if a.starts_with('-') => {}
+            _ => return true,
+        }
+    }
+    false
+}
+
+/// `bragi mcp …`: the MCP server. Checked before [`wants_terminal`], which would otherwise take
+/// the lone word `mcp` for a path.
+fn wants_mcp(args: &[String]) -> bool {
+    args.first().map(String::as_str) == Some("mcp")
+}
+
 fn main() -> ExitCode {
     // `bragi mcp …`: the MCP server, without opening a window.
-    if std::env::args().nth(1).as_deref() == Some("mcp") {
+    if wants_mcp(&std::env::args().skip(1).collect::<Vec<_>>()) {
         return bragi_mcp::cli::main(std::env::args().skip(2));
     }
     let mut home: Option<PathBuf> = std::env::var_os("BRAGI_HOME").map(PathBuf::from);
@@ -36,6 +61,10 @@ fn main() -> ExitCode {
     if args.peek().map(String::as_str) == Some("serve") {
         args.next();
         return bragi_serve::cli::run(args);
+    }
+    let rest: Vec<String> = std::env::args().skip(1).collect();
+    if wants_terminal(&rest) {
+        return terminal::run(rest);
     }
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -61,4 +90,37 @@ fn main() -> ExitCode {
         }
     }
     view::run(view::Launch { home, demo, scenario, serve })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{wants_mcp, wants_terminal};
+
+    fn v(s: &str) -> Vec<String> {
+        s.split_whitespace().map(str::to_string).collect()
+    }
+
+    #[test]
+    fn a_path_or_command_goes_to_the_terminal_app() {
+        assert!(wants_terminal(&v(".")));
+        assert!(wants_terminal(&v("~/src/app")));
+        assert!(wants_terminal(&v("./serve")));
+        assert!(wants_terminal(&v("status")));
+        assert!(wants_terminal(&v("--path x")));
+        assert!(wants_terminal(&v("--demo --home /tmp/h .")));
+        assert!(!wants_terminal(&[]));
+        assert!(!wants_terminal(&v("--demo")));
+        assert!(!wants_terminal(&v("--home /tmp/h --serve --serve-port 9")));
+    }
+
+    #[test]
+    fn mcp_is_claimed_before_the_terminal_hand_off() {
+        // `mcp` alone looks like a path to `wants_terminal`; `main` asks `wants_mcp` first.
+        assert!(wants_terminal(&v("mcp")));
+        assert!(wants_mcp(&v("mcp")));
+        assert!(wants_mcp(&v("mcp --http --root .")));
+        assert!(!wants_mcp(&v("--demo mcp")));
+        assert!(!wants_mcp(&v("./mcp")));
+        assert!(!wants_mcp(&[]));
+    }
 }
