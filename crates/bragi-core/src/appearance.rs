@@ -246,7 +246,7 @@ impl Appearance {
         let raised = v
             .palette
             .get("raised")
-            .and_then(weirdnet_themes::parse_hex)
+            .and_then(|h| weirdnet_themes::parse_hex(h))
             .or_else(|| Some(weirdnet_themes::mix(v.color("bg")?, v.color("fg")?, 0.11)))
             .map(weirdnet_themes::to_hex)
             .unwrap_or_else(|| "#808080".into());
