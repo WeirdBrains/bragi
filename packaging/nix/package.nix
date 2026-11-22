@@ -22,6 +22,8 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     install -Dm755 bin/bragi $out/bin/bragi
+    # The terminal app (from 1.0.0): no GUI libraries, so not wrapped.
+    if [ -e bin/bragi-tui ]; then install -Dm755 bin/bragi-tui $out/bin/bragi-tui; fi
     install -Dm644 LICENSE $out/share/licenses/bragi/LICENSE
   '' + lib.optionalString desktop ''
     cp -a share/applications share/icons $out/share/

@@ -198,3 +198,31 @@ async fn settings_add_edit_reorder_delete() {
     assert!(core.add_endpoint(input("", "https://x", EndpointMode::Fallback), None).is_err());
     assert!(core.edit_endpoint("ep-nope", input("x", "https://x", EndpointMode::Fallback), KeyChange::Keep).is_err());
 }
+
+/// Code requests (`complete_to`) go where a chat would, the pool or an endpoint, and leave no
+/// conversation behind.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn code_requests_route_by_target_and_stay_out_of_history() {
+    use bragi_core::code::{PromptMessage, PromptRole};
+    let tmp = tempfile::tempdir().unwrap();
+    let (core, _demo) = linked(tmp.path()).await;
+    let mock = mock_openai(None, vec!["mock-1"], Chat::Words(vec!["fn ", "a() {}"])).await;
+    let v = core.add_endpoint(input("Mock", &mock.url, EndpointMode::Alongside), None).unwrap();
+    let ask = || {
+        vec![PromptMessage { role: PromptRole::System, content: "code".into() }, PromptMessage { role: PromptRole::User, content: "rewrite".into() }]
+    };
+
+    let mut h = core.complete_to(ask(), None, Some(endpoint_target(&core, &v.id))).unwrap();
+    assert!(h.conversation_id.is_empty());
+    let events = drain(&mut h).await;
+    assert_eq!(answer_text(&events), "fn a() {}");
+    assert!(events.iter().any(|e| matches!(e, ChatEvent::Started { node, .. } if node == "Mock")));
+
+    let mut h = core.complete_to(ask(), None, Some(Target::Pool)).unwrap();
+    let events = drain(&mut h).await;
+    assert!(matches!(events.last(), Some(ChatEvent::Done { .. })), "{events:?}");
+    assert!(!answer_text(&events).is_empty());
+
+    assert!(core.complete_to(vec![], None, None).is_err());
+    assert!(core.conversations(0, 10).unwrap().is_empty(), "nothing was saved");
+}

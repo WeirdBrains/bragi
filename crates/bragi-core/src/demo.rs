@@ -143,7 +143,44 @@ pub const FILE_TRIGGER: &str = "as a file";
 /// The file the demo writes for [`FILE_TRIGGER`].
 pub const DEMO_FILE: (&str, &str) = ("hello.py", "print(\"Hello from your own cloud\")\n");
 
+/// The demo's answer to a code request ([`crate::code::prompt::build`]): a rewrite puts a
+/// comment naming the instruction above the target, keeping its indentation; suggestions add
+/// one at the top of the first file. Always a well-formed `bragi-edit` block.
+fn code_answer(model: &str, prompt: &str) -> Option<String> {
+    use crate::code::prompt::{fenced_blocks, strip_numbers};
+    if !prompt.starts_with("The files (line-numbered for reference):") {
+        return None;
+    }
+    let blocks = fenced_blocks(prompt);
+    let files: Vec<(&str, &str)> = blocks.iter().filter_map(|(info, body)| Some((info.strip_prefix("text path=")?, body.as_str()))).collect();
+    let ask = prompt.rsplit_once("```\n\n").map(|(_, a)| a).unwrap_or(prompt).trim();
+    if let Some(rest) = prompt.split("Answer with one `bragi-edit ").nth(1) {
+        let attr = rest.split('`').next().unwrap_or("");
+        let instruction =
+            prompt.lines().rev().find_map(|l| l.strip_prefix("Rewrite ")).and_then(|l| l.split_once(": ")).map(|(_, i)| i).unwrap_or("rewrite");
+        let target = match blocks.iter().find(|(info, _)| info.is_empty()) {
+            Some((_, sel)) => sel.clone(),
+            None => {
+                let path = attr.strip_prefix("path=").unwrap_or(attr);
+                strip_numbers(files.iter().find(|(p, _)| *p == path).map(|(_, b)| *b).unwrap_or(""))
+            }
+        };
+        let indent: String = target.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take_while(|c| c.is_whitespace()).collect();
+        return Some(format!(
+            "```bragi-edit {attr}\n{indent}// {model}: {instruction}\n{target}```\nAdded a comment naming the instruction; the code itself is unchanged (demo)."
+        ));
+    }
+    let (path, _) = files.first()?;
+    let instruction = ask.lines().next().unwrap_or("").trim();
+    Some(format!(
+        "{model} suggests one change: a header comment saying what {path} is for.\n\n```bragi-edit path={path} after=0\n// {model}: {instruction}\n```\n"
+    ))
+}
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
+    if let Some(a) = code_answer(model, prompt) {
+        return a;
+    }
     if prompt.contains(FILE_TRIGGER) {
         let (name, body) = DEMO_FILE;
         return format!("{model} here. Here it is:\n\n```python {name}\n{body}```\n\nSave it from the card under this answer.");

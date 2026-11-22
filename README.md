@@ -19,6 +19,7 @@ Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](ht
 | --- | --- |
 | `crates/bragi-core` | Everything Bragi does: identity and pairing (`weirdnet-device-link`), the `weirdnet-agent` pool client, chat events, history on the shared context store. Also `demo`, an in-process inference node with a test identity for tests and demos. |
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
+| `crates/bragi-tui` | The terminal shell (ratatui), binary `bragi-tui`: the desktop's features in a terminal, locally or over SSH, plus code suggestions and rewrites. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
 | `app/` | The Flutter app (Android and iOS). |
 | `brand/`, [BRAND.md](https://github.com/WeirdBrains/bragi/blob/main/BRAND.md) | Logo, icons, palette and usage rules. |
@@ -31,6 +32,7 @@ Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](ht
 ```sh
 cargo test --workspace                       # bragi-core's scenario over the memory transport
 cargo run -p bragi-desktop -- --demo         # the desktop shell against the demo node
+cargo run -p bragi-tui -- --demo             # the terminal shell against the demo node (F1 lists the keys)
 scripts/desktop-scenario.sh /tmp/shots       # the scenario, headless, with screenshots
 
 cd app
@@ -47,6 +49,32 @@ needed.
 Packaging: `scripts/dist-linux.sh`, `dist-macos.sh`, `dist-windows.ps1`, `dist-android.sh` and
 `dist-ios.sh` build each platform's release files into `dist/`, and `.github/workflows/release.yml` runs
 them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see [docs/RELEASES.md](https://github.com/WeirdBrains/bragi/blob/main/docs/RELEASES.md).
+
+## The terminal app
+
+`bragi-tui` is a device of its own: its profile is in `~/.local/share/bragi-tui` (or `--home DIR`,
+or `BRAGI_TUI_HOME`), never the desktop app's. Link it once with `bragi-tui link`, which prints a code
+and a QR code to open on a device that's already linked (`ymirctl pool add CODE` on a Ymir node). It
+works over SSH. Copying (Ctrl-Y, or `c` on the link screen) uses OSC 52, so the text lands on your
+local clipboard.
+
+It has what the desktop has: linking with a code, QR code or node address; sessions in nested folders;
+OpenAI-compatible endpoints in Settings (Ctrl-P) and a picker for where chats go and the model (Ctrl-O);
+streaming chat with stop and continue; replies drawn as Markdown with highlighted code; the Thinking
+section (Ctrl-K); text, image and audio attachments; and node status (Ctrl-T). Code mode (Ctrl-E) adds
+files and folders as context, respecting `.gitignore`. It asks for suggestions, or a rewrite of a file
+or line range (`/rewrite FILE:A-B how`), and shows a unified or side-by-side diff. You accept (`y`) or
+reject (`n`) each hunk, `w` writes the ones you kept, and `/undo` reverts the write.
+
+```sh
+bragi-tui                                                  # the full-screen app
+bragi-tui link /ip4/…/tcp/4848/p2p/…                       # dial a node Bragi can't find by itself
+bragi-tui code --rewrite src/lib.rs:10-40 "use iterators"  # prints a unified diff
+bragi-tui code --suggest --context src "find bugs" --apply # writes the change
+bragi-tui undo                                             # puts the last written change back
+```
+
+The prompts, the diffs and the undo journal are `bragi_core::code`, shared with the editor extension.
 
 ## License
 

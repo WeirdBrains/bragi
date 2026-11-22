@@ -318,6 +318,54 @@ impl Core {
         Ok(handle)
     }
 
+    /// [`complete`](Core::complete) sent to `target` (the default target when `None`): the pool,
+    /// with fallback endpoints when it can't answer, or one endpoint and model. Nothing is saved.
+    pub fn complete_to(&self, messages: Vec<crate::code::PromptMessage>, model: Option<String>, target: Option<Target>) -> Result<ChatHandle> {
+        use crate::code::PromptRole;
+        if !messages.iter().any(|m| m.role == PromptRole::User && !m.content.trim().is_empty()) {
+            return Err(CoreError::new(ErrorKind::BadRequest, "nothing to answer"));
+        }
+        let messages: Vec<Message> = messages
+            .into_iter()
+            .map(|m| match m.role {
+                PromptRole::System => Message::system(m.content),
+                PromptRole::User => Message::user(m.content),
+                PromptRole::Assistant => Message::assistant(m.content, Vec::new()),
+            })
+            .collect();
+        let target = target.unwrap_or_else(|| self.default_target());
+        self.check_target(&target)?;
+        let (endpoints, model) = match target {
+            Target::Pool => {
+                let fallbacks = self.inner.endpoints.fallbacks();
+                let ready = self.net().and_then(|net| self.pick_model(model.clone(), weirdnet_agent::Modalities::TEXT).map(|m| (net, m)));
+                match ready {
+                    Ok((net, model)) => {
+                        let req = weirdnet_agent::remote::infer::v2::Request::messages(messages.clone()).with_model(model);
+                        let fallback = (!fallbacks.is_empty()).then_some(messages);
+                        return Ok(self.run(net, String::new(), req, String::new(), String::new(), fallback));
+                    }
+                    Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && !fallbacks.is_empty() => (fallbacks, None),
+                    Err(e) => return Err(e),
+                }
+            }
+            Target::Endpoint { id, model: m } => {
+                let ep =
+                    self.inner.endpoints.get(&id).ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))?;
+                (vec![ep], Some(m).filter(|m| !m.is_empty()).or(model))
+            }
+        };
+        let request_id = random_id("r");
+        let cancel = CancelToken::new();
+        lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
+        let (out, events) = mpsc::unbounded_channel();
+        let (core, rid) = (self.clone(), request_id.clone());
+        self.inner.handle.spawn(async move {
+            core.answer_from_endpoints("", &rid, endpoints, model, messages, &cancel, &out, String::new()).await;
+        });
+        Ok(ChatHandle { request_id, conversation_id: String::new(), events })
+    }
+
     fn default_target(&self) -> Target {
         if self.net().is_err()
             && let Some(t) = self.targets().into_iter().nth(1)
@@ -431,7 +479,10 @@ impl Core {
         }
         let tail = match won {
             Some((ep, chosen, s, f)) => {
-                self.finish_turn(conversation, format!("{shown}{}", s.text), &s, MessageState::Complete, Some(ep.name), Some(chosen));
+                // An empty conversation is an answer kept out of history (`Core::complete_to`).
+                if !conversation.is_empty() {
+                    self.finish_turn(conversation, format!("{shown}{}", s.text), &s, MessageState::Complete, Some(ep.name), Some(chosen));
+                }
                 ChatEvent::Done { finish_reason: f.finish_reason }
             }
             None => {
@@ -439,7 +490,9 @@ impl Core {
                 let s = partial.unwrap_or_default();
                 let text = format!("{shown}{}", s.text);
                 let state = if e.kind == ErrorKind::Cancelled { MessageState::Stopped } else { MessageState::Failed };
-                self.finish_turn(conversation, text.clone(), &s, state, None, None);
+                if !conversation.is_empty() {
+                    self.finish_turn(conversation, text.clone(), &s, state, None, None);
+                }
                 ChatEvent::Error { kind: e.kind, message: e.message, partial: text }
             }
         };

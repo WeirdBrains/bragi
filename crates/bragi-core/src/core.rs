@@ -399,6 +399,11 @@ impl Core {
         self.inner.cfg.dir.join("identity")
     }
 
+    /// This device has been linked before (it goes online by itself on start).
+    pub fn has_identity(&self) -> bool {
+        Identity::exists(&self.identity_dir())
+    }
+
     pub fn state(&self) -> AppState {
         self.inner.state.borrow().clone()
     }
@@ -624,6 +629,13 @@ impl Core {
         self.send_to(conversation, prompt, model, attachments, None)
     }
 
+    /// One answer to `messages` that is kept out of history (code suggestions and rewrites):
+    /// the same streaming, routing and cancel as a chat, with an empty `conversation_id`, sent to
+    /// the default target ([`complete_to`](Self::complete_to) picks one).
+    pub fn complete(&self, messages: Vec<crate::code::PromptMessage>, model: Option<String>) -> Result<ChatHandle> {
+        self.complete_to(messages, model, None)
+    }
+
     /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
     /// `None`), and returns its id and the messages the model gets (the new user message last).
     pub(crate) fn begin_turn(
@@ -767,7 +779,9 @@ impl Core {
                     (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() }, Flags::of(&i.partial.meta))
                 }
             };
-            core.finish(&conv, text, &streamed, state, node, model, flags);
+            if !conv.is_empty() {
+                core.finish(&conv, text, &streamed, state, node, model, flags);
+            }
             // Over before the shell hears it: a `cancel` after the last event must say so.
             lock(&core.inner.requests).remove(&rid);
             let _ = out.send(last);

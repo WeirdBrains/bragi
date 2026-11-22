@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/bragi-core", "crates/bragi-desktop", "crates/bragi-bridge"]
+members = ["crates/bragi-core", "crates/bragi-desktop", "crates/bragi-bridge", "crates/bragi-tui"]
 
 [workspace.package]
 version = "0.1.1"
@@ -34,11 +34,13 @@ async-trait = "0.1"
 base64 = "0.21"
 futures = "0.3"
 getrandom = "0.3"
+ignore = "0.4"
 keyring = { version = "4", default-features = false, features = ["v1"] }
 # Markdown in replies: parsed once in bragi-core for every shell. No HTML renderer, no fetching.
 pulldown-cmark = { version = "0.13", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+similar = "2.7"
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
