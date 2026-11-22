@@ -533,6 +533,19 @@ impl Tools for BragiTools {
         true
     }
 
+    fn prompts(&self) -> &[weirdnet_mcp::PromptSpec] {
+        crate::prompts::PROMPTS
+    }
+
+    async fn get_prompt(
+        &self,
+        prompt: &weirdnet_mcp::PromptSpec,
+        args: &Value,
+        _token: Option<&str>,
+    ) -> Result<weirdnet_mcp::GetPromptResult, weirdnet_mcp::PromptError> {
+        self.prompt(prompt, args).await
+    }
+
     async fn list_resources(&self, _token: Option<&str>) -> Result<Vec<Resource>, ResourceError> {
         let mut v = vec![
             Resource::new("bragi://status", "status")
