@@ -4,7 +4,7 @@
 //!
 //! - Transports: stdio (the default; the client starts `bragi mcp`), or stateless streamable HTTP
 //!   on a loopback address with `--http`, where clients send Bragi's local API token as a bearer
-//!   token (`bragi mcp token`; the same token `bragi serve` uses).
+//!   token (`bragi mcp token`; the same token and file `bragi serve` uses, from `bragi_serve`).
 //! - Tools: see [`tools::READ_TOOLS`], [`code::CODE_TOOLS`], and the tools offered only with
 //!   `--allow-writes` ([`tools::WRITE_TOOLS`], [`code::CODE_WRITE_TOOLS`]) or `--allow-deletes`
 //!   ([`tools::DELETE_TOOLS`]).

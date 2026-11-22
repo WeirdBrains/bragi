@@ -213,7 +213,7 @@ async fn tools_sessions_files_and_resources() {
 async fn loopback_http_needs_the_token() {
     let tmp = tempfile::tempdir().unwrap();
     let (_node, core) = bragi_mcp::cli::demo(&tmp.path().join("bragi")).await.unwrap();
-    let token = bragi_core::local_api::load_or_create_token(&tmp.path().join("home")).unwrap();
+    let token = bragi_serve::load_or_create_token(&tmp.path().join("home")).unwrap();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();

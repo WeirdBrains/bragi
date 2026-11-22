@@ -42,7 +42,7 @@ impl Default for Options {
             allow_deletes: false,
             root: PathBuf::from("."),
             timeout: Duration::from_secs(600),
-            journal: crate::code::journal_dir(&bragi_core::local_api::default_home()),
+            journal: crate::code::journal_dir(&bragi_serve::cli::default_home()),
         }
     }
 }

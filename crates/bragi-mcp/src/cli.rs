@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bragi_core::demo::DemoNode;
-use bragi_core::local_api::{default_home, load_or_create_token, token_path};
 use bragi_core::{AppState, Config, Core, PairState, Transport};
+use bragi_serve::cli::default_home;
+use bragi_serve::{load_or_create_token, token_path};
 
 use crate::{BragiTools, DEFAULT_HTTP, HTTP_PATH, Options, loopback_addr, serve_http, serve_stdio, server};
 

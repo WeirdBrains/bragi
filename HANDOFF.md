@@ -13,7 +13,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
   - [`collect.rs`](crates/bragi-mcp/src/collect.rs) reads a chat stream to its end (deltas at their offsets) and cancels the request on timeout or when the call is dropped.
   - [`cli.rs`](crates/bragi-mcp/src/cli.rs): `bragi mcp [--root] [--http] [--allow-writes] [--allow-deletes] [--timeout] [--home] [--demo]`, plus `token`, `token-path`, `status`, `link [CODE]` and `add-node ADDRESS`. `--demo` keeps everything (token, undo journal) in a throwaway folder.
 - The server uses the app's Bragi home (`$BRAGI_HOME`, else `~/.local/share/bragi`), like `bragi serve` on `feature/editor-extension`, so its chats, folders and endpoints are the app's, and it opens the OS keychain for endpoint keys.
-- Auth shared with `bragi serve`: [`local_api.rs`](crates/bragi-core/src/local_api.rs) in `bragi-core` has `default_home`, `token_path` (`<home>/serve/token`) and `load_or_create_token` (32 random bytes as hex, mode 0600), the same file and format as `bragi serve`, so one token works for both. When `feature/editor-extension` lands, `bragi-serve` can call these instead of its own copies.
+- Auth reused from `bragi serve` (LF-14): the HTTP transport takes its token from [`bragi_serve::load_or_create_token`](crates/bragi-serve/src/lib.rs) (`<home>/serve/token`, 32 random bytes as hex, mode 0600) and the home from `bragi_serve::cli::default_home`, so one token works for both local APIs and `bragi mcp token` prints the same value as `bragi serve token`. Loopback only, `Host` checked and any `Origin` refused, as in `bragi serve`, here through `weirdnet-mcp`'s `Guard::loopback`.
 - [`main.rs`](crates/bragi-desktop/src/main.rs) of the desktop app runs `bragi mcp …` without opening a window.
 - Docs: the site guide [`docs_mcp.dart`](site/lib/pages/docs_mcp.dart) (`/docs/guides/mcp`, linked from the docs index) with Cursor, Claude Desktop, VS Code and HTTP setups, and an "MCP server" section in the [README](README.md).
 
@@ -27,9 +27,26 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 - Prompts: `weirdnet-mcp` 0.6 has none, so the server has none (a `continue_session` or `review_file` prompt would help). Raised for the Weirdnet Lead rather than added here.
 - Streaming answers as progress notifications; MCP cancellation by request id (a dropped call already stops the answer).
 - Agent mode (tools and approvals on the node) is not offered.
-- `bragi-serve` should switch to `bragi_core::local_api` once it is on `main`.
 
 **What's next**: review of `feature/bragi-mcp`, then LF-16.
+
+## 2026-11-21: LF-14, the VS Code and Cursor extension and `bragi serve` (branch only)
+
+**What changed**
+- [`editors/vscode`](editors/vscode/README.md): one VSIX for VS Code, Cursor and other VS Code-based editors (Open VSX-compatible manifest, no proposed APIs). Inline suggestions ([`inline.ts`](editors/vscode/src/inline.ts)); rewrite the selection or file with a diff to accept or reject ([`rewrite.ts`](editors/vscode/src/rewrite.ts)); a chat panel that can send the file, the selection, other open files and the file's problems ([`chat.ts`](editors/vscode/src/chat.ts), [`context.ts`](editors/vscode/src/context.ts)); a target and model picker in the status bar ([`extension.ts`](editors/vscode/src/extension.ts)). The API token lives in the editor's SecretStorage and is imported from the Bragi profile on first use ([`tokens.ts`](editors/vscode/src/tokens.ts)).
+- [`crates/bragi-serve`](crates/bragi-serve/src/lib.rs): `bragi serve` (also `bragi --serve` from the desktop app, and the headless `bragi-serve` binary, [`cli.rs`](crates/bragi-serve/src/cli.rs)). Loopback only, a bearer token in `<home>/serve/token` (mode 0600), a loopback `Host` check and no browser `Origin`. Routes: state, targets, `code/suggest`, `code/rewrite`, `code/chat` (server-sent events, kept in history), cancel, and OpenAI-compatible `models` and `chat/completions`. Code requests go through `Core::complete_to` with an optional target (the pool or an endpoint and model from Settings), chat through `Core::send_to`.
+- The prompts, reading code out of answers and the diffs are `bragi_core::code` ([`code/editor.rs`](crates/bragi-core/src/code/editor.rs)), shared with the TUI. The extension's direct target (an OpenAI-compatible URL called without Bragi, off unless set) uses a TypeScript copy, [`prompts.ts`](editors/vscode/src/prompts.ts), with tests that mirror the Rust ones.
+- [`editor-extension.yml`](.github/workflows/editor-extension.yml) lints, tests headless and packages the VSIX as a CI artifact only.
+
+**Commits**: `feature/editor-extension` merged with `feature/code-core` (`89e4466`), then the commit that moves `bragi serve` to `complete_to` and targets and adds this entry.
+
+**Checks**: `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace (including [`bragi-serve/tests/api.rs`](crates/bragi-serve/tests/api.rs) against the demo node and the mock endpoint), `flutter analyze`, the Flutter tests in demo mode, the extension's lint, and its tests in a downloaded VS Code under Xvfb (`env -i`, throwaway HOME and profile) against a mock `bragi serve`. Screenshots from that run: inline suggestion, rewrite diff, chat panel.
+
+**Not tested**: a real Cursor install; the extension against a real `bragi serve` linked to real Ymir nodes (the Rust tests cover serve against the demo node); macOS and Windows; `bragi --serve` and `bragi serve` on one profile at once (documented as one or the other).
+
+**Left**: full Visual Studio (a different extension model); Marketplace and Open VSX listings (not wanted yet); per-hunk accept in the editor (the core has `FileDiff::apply`; the editor accepts the whole rewrite); file and folder requests from the editor (`CodeRequest`, used by the TUI); the Bragi milestones in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) need a line for this.
+
+**Next**: the owner's review of the branch.
 
 ## 2026-11-21: LF-13, the terminal app (branch `feature/tui`, not merged)
 
@@ -75,6 +92,12 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 
 **Next:** review, then merge `feature/tui` when m3talsmith says so.
 
+## 2026-11-21: merges of the models screen, chat files, the terminal app and the editor extension
+
+**What changed**: four branches are on main, each with `git merge --no-ff`: the Models screen (LF-30 M4, see [`models_ui.dart`](app/lib/src/models_ui.dart)), files in a chat (LF-12, see [`files.rs`](crates/bragi-core/src/files.rs)), the terminal app (LF-13, [`bragi-tui`](crates/bragi-tui/)) and the VS Code and Cursor extension (LF-14, [`editors/vscode`](editors/vscode/) with [`bragi-serve`](crates/bragi-serve/)). The "Saved to …" notice now shows in the success colour in [`view.rs`](crates/bragi-desktop/src/view.rs) and [`chat_screen.dart`](app/lib/src/chat_screen.dart). Conflicts were in [`CHANGELOG.md`](CHANGELOG.md), this file, [`demo.rs`](crates/bragi-core/src/demo.rs) (both the file answer and the code answer kept), [`Cargo.toml`](Cargo.toml) and [`Cargo.lock`](Cargo.lock); the Flutter bridge was regenerated once after chat files. The cancel-and-resume test in [`tests.rs`](crates/bragi-core/src/models/tests.rs) now waits for the node to drop a cancelled pull.
+
+**Checks**: fmt, build, clippy `-D warnings`, `cargo test --workspace`, `flutter analyze`, the extension's lint, compile and headless tests. **Known flake**: the Flutter test in [`settings_test.dart`](app/test/settings_test.dart) ("settings and sessions") fails on some runs under load and passes alone.
+
 ## 2026-11-21: LF-12, files in a chat: view and save (branch only)
 
 **What changed**
@@ -104,7 +127,7 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 **What's left**:
 - A player for audio files (the card shows the file and saves it).
 - Files larger than a message takes (content roots).
-- The roadmap and Ymir's DESIGN.md were not updated.
+- The roadmap and Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) were not updated.
 
 **What's next**: review of `feature/chat-files`, then LF-16.
 
