@@ -9,6 +9,7 @@
 
 // Copied whole from Morph and kept in step until they move to a shared weirdnet-* UI crate.
 mod markdown;
+mod terminal;
 #[allow(dead_code)]
 mod text_input;
 mod theme;
@@ -18,8 +19,17 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 fn usage() -> ExitCode {
-    eprintln!("usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi serve --help");
+    eprintln!(
+        "usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi PATH            the terminal app, in code mode on PATH (a folder or a file; `bragi .`)\n       bragi serve --help"
+    );
     ExitCode::from(2)
+}
+
+/// Whether the first argument is a path or a terminal-app command (`bragi .`, `bragi ~/src/app`,
+/// `bragi status`) rather than one of this window's options: those all start with `-`. `--path`
+/// is the explicit form, for a folder named like a command.
+fn wants_terminal(first: Option<&str>) -> bool {
+    first.is_some_and(|a| !a.starts_with('-') || a == "--path")
 }
 
 fn main() -> ExitCode {
@@ -29,6 +39,9 @@ fn main() -> ExitCode {
     if args.peek().map(String::as_str) == Some("serve") {
         args.next();
         return bragi_serve::cli::run(args);
+    }
+    if wants_terminal(args.peek().map(String::as_str)) {
+        return terminal::run(args.collect());
     }
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -54,4 +67,21 @@ fn main() -> ExitCode {
         }
     }
     view::run(view::Launch { home, demo, scenario, serve })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wants_terminal;
+
+    #[test]
+    fn a_path_or_command_goes_to_the_terminal_app() {
+        assert!(wants_terminal(Some(".")));
+        assert!(wants_terminal(Some("~/src/app")));
+        assert!(wants_terminal(Some("./serve")));
+        assert!(wants_terminal(Some("status")));
+        assert!(wants_terminal(Some("--path")));
+        assert!(!wants_terminal(None));
+        assert!(!wants_terminal(Some("--demo")));
+        assert!(!wants_terminal(Some("--home")));
+    }
 }
