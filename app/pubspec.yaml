@@ -22,6 +22,9 @@ dependencies:
   material_ui: ^1.11.0
   # Links in replies open in the system browser.
   url_launcher: ^6.3.2
+  # Audio files in a chat play through the platform player, in the platform audio session.
+  just_audio: ^0.10.6
+  audio_session: ^0.2.4
 
 dev_dependencies:
   flutter_test:

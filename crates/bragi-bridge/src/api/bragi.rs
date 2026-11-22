@@ -153,6 +153,8 @@ pub struct FileView {
     pub origin: String,
     /// A text file's first lines.
     pub preview: Option<String>,
+    /// How long a sound file plays, from its headers.
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -459,6 +461,7 @@ fn file_view(f: &bragi_core::ChatFile) -> FileView {
         }
         .into(),
         preview: f.preview.clone(),
+        duration_ms: f.duration_ms,
     }
 }
 
@@ -775,6 +778,24 @@ pub fn conversations(offset: u32, limit: u32) -> Result<Vec<SummaryView>, String
 
 pub fn conversation(id: String) -> Result<ConversationView, String> {
     core()?.conversation(&id).map(|c| conversation_view(&c)).map_err(err)
+}
+
+/// An audio player's `elapsed / total` (`0:07 / 1:02`), written as on the desktop.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_times(position_ms: u64, duration_ms: u64) -> String {
+    bragi_core::audio::times(position_ms, duration_ms)
+}
+
+/// Where a seek bar at `fraction` (0 to 1) goes, in milliseconds.
+#[flutter_rust_bridge::frb(sync)]
+pub fn audio_seek_ms(fraction: f64, duration_ms: u64) -> u64 {
+    bragi_core::audio::seek_ms(fraction, duration_ms)
+}
+
+/// The demo's sound file: `ms` milliseconds of a `hz` tone as a WAV.
+#[flutter_rust_bridge::frb(sync)]
+pub fn demo_tone_wav(ms: u32, hz: u32) -> Vec<u8> {
+    bragi_core::demo::tone_wav(ms, hz)
 }
 
 /// Every file in conversation `id`, oldest first.
@@ -1416,11 +1437,7 @@ pub fn themes() -> Result<Vec<ThemeRowView>, String> {
 pub fn theme_roles() -> Vec<RoleInfoView> {
     bragi_core::appearance::roles()
         .into_iter()
-        .map(|r| RoleInfoView {
-            role: r.into(),
-            label: bragi_core::appearance::role_label(r).into(),
-            optional: is_optional_role(r),
-        })
+        .map(|r| RoleInfoView { role: r.into(), label: bragi_core::appearance::role_label(r).into(), optional: is_optional_role(r) })
         .collect()
 }
 

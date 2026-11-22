@@ -37,7 +37,14 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     }
-    match run(&session, cli::root(&args)) {
+    let (root, opened) = match cli::start(&args) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("bragi-tui: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    match run(&session, root, opened) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("bragi-tui: {e}");
@@ -54,10 +61,13 @@ fn osc52(out: &mut impl Write, text: &str) -> std::io::Result<()> {
     out.flush()
 }
 
-fn run(session: &Session, root: std::path::PathBuf) -> Result<(), String> {
+fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let _ = execute!(std::io::stdout(), EnableBracketedPaste);
     let mut app = App::new(session.core.clone(), &session.home, root);
+    if let Some(o) = opened {
+        app.open_code(&o);
+    }
     let result = (|| -> std::io::Result<()> {
         // Draws only when something changed: input, a job or stream event, a toast coming or
         // going, a resize, or a frame of the spinner or countdown (every 100 ms while one runs).

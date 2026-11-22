@@ -167,6 +167,37 @@ void main() {
     final saved = File(c.notice!.substring('Saved hello.py to '.length));
     expect(saved.readAsStringSync(), 'print("Hello from your own cloud")\n');
     saved.parent.deleteSync(recursive: true);
+
+    // Audio files play on their card (the demo build's scripted player: no sound card): Play,
+    // the time, seek, pause; one clip at a time; it stops when the chat changes. (In the same
+    // chat, so the history list keeps its length for the drawer steps below.)
+    c.attachFile('low tone.wav', rust.demoToneWav(ms: 3000, hz: 330));
+    c.attachFile('high tone.wav', rust.demoToneWav(ms: 2000, hz: 660));
+    expect(c.attachments.length, 2, reason: '${c.notice}');
+    await tester.enterText(find.byKey(const Key('prompt')), 'Listen to these');
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the audio answer', () => !c.streaming && c.messages.length == 6 && last().state == 'complete');
+    final clips = c.messages[4].files;
+    expect(clips.map((f) => (f.kind, f.durationMs?.toInt())).toList(), [('audio', 3000), ('audio', 2000)]);
+    expect(find.text('0:00 / 0:03'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(Key('play-${clips[0].id}')));
+    await tester.pump();
+    await tester.tap(find.byKey(Key('play-${clips[0].id}')));
+    await until('the clip to play', () => c.clip?.playing ?? false);
+    await tester.pump(const Duration(milliseconds: 1150));
+    expect(c.clip!.position, greaterThanOrEqualTo(const Duration(seconds: 1)));
+    expect(find.text('0:01 / 0:03'), findsOneWidget);
+    c.seekFile(clips[0], 0.5);
+    await tester.pump();
+    expect(c.clip!.position, const Duration(milliseconds: 1500));
+    await tester.tap(find.byKey(Key('play-${clips[0].id}')));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect((c.clip!.playing, c.clip!.position), (false, const Duration(milliseconds: 1500)), reason: 'paused holds');
+    await tester.tap(find.byKey(Key('play-${clips[1].id}')));
+    await until('the second clip', () => c.clip?.file == clips[1].id && c.clip!.playing);
+    c.newChat();
+    await tester.pump();
+    expect(c.clip, isNull, reason: 'the clip stops with the chat');
     // A binary file is refused in the core's words.
     c.attachFile('pic.png', [0x89, 0x50, 0x00, 0x01]);
     expect(c.notice, contains('not a text file'));

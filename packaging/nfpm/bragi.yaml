@@ -18,11 +18,11 @@ provides: [bragi-tui]
 conflicts: [bragi-standalone, bragi-bin, bragi-tui]
 overrides:
   deb:
-    depends: [libc6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6]
+    depends: [libc6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6, "libasound2t64 | libasound2"]
   rpm:
-    depends: [glibc, libgcc, libxkbcommon, libxkbcommon-x11, libxcb, libwayland-client, vulkan-loader, fontconfig, freetype]
+    depends: [glibc, libgcc, libxkbcommon, libxkbcommon-x11, libxcb, libwayland-client, vulkan-loader, fontconfig, freetype, alsa-lib]
   archlinux:
-    depends: [glibc, gcc-libs, libxkbcommon, libxkbcommon-x11, libxcb, wayland, vulkan-icd-loader, fontconfig, freetype2]
+    depends: [glibc, gcc-libs, libxkbcommon, libxkbcommon-x11, libxcb, wayland, vulkan-icd-loader, fontconfig, freetype2, alsa-lib]
 contents:
   - src: "${BRAGI_BUNDLE}/bin/bragi"
     dst: /usr/bin/bragi

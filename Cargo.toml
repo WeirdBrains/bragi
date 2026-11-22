@@ -53,6 +53,10 @@ flutter_rust_bridge = "=2.13.0"
 gpui = { git = "https://github.com/zed-industries/zed", rev = "703b5ac3f4ffe1e87a073123ae56e22f72f095c4" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "703b5ac3f4ffe1e87a073123ae56e22f72f095c4", features = ["font-kit", "wayland", "x11"] }
 unicode-segmentation = "1"
+# Playing the sound files in a chat on the desktop (LF-12 follow-up): decoding (pure Rust, WAV and
+# MP3 only) and the audio output, as Mouser's player uses.
+symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "mp3"] }
+cpal = "0.15"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

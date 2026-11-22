@@ -71,6 +71,9 @@ pub struct ChatFile {
     /// A text file's first lines.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
+    /// How long a sound file plays, from its headers ([`crate::audio::duration_ms`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 /// How much of a text file a card previews.
@@ -349,6 +352,7 @@ pub fn describe(m: &ChatMessage) -> Vec<ChatFile> {
                 kind,
                 origin: FileOrigin::Attached,
                 preview: (kind == FileKind::Text).then(|| preview(&a.text)),
+                duration_ms: (kind == FileKind::Audio).then(|| attachment_bytes(a).ok().and_then(|b| crate::audio::duration_ms(&b))).flatten(),
             }
         })
         .collect();
@@ -363,6 +367,7 @@ pub fn describe(m: &ChatMessage) -> Vec<ChatFile> {
             size: f.bytes.len() as u64,
             kind: f.kind,
             origin: FileOrigin::Reply,
+            duration_ms: None,
         }));
     }
     out

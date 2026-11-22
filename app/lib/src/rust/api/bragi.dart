@@ -196,6 +196,24 @@ Future<List<SummaryView>> conversations({
 Future<ConversationView> conversation({required String id}) =>
     RustLib.instance.api.crateApiBragiConversation(id: id);
 
+/// An audio player's `elapsed / total` (`0:07 / 1:02`), written as on the desktop.
+String audioTimes({required BigInt positionMs, required BigInt durationMs}) =>
+    RustLib.instance.api.crateApiBragiAudioTimes(
+      positionMs: positionMs,
+      durationMs: durationMs,
+    );
+
+/// Where a seek bar at `fraction` (0 to 1) goes, in milliseconds.
+BigInt audioSeekMs({required double fraction, required BigInt durationMs}) =>
+    RustLib.instance.api.crateApiBragiAudioSeekMs(
+      fraction: fraction,
+      durationMs: durationMs,
+    );
+
+/// The demo's sound file: `ms` milliseconds of a `hz` tone as a WAV.
+Uint8List demoToneWav({required int ms, required int hz}) =>
+    RustLib.instance.api.crateApiBragiDemoToneWav(ms: ms, hz: hz);
+
 /// Every file in conversation `id`, oldest first.
 Future<List<FileView>> chatFiles({required String id}) =>
     RustLib.instance.api.crateApiBragiChatFiles(id: id);
@@ -858,6 +876,9 @@ class FileView {
   /// A text file's first lines.
   final String? preview;
 
+  /// How long a sound file plays, from its headers.
+  final BigInt? durationMs;
+
   const FileView({
     required this.id,
     required this.messageId,
@@ -868,6 +889,7 @@ class FileView {
     required this.kind,
     required this.origin,
     this.preview,
+    this.durationMs,
   });
 
   @override
@@ -880,7 +902,8 @@ class FileView {
       size.hashCode ^
       kind.hashCode ^
       origin.hashCode ^
-      preview.hashCode;
+      preview.hashCode ^
+      durationMs.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -895,7 +918,8 @@ class FileView {
           size == other.size &&
           kind == other.kind &&
           origin == other.origin &&
-          preview == other.preview;
+          preview == other.preview &&
+          durationMs == other.durationMs;
 }
 
 class FolderView {

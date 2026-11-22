@@ -10,7 +10,7 @@ pkgdesc="Chat with your private AI cloud (Ymir) over Weirdnet, desktop app, preb
 arch=('x86_64' 'aarch64')
 url="https://github.com/WeirdBrains/bragi"
 license=('BSD-3-Clause')
-depends=('libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2'
+depends=('libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2' 'alsa-lib'
          'hicolor-icon-theme' 'glibc' 'gcc-libs')
 optdepends=('vulkan-driver: GPU rendering (mesa or the vendor driver)')
 provides=('bragi' 'bragi-tui')

@@ -11,7 +11,7 @@ use super::*;
 
 /// What the name/path box is asking for.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Ask {
+pub(crate) enum Ask {
     New,
     Duplicate,
     Rename,
@@ -52,12 +52,17 @@ pub(super) struct Themes {
 
 impl Default for Themes {
     fn default() -> Self {
-        Self { rows: Vec::new(), sel: String::new(), saved: Preference::default(), mode: ModePref::default(), edit: None, ask: None, msg: None, delete: None }
+        Self {
+            rows: Vec::new(),
+            sel: String::new(),
+            saved: Preference::default(),
+            mode: ModePref::default(),
+            edit: None,
+            ask: None,
+            msg: None,
+            delete: None,
+        }
     }
-}
-
-fn hex_of(c: u32) -> String {
-    format!("#{c:06x}")
 }
 
 /// `#abc` / `#aabbcc` (any case, `#` optional) as `#rrggbb`.
@@ -478,7 +483,16 @@ impl BragiView {
     fn chip(&self, id: impl Into<gpui::ElementId>, hex: &str, size: f32) -> gpui::Stateful<gpui::Div> {
         let t = self.theme;
         let c = weirdnet_themes::parse_hex(hex).map(|(r, g, b)| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)).unwrap_or(0);
-        div().id(id).w(px(size)).h(px(size)).rounded(px(4.)).bg(rgb(c)).border_1().border_color(rgb(t.border)).cursor_pointer().hover(|s| s.opacity(0.8))
+        div()
+            .id(id)
+            .w(px(size))
+            .h(px(size))
+            .rounded(px(4.))
+            .bg(rgb(c))
+            .border_1()
+            .border_color(rgb(t.border))
+            .cursor_pointer()
+            .hover(|s| s.opacity(0.8))
     }
 
     pub(super) fn themes_screen(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -588,7 +602,17 @@ impl BragiView {
                     .rounded(px(8.))
                     .bg(rgb(t.surface))
                     .child(div().text_size(px(13.)).child(ask.label()))
-                    .child(div().flex_1().px(px(8.)).py(px(6.)).rounded(px(6.)).bg(rgb(t.background)).border_1().border_color(rgb(t.border)).child(self.theme_input.clone()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .px(px(8.))
+                            .py(px(6.))
+                            .rounded(px(6.))
+                            .bg(rgb(t.background))
+                            .border_1()
+                            .border_color(rgb(t.border))
+                            .child(self.theme_input.clone()),
+                    )
                     .child(self.button("ask-ok", "OK", true).on_click(cx.listener(|v, _, _, cx| v.theme_ask_submit(cx))))
                     .child(self.button("ask-cancel", "Cancel", false).on_click(cx.listener(|v, _, _, cx| v.theme_ask_cancel(cx)))),
             );
@@ -665,7 +689,9 @@ impl BragiView {
                     .child(div().text_color(rgb(t.warning)).child("! needs a look"))
                     .child(div().text_color(rgb(t.error)).child("✗ error")),
             )
-            .child(div().flex().flex_row().gap(px(8.)).child(self.button("pv-primary", "Primary", true)).child(self.button("pv-plain", "Plain", false)))
+            .child(
+                div().flex().flex_row().gap(px(8.)).child(self.button("pv-primary", "Primary", true)).child(self.button("pv-plain", "Plain", false)),
+            )
     }
 
     fn theme_editor(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -702,14 +728,18 @@ impl BragiView {
         let mut palette = div().flex().flex_row().flex_wrap().gap(px(4.));
         for (k, (name, hex)) in e.file.variant(e.variant).swatches().into_iter().enumerate() {
             let h = hex.clone();
-            palette = palette.child(self.chip(SharedString::from(format!("sw-{k}-{name}")), &hex, 20.).on_click(cx.listener(move |v, _, _, cx| v.role_to(&h, cx))));
+            palette = palette.child(
+                self.chip(SharedString::from(format!("sw-{k}-{name}")), &hex, 20.).on_click(cx.listener(move |v, _, _, cx| v.role_to(&h, cx))),
+            );
         }
         let mut spectrum = div().flex().flex_row().flex_wrap().gap(px(3.));
         for (row, l) in [0.35f32, 0.55, 0.75].into_iter().enumerate() {
             for k in 0..12 {
                 let hex = hsl(k as f32 * 30.0, 0.7, l);
                 let h = hex.clone();
-                spectrum = spectrum.child(self.chip(SharedString::from(format!("hue-{row}-{k}")), &hex, 18.).on_click(cx.listener(move |v, _, _, cx| v.role_to(&h, cx))));
+                spectrum = spectrum.child(
+                    self.chip(SharedString::from(format!("hue-{row}-{k}")), &hex, 18.).on_click(cx.listener(move |v, _, _, cx| v.role_to(&h, cx))),
+                );
             }
         }
         let typed = self.hex_input.read(cx).text().to_string();
@@ -733,7 +763,10 @@ impl BragiView {
                     .gap(px(8.))
                     .child(div().text_size(px(14.)).child(format!("{} · {}", e.name, e.variant.name())))
                     .child(div().flex_1())
-                    .child(step("edit-variant", if e.variant == Variant::Dark { "Edit light" } else { "Edit dark" }).on_click(cx.listener(|v, _, _, cx| v.edit_variant(cx)))),
+                    .child(
+                        step("edit-variant", if e.variant == Variant::Dark { "Edit light" } else { "Edit dark" })
+                            .on_click(cx.listener(|v, _, _, cx| v.edit_variant(cx))),
+                    ),
             )
             .child(self.note(format!("{role} — {}", bragi_core::appearance::role_label(role)), t.text_secondary))
             .child(
@@ -774,8 +807,14 @@ impl BragiView {
                     .flex()
                     .flex_row()
                     .gap(px(6.))
-                    .child(self.button("edit-save", if self.edit_dirty() { "Save" } else { "Saved" }, self.edit_dirty()).on_click(cx.listener(|v, _, _, cx| v.edit_save(cx))))
-                    .child(self.button("edit-close", if self.edit_dirty() { "Discard" } else { "Close" }, false).on_click(cx.listener(|v, _, _, cx| v.edit_close(cx)))),
+                    .child(
+                        self.button("edit-save", if self.edit_dirty() { "Save" } else { "Saved" }, self.edit_dirty())
+                            .on_click(cx.listener(|v, _, _, cx| v.edit_save(cx))),
+                    )
+                    .child(
+                        self.button("edit-close", if self.edit_dirty() { "Discard" } else { "Close" }, false)
+                            .on_click(cx.listener(|v, _, _, cx| v.edit_close(cx))),
+                    ),
             );
         div().flex().flex_row().gap(px(16.)).flex_1().items_start().child(rows).child(panel)
     }
