@@ -91,6 +91,9 @@ export class BragiBackend implements Backend {
   readonly id = 'bragi' as const;
   readonly label = 'Bragi';
 
+  /** Called when the API doesn't answer: true if it was started (the request is tried once more). */
+  revive?: () => Promise<boolean>;
+
   constructor(
     private readonly baseUrl: () => string,
     private readonly secrets: Secrets,
@@ -125,10 +128,18 @@ export class BragiBackend implements Backend {
 
   private async request(method: string, path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     const url = this.url(path);
-    const headers = await this.headers();
+    let headers = await this.headers();
     let res: Response;
     try {
-      res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
+      try {
+        res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
+      } catch (e) {
+        if (!this.revive || (e instanceof Error && e.name === 'AbortError') || !(await this.revive())) {
+          throw e;
+        }
+        headers = await this.headers();
+        res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal });
+      }
     } catch (e) {
       throw unreachable('The local Bragi API', e);
     }

@@ -41,6 +41,8 @@ suite('Bragi extension', () => {
     await set('serveUrl', mock.url);
     await set('inline.debounceMs', 0);
     await set('target', 'bragi');
+    // These tests run their own mock server; starting a real one is serve.test.ts's business.
+    await set('autoStartServer', false);
     await vscode.commands.executeCommand('bragi.setToken', TOKEN);
   });
 
