@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 base64.workspace = true
 bragi-core.workspace = true
+bragi-serve.workspace = true
 qrcode = { version = "0.14", default-features = false }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache", "underline-color"] }
 tempfile.workspace = true

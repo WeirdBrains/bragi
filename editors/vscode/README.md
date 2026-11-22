@@ -27,10 +27,17 @@ that install from a VSIX or Open VSX.
 1. Install the VSIX: in VS Code or Cursor, run **Extensions: Install from VSIX…** and pick
    `bragi-0.2.0.vsix`, or run `code --install-extension bragi-0.2.0.vsix`
    (`cursor --install-extension bragi-0.2.0.vsix` in Cursor).
-2. Start Bragi's local API on the same computer, either:
-   - the desktop app with `bragi --serve`, which shares the app's link and history, or
-   - without a window: `bragi serve` (or the `bragi-serve` binary on a headless machine).
+2. Bragi's local API starts by itself. When the extension starts and nothing answers on
+   `bragi.serveUrl`, it runs `bragi serve` in the background (found on the PATH, or at
+   `bragi.path`), waits until it answers and reads the token. A server it starts stops itself
+   after 30 idle minutes and starts again on the next request. One that is already running is
+   used and never stopped. The status bar shows the server's state; click it, or run
+   **Bragi: Start/Restart Server**, to start it (or restart one this editor started). Turn the
+   autostart off with `bragi.autoStartServer`. If `bragi` isn't found you get a message with a
+   shortcut to the `bragi.path` setting.
 
+   To run it yourself instead: the desktop app with `bragi --serve` (shares the app's link and
+   history), or without a window `bragi serve` (the `bragi-serve` binary on a headless machine).
    It listens on `127.0.0.1:4877` only. Use one or the other for a Bragi profile, not both.
 3. The extension picks up the API token from the Bragi profile on first use
    (`~/.local/share/bragi/serve/token`, or under `$BRAGI_HOME`) and keeps it in the editor's secret
@@ -46,6 +53,8 @@ which models it can reach.
 | --- | --- | --- |
 | `bragi.target` | `bragi` | `bragi` (the local app) or `direct` (an OpenAI-compatible server). |
 | `bragi.serveUrl` | `http://127.0.0.1:4877` | The local API. Loopback addresses only. |
+| `bragi.autoStartServer` | `true` | Start `bragi serve` in the background when nothing answers on `bragi.serveUrl`. Not in untrusted workspaces. |
+| `bragi.path` | empty | The `bragi` program to start (a machine setting); empty looks for `bragi`, then `bragi-serve`, on the PATH. |
 | `bragi.model` | empty | The model on the Bragi target; empty is Bragi's default. |
 | `bragi.bragiTarget` | `null` | Where Bragi sends requests: `null` for Bragi's default, or a target picked with **Bragi: Choose Target and Model** (the Weirdnet pool, or an endpoint and model from Bragi's Settings). |
 | `bragi.direct.url` | empty | An OpenAI-compatible base URL, e.g. a Ymir bridge `http://127.0.0.1:8484/v1`. Its key: **Bragi: Set Direct Endpoint API Key** (secret storage). |
