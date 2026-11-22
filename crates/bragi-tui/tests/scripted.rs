@@ -1,0 +1,163 @@
+//! The terminal app driven key by key against the demo nodes (memory transport, a test
+//! identity, no real network), drawn on ratatui's TestBackend: link, chat, models, status,
+//! help, and code mode from request to written file and undo.
+
+use std::time::{Duration, Instant};
+
+use bragi_core::PairState;
+use bragi_tui::app::{App, View};
+use bragi_tui::code::Phase;
+use bragi_tui::session::Session;
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+
+struct Harness {
+    app: App,
+    term: Terminal<TestBackend>,
+    _session: Session,
+}
+
+impl Harness {
+    fn new(root: &std::path::Path) -> Self {
+        let session = Session::demo(None).expect("the demo");
+        let app = App::new(session.core.clone(), &session.home, root.to_path_buf());
+        let term = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        Self { app, term, _session: session }
+    }
+
+    fn draw(&mut self) -> String {
+        self.app.tick();
+        let app = &mut self.app;
+        self.term.draw(|f| bragi_tui::ui::draw(f, app)).unwrap();
+        let buf = self.term.backend().buffer().clone();
+        let mut s = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                s.push_str(buf[(x, y)].symbol());
+            }
+            s.push('\n');
+        }
+        s
+    }
+
+    fn key(&mut self, code: KeyCode) {
+        self.app.on_event(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)));
+        self.draw();
+    }
+
+    fn ctrl(&mut self, c: char) {
+        self.app.on_event(Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)));
+        self.draw();
+    }
+
+    fn typed(&mut self, text: &str) {
+        for c in text.chars() {
+            self.app.on_event(Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)));
+        }
+        self.draw();
+    }
+
+    /// Draws until the screen shows `what` (or `until` holds), failing with the screen after 30 s.
+    fn until(&mut self, what: &str, until: impl Fn(&App) -> bool) -> String {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let screen = self.draw();
+            if screen.contains(what) && until(&self.app) {
+                return screen;
+            }
+            assert!(Instant::now() < deadline, "waited for {what:?}; the screen:\n{screen}\nnotice: {:?}", self.app.notice);
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
+
+#[test]
+fn link_chat_models_status_help_and_code() {
+    let project = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(project.path().join("src")).unwrap();
+    std::fs::write(project.path().join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
+    std::fs::write(project.path().join(".gitignore"), "target/\n").unwrap();
+    std::fs::create_dir_all(project.path().join("target")).unwrap();
+    std::fs::write(project.path().join("target/junk.rs"), "junk").unwrap();
+    let mut h = Harness::new(project.path());
+
+    // Not linked: the link screen. s shows a code, c copies it (OSC 52), the demo device
+    // opens it, and both sides confirm the same check code.
+    let screen = h.until("Link this terminal", |a| a.view == View::Link);
+    assert!(screen.contains("Press s to show a link code"));
+    h.key(KeyCode::Char('s'));
+    let screen = h.until("weirdnet-bragi://", |a| matches!(a.state.pair, PairState::Offering { .. }));
+    assert!(screen.contains("c copies it"));
+    h.key(KeyCode::Char('c'));
+    assert!(h.app.clipboard.first().is_some_and(|c| c.starts_with("weirdnet-bragi://")), "the code went to the clipboard");
+    h.app.clipboard.clear();
+    h.until("Does the other device show this code?", |a| matches!(a.state.pair, PairState::Confirm { .. }));
+    h.key(KeyCode::Char('y'));
+    let screen = h.until("online", |a| a.view == View::Chat && a.state.online && a.state.catalog.models.len() >= 2);
+    assert!(screen.contains("New chat."), "{screen}");
+
+    // Chat: the answer streams in and lands in the chat list.
+    h.typed("Hello from a terminal");
+    h.key(KeyCode::Enter);
+    assert!(h.app.streaming());
+    let screen = h.until("Bragi asks the inference nodes", |a| !a.streaming());
+    assert!(screen.contains("You"));
+    assert!(screen.contains("Hello from a terminal"), "the chat list and transcript show it:\n{screen}");
+
+    // Models: pick the second one; the header says so.
+    h.ctrl('o');
+    let screen = h.until("Pick a model", |a| a.view == View::Models);
+    assert!(screen.contains(bragi_core::demo::WARM_MODEL) && screen.contains(bragi_core::demo::COLD_MODEL));
+    let second = h.app.state.catalog.models[1].id.clone();
+    h.key(KeyCode::Down);
+    h.key(KeyCode::Enter);
+    assert_eq!(h.app.model.as_deref(), Some(second.as_str()));
+    h.until(&format!("model {second}"), |a| a.view == View::Chat);
+    h.key(KeyCode::Char('?'));
+    h.app.model = None;
+
+    // Help lists the keys; status lists nodes and models.
+    let screen = h.until("Keyboard", |a| a.view == View::Help);
+    assert!(screen.contains("Ctrl-L, F2") && screen.contains("/rewrite FILE[:A-B] how"));
+    h.key(KeyCode::Esc);
+    h.ctrl('t');
+    let screen = h.until("Inference nodes (2)", |a| a.view == View::Status);
+    assert!(screen.contains("Online        yes"), "{screen}");
+    h.key(KeyCode::Esc);
+    assert_eq!(h.app.view, View::Chat);
+
+    // Code mode: add the folder (target/ is ignored), rewrite two lines, review, write, undo.
+    h.ctrl('e');
+    h.until("Code suggestions and rewrites", |a| a.view == View::Code);
+    h.typed("/add .");
+    h.key(KeyCode::Enter);
+    let screen = h.until("Context (2 files", |_| true);
+    assert!(screen.contains("src/lib.rs") && !screen.contains("junk.rs"), "{screen}");
+    h.typed("/rewrite src/lib.rs:2-2 explain the sum");
+    h.key(KeyCode::Enter);
+    let screen = h.until("change 1/1", |a| a.code.phase == Phase::Review);
+    assert!(screen.contains("explain the sum") && screen.contains("✓ accepted"), "{screen}");
+    h.key(KeyCode::Char('v'));
+    h.until("│", |a| a.code.side_by_side);
+    h.key(KeyCode::Char('w'));
+    let lib = std::fs::read_to_string(project.path().join("src/lib.rs")).unwrap();
+    assert!(lib.contains(": explain the sum\n    a + b\n"), "{lib}");
+    h.until("Wrote 1 file", |a| a.code.phase == Phase::Compose);
+    h.typed("/undo");
+    h.key(KeyCode::Enter);
+    h.until("Undid the last change", |_| true);
+    assert_eq!(std::fs::read_to_string(project.path().join("src/lib.rs")).unwrap(), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n");
+
+    // A suggestion rejected leaves the file alone.
+    h.typed("tidy this up");
+    h.key(KeyCode::Enter);
+    h.until("change 1/1", |a| a.code.phase == Phase::Review);
+    h.key(KeyCode::Char('n'));
+    h.key(KeyCode::Char('w'));
+    h.until("Nothing accepted", |_| true);
+    assert!(!std::fs::read_to_string(project.path().join("src/lib.rs")).unwrap().contains("//"));
+
+    h.ctrl('q');
+    assert!(h.app.quit);
+}

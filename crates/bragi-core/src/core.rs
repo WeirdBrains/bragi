@@ -322,6 +322,11 @@ impl Core {
         self.inner.cfg.dir.join("identity")
     }
 
+    /// This device has been linked before (it goes online by itself on start).
+    pub fn has_identity(&self) -> bool {
+        Identity::exists(&self.identity_dir())
+    }
+
     pub fn state(&self) -> AppState {
         self.inner.state.borrow().clone()
     }

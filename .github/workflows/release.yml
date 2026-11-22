@@ -70,7 +70,11 @@ jobs:
           tar -tzf dist/bragi-*-unknown-linux-gnu.tar.gz
           sudo apt-get install -y ./dist/bragi_*.deb
           bragi --version
+          bragi-tui --version
           sudo apt-get remove -y bragi
+          sudo apt-get install -y ./dist/bragi-tui_*.deb
+          bragi-tui --version
+          sudo apt-get remove -y bragi-tui
       - uses: actions/upload-artifact@v4
         with:
           name: bragi-linux-${{ matrix.arch }}
@@ -94,7 +98,7 @@ jobs:
           key: release-macos
       - run: scripts/dist-macos.sh
       - name: The universal binary starts
-        run: cd "$RUNNER_TEMP" && tar -xzf "$GITHUB_WORKSPACE"/dist/bragi-*-universal-apple-darwin.tar.gz && ./bragi-*/bragi --version
+        run: cd "$RUNNER_TEMP" && tar -xzf "$GITHUB_WORKSPACE"/dist/bragi-*-universal-apple-darwin.tar.gz && ./bragi-*/bragi --version && ./bragi-*/bragi-tui --version
       - uses: actions/upload-artifact@v4
         with:
           name: bragi-macos-universal
@@ -146,6 +150,10 @@ jobs:
           if ($p.ExitCode -ne 0) { Get-Content msi-install.log -Tail 50; throw "install failed: $($p.ExitCode)" }
           $exe = Join-Path $env:LOCALAPPDATA "Programs\Bragi\bragi.exe"
           if (!(Test-Path $exe)) { throw "bragi.exe not installed at $exe" }
+          $tui = Join-Path $env:LOCALAPPDATA "Programs\Bragi\bragi-tui.exe"
+          if (!(Test-Path $tui)) { throw "bragi-tui.exe not installed at $tui" }
+          & $tui --version
+          if ($LASTEXITCODE -ne 0) { throw "bragi-tui --version failed" }
           $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "uninstall failed: $($p.ExitCode)" }
           if (Test-Path $exe) { throw "bragi.exe left behind" }

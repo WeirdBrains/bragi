@@ -1,6 +1,8 @@
-# Release build of the Windows desktop shell into dist/ for the host architecture (x86_64 or aarch64):
+# Release build of the Windows desktop shell and the terminal app into dist/ for the host architecture
+# (x86_64 or aarch64):
 #   bragi-VER-TRIPLE.exe        the standalone exe
-#   bragi-VER-TRIPLE.zip        the standalone exe with LICENSE.txt and README.md
+#   bragi-tui-VER-TRIPLE.exe    the terminal app's standalone exe (a console program)
+#   bragi-VER-TRIPLE.zip        both exes with LICENSE.txt and README.md
 #   bragi-VER-TRIPLE.msi        per-user installer (WiX 7, packaging/windows/bragi.wxs)
 #   bragi-VER-TRIPLE-setup.exe  the same installer as a WiX 7 Burn bundle (packaging/windows/bundle.wxs)
 # Needs wix.exe 7.x on PATH with WixToolset.UI.wixext and WixToolset.BootstrapperApplications.wixext in the
@@ -21,7 +23,7 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
 $env:RUSTFLAGS = "$env:RUSTFLAGS --remap-path-prefix=$root=C:\build\bragi --remap-path-prefix=$cargoHome=C:\cargo --remap-path-prefix=$env:USERPROFILE=C:\Users\user".Trim()
-cargo build --release --locked -p bragi-desktop
+cargo build --release --locked -p bragi-desktop -p bragi-tui
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $name = "bragi-$ver-$triple"
@@ -32,14 +34,16 @@ $src = Join-Path $stage "src"
 New-Item -ItemType Directory -Force -Path $src | Out-Null
 try {
   Copy-Item (Join-Path $targetDir "release\bragi.exe") (Join-Path $src "bragi.exe")
+  Copy-Item (Join-Path $targetDir "release\bragi-tui.exe") (Join-Path $src "bragi-tui.exe")
   Copy-Item (Join-Path $root "LICENSE") (Join-Path $src "LICENSE.txt")
   Copy-Item (Join-Path $root "README.md") (Join-Path $src "README.md")
   Copy-Item (Join-Path $root "brand\png\windows\bragi.ico") (Join-Path $src "bragi.ico")
 
   Copy-Item (Join-Path $src "bragi.exe") (Join-Path $dist "$name.exe") -Force
+  Copy-Item (Join-Path $src "bragi-tui.exe") (Join-Path $dist "bragi-tui-$ver-$triple.exe") -Force
   $zipDir = Join-Path $stage $name
   New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
-  Copy-Item (Join-Path $src "bragi.exe"), (Join-Path $src "LICENSE.txt"), (Join-Path $src "README.md") $zipDir
+  Copy-Item (Join-Path $src "bragi.exe"), (Join-Path $src "bragi-tui.exe"), (Join-Path $src "LICENSE.txt"), (Join-Path $src "README.md") $zipDir
   Compress-Archive -Path $zipDir -DestinationPath (Join-Path $dist "$name.zip") -Force
 
   # The installer's license pane needs RTF; made from LICENSE so the two never drift.

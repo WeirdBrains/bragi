@@ -13,8 +13,8 @@ license=('BSD-3-Clause')
 depends=('libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2'
          'hicolor-icon-theme' 'glibc' 'gcc-libs')
 optdepends=('vulkan-driver: GPU rendering (mesa or the vendor driver)')
-provides=('bragi')
-conflicts=('bragi' 'bragi-standalone')
+provides=('bragi' 'bragi-tui')
+conflicts=('bragi' 'bragi-standalone' 'bragi-tui')
 options=('!strip' '!debug')
 source_x86_64=("$url/releases/download/v$_ver/bragi-$_ver-x86_64-unknown-linux-gnu.tar.gz")
 source_aarch64=("$url/releases/download/v$_ver/bragi-$_ver-aarch64-unknown-linux-gnu.tar.gz")
@@ -26,6 +26,8 @@ package() {
   local bundle="$srcdir/bragi-$_ver-$CARCH-unknown-linux-gnu"
   test -x "$bundle/bin/bragi"
   install -Dm755 "$bundle/bin/bragi" "$pkgdir/usr/bin/bragi"
+  # The terminal app, from 1.0.0.
+  if [ -x "$bundle/bin/bragi-tui" ]; then install -Dm755 "$bundle/bin/bragi-tui" "$pkgdir/usr/bin/bragi-tui"; fi
   cp -a "$bundle/share" "$pkgdir/usr/"
   install -Dm644 "$bundle/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$bundle/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"

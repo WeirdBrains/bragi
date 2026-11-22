@@ -12,6 +12,9 @@ All notable changes to Bragi are listed here. The format follows
   available from the desktop app with `bragi --serve`, and as the headless `bragi-serve` binary.
 - A VS Code and Cursor extension (`editors/vscode`): inline code suggestions, rewrites with a diff
   to accept or reject, and a chat panel that uses the editor's context.
+- `bragi-tui`, Bragi in a terminal (also over SSH): link with a code, QR code or node address, streaming chat with stop and continue, model picker, node status, keyboard shortcuts with a help screen, and copying through OSC 52.
+- Code suggestions and rewrites in the terminal app: files and folders as context (respecting `.gitignore`), a rewrite of a file or line range, a reviewable diff with per-hunk accept and reject, writes with undo, and `bragi-tui code` for scripts.
+- `bragi-tui` ships in the Linux, macOS and Windows downloads, and as a `bragi-tui` deb, rpm and Arch package without GUI libraries.
 
 ## [0.1.0] - 2026-11-20
 

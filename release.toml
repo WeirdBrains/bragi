@@ -43,7 +43,7 @@ commands = [
 ]
 
 [crates]
-publish = []                    # bragi-core, bragi-desktop and bragi-bridge are publish = false (app crates)
+publish = []                    # bragi-core, bragi-desktop, bragi-bridge and bragi-tui are publish = false (app crates)
 
 [taur]
 org = "WeirdBrains"
@@ -63,9 +63,14 @@ files = [
   "dist/bragi-{debver}-1.aarch64.rpm", "dist/bragi-standalone-{debver}-1.aarch64.rpm",
   "dist/bragi-{pkgver}-1-x86_64.pkg.tar.zst", "dist/bragi-standalone-{pkgver}-1-x86_64.pkg.tar.zst",
   "dist/bragi-{pkgver}-1-aarch64.pkg.tar.zst", "dist/bragi-standalone-{pkgver}-1-aarch64.pkg.tar.zst",
+  "dist/bragi-tui-{version}-x86_64-unknown-linux-gnu.tar.gz", "dist/bragi-tui-{version}-aarch64-unknown-linux-gnu.tar.gz",
+  "dist/bragi-tui_{debver}-1_amd64.deb", "dist/bragi-tui_{debver}-1_arm64.deb",
+  "dist/bragi-tui-{debver}-1.x86_64.rpm", "dist/bragi-tui-{debver}-1.aarch64.rpm",
+  "dist/bragi-tui-{pkgver}-1-x86_64.pkg.tar.zst", "dist/bragi-tui-{pkgver}-1-aarch64.pkg.tar.zst",
   "dist/bragi-{version}-universal-apple-darwin.zip", "dist/bragi-{version}-universal-apple-darwin.dmg",
   "dist/bragi-{version}-universal-apple-darwin.tar.gz",
   "dist/bragi-{version}-*-pc-windows-msvc.zip", "dist/bragi-{version}-*-pc-windows-msvc.exe",
+  "dist/bragi-tui-{version}-*-pc-windows-msvc.exe",
   "dist/bragi-{version}-*-pc-windows-msvc.msi", "dist/bragi-{version}-*-pc-windows-msvc-setup.exe",
   "dist/bragi-{version}-android-*.apk",
   "dist/bragi-{version}-ios-*.ipa",
@@ -84,7 +89,8 @@ channels = ["github", "taur", "nix"]
 assets = ["bragi-{version}-x86_64-unknown-linux-gnu.tar.gz", "bragi-{version}-aarch64-unknown-linux-gnu.tar.gz",
           "bragi-{version}-*-unknown-linux-gnu.zip", "bragi_*_amd64.deb", "bragi-standalone_*_arm64.deb",
           "bragi-*.x86_64.rpm", "bragi-standalone-*.aarch64.rpm", "bragi-*-x86_64.pkg.tar.zst",
-          "bragi-standalone-*-aarch64.pkg.tar.zst", "SHA256SUMS"]
+          "bragi-standalone-*-aarch64.pkg.tar.zst", "bragi-tui-{version}-*-unknown-linux-gnu.tar.gz",
+          "bragi-tui_*_amd64.deb", "bragi-tui-*.x86_64.rpm", "bragi-tui-*-x86_64.pkg.tar.zst", "SHA256SUMS"]
 
 [[platforms]]
 os = "macos"
@@ -100,7 +106,8 @@ arch = ["x86_64", "aarch64"]
 formats = ["zip", "exe", "exe-wix", "msi"]
 channels = ["github"]
 assets = ["bragi-{version}-x86_64-pc-windows-msvc.zip", "bragi-{version}-x86_64-pc-windows-msvc.exe",
-          "bragi-{version}-x86_64-pc-windows-msvc.msi", "bragi-{version}-x86_64-pc-windows-msvc-setup.exe"]
+          "bragi-{version}-x86_64-pc-windows-msvc.msi", "bragi-{version}-x86_64-pc-windows-msvc-setup.exe",
+          "bragi-tui-{version}-x86_64-pc-windows-msvc.exe"]
 
 [[platforms]]
 os = "android"

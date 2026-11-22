@@ -234,7 +234,7 @@ fn attrs(info: &str) -> BTreeMap<String, String> {
 }
 
 /// Drops `  12| ` prefixes when every non-empty line has one (a model copying the numbered view).
-fn strip_numbers(text: &str) -> String {
+pub(crate) fn strip_numbers(text: &str) -> String {
     let numbered = |l: &str| {
         let t = l.trim_start();
         let digits = t.chars().take_while(char::is_ascii_digit).count();
@@ -527,5 +527,33 @@ mod tests {
         assert!(diffs[0].unified().starts_with("--- /dev/null\n"));
         let lines = ProposedEdit { span: Span::Lines(LineRange { start: 1, end: 1 }), ..whole };
         assert!(proposals(d.path(), &[], &[lines]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod demo_tests {
+    use super::*;
+    use crate::demo::{WARM_MODEL, answer_for};
+
+    /// The demo node answers code requests with well-formed edits, so shells can show the whole
+    /// flow without a real model.
+    #[test]
+    fn the_demo_answers_rewrites_and_suggestions() {
+        let files = vec![ContextFile { path: "a.rs".into(), text: "fn a() {\n    one();\n    two();\n}\n".into() }];
+        let task = CodeTask::Rewrite(parse_target("a.rs:2-3").unwrap());
+        let req = CodeRequest { task: task.clone(), instruction: "say hi".into(), files: files.clone() };
+        let reply = answer_for(WARM_MODEL, &build(&req).unwrap()[1].content);
+        let edits = parse_edits(&reply, &task).unwrap();
+        let diffs = proposals(Path::new("."), &files, &edits).unwrap();
+        assert_eq!(diffs[0].new, format!("fn a() {{\n    // {WARM_MODEL}: say hi\n    one();\n    two();\n}}\n"));
+        let req = CodeRequest { task: CodeTask::Suggest, instruction: "tidy".into(), files: files.clone() };
+        let reply = answer_for(WARM_MODEL, &build(&req).unwrap()[1].content);
+        let edits = parse_edits(&reply, &CodeTask::Suggest).unwrap();
+        assert_eq!(edits[0].span, Span::After { line: 0 });
+        assert!(!explanation(&reply).contains("bragi-edit"));
+        let whole = CodeTask::Rewrite(parse_target("a.rs").unwrap());
+        let req = CodeRequest { task: whole.clone(), instruction: "x".into(), files: files.clone() };
+        let edits = parse_edits(&answer_for(WARM_MODEL, &build(&req).unwrap()[1].content), &whole).unwrap();
+        assert_eq!(proposals(Path::new("."), &files, &edits).unwrap()[0].new, format!("// {WARM_MODEL}: x\n{}", files[0].text));
     }
 }
