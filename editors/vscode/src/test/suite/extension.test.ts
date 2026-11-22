@@ -287,6 +287,21 @@ suite('Bragi extension', () => {
     await new Promise((r) => setTimeout(r, 2000));
     shot('02-rewrite-diff');
     await vscode.commands.executeCommand('bragi.rejectRewrite');
+    // A rewrite reviewed hunk by hunk: Accept and Reject over each hunk, the diff beside it.
+    mock.rewrite = twoChanges;
+    try {
+      const h = await editor(twelve, 'plaintext');
+      await vscode.commands.executeCommand('bragi.rewriteFile', 'two changes');
+      await new Promise((r) => setTimeout(r, 2000));
+      shot('04-hunk-review');
+      await vscode.commands.executeCommand('bragi.acceptHunk', h.document.uri, 1);
+      await new Promise((r) => setTimeout(r, 1500));
+      shot('05-hunk-accepted');
+      await vscode.commands.executeCommand('bragi.rejectRewrite');
+    } finally {
+      mock.rewrite = (code: string) => code.toUpperCase();
+    }
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     // The chat panel with an answer.
     await vscode.commands.executeCommand('bragi.openChat');
     await new Promise((r) => setTimeout(r, 2000));
