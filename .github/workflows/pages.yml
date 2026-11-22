@@ -32,6 +32,8 @@ jobs:
         run: dart pub global activate jaspr_cli 0.24.0-beta.1
       - run: dart pub get
       - run: dart analyze
+      - name: References to files, URLs and crates in the site content are links
+        run: python3 tool/check_links.py
       - name: The roadmap pages match roadmap.toml
         run: python3 tool/gen_roadmap.py --check
       - name: Build the static site
@@ -49,7 +51,12 @@ jobs:
             jaspr build --sitemap-domain https://weirdbrains.github.io/bragi
           fi
       - name: Check the output
+        env:
+          CUSTOM_DOMAIN: ${{ vars.CUSTOM_DOMAIN }}
         run: |
+          # No dead internal links (CUSTOM_DOMAIN serves from /, the github.io page from /bragi/)
+          base=/bragi/; [ -z "$CUSTOM_DOMAIN" ] || base=/
+          python3 tool/check_links.py --dist build/jaspr --base "$base"
           test -f build/jaspr/index.html
           test -f build/jaspr/roadmap/index.html
       - uses: actions/upload-pages-artifact@v3

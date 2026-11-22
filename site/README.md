@@ -13,7 +13,7 @@ jaspr build --sitemap-domain https://weirdbrains.github.io/bragi   # github.io b
 
 ## Hosting and the custom domain
 
-Today: https://weirdbrains.github.io/bragi/ (base `/bragi/`).
+Today: <https://weirdbrains.github.io/bragi/> (base `/bragi/`).
 
 Custom domain `bragi.weirdbrains.com` (approved, DNS not added yet). To switch, in order:
 

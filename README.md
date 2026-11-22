@@ -11,7 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B5 in progress (B1 and B2 done, B3 and B4 in progress)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
+Status: **B5 in progress (B1 and B2 done, B3 and B4 in progress)** (see "Bragi milestones" in [Ymir's `docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones)). Pairing, the catalog from one
 inference node, streaming chat with stop and continue, and history that syncs between your devices, on Linux (GPUI) and
 Android (Flutter). Released: v0.1.0 for Linux, macOS, Windows, Android and iOS ([downloads](https://bragi.weirdbrains.com/download/)).
 
@@ -23,10 +23,10 @@ Android (Flutter). Released: v0.1.0 for Linux, macOS, Windows, Android and iOS (
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
 | `app/` | The Flutter app (Android in B1). |
-| `brand/`, `BRAND.md` | Logo, icons, palette and usage rules. |
-| `site/`, `roadmap.toml`, `ROADMAP.md` | The website (Jaspr) and the roadmap it is generated from. |
+| [`brand/`](brand/), [`BRAND.md`](BRAND.md) | Logo, icons, palette and usage rules. |
+| [`site/`](site/), [`roadmap.toml`](roadmap.toml), [`ROADMAP.md`](ROADMAP.md) | The website (Jaspr) and the roadmap it is generated from. |
 | `scripts/desktop-scenario.sh` | Plays the end-to-end scenario in the desktop shell inside Xvfb and takes screenshots. |
-| `third_party/` | Patched copies of published crates (see its README). |
+| [`third_party/`](third_party/) | Patched copies of published crates (see its README). |
 
 ## Building
 
@@ -48,8 +48,8 @@ needed.
 
 Packaging: `scripts/dist-linux.sh`, `dist-macos.sh`, `dist-windows.ps1`, `dist-android.sh` and
 `dist-ios.sh` build each platform's release files into `dist/`, and `.github/workflows/release.yml` runs
-them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see `docs/RELEASES.md`.
+them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see [`docs/RELEASES.md`](docs/RELEASES.md).
 
 ## License
 
-BSD-3-Clause; see `LICENSE`. `third_party/libp2p-swarm` is MIT, from libp2p.
+BSD-3-Clause; see [`LICENSE`](LICENSE). `third_party/libp2p-swarm` is MIT, from [libp2p](https://github.com/libp2p/rust-libp2p).

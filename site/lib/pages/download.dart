@@ -86,6 +86,30 @@ final List<_Row> _rows = [
   ),
 ];
 
+/// Third-party names in the notes link to their sites.
+const _noteLinks = {
+  'F-Droid': 'https://f-droid.org',
+  'Google Play': 'https://play.google.com/store',
+  'AltStore': 'https://altstore.io',
+  'SideStore': 'https://sidestore.io',
+  'Sideloadly': 'https://sideloadly.io',
+  'TestFlight': 'https://developer.apple.com/testflight/',
+  'App Store': 'https://www.apple.com/app-store/',
+};
+
+List<Component> _linked(String text) {
+  final rx = RegExp(_noteLinks.keys.map(RegExp.escape).join('|'));
+  final out = <Component>[];
+  var at = 0;
+  for (final m in rx.allMatches(text)) {
+    if (m.start > at) out.add(Component.text(text.substring(at, m.start)));
+    out.add(a(href: _noteLinks[m.group(0)]!, [Component.text(m.group(0)!)]));
+    at = m.end;
+  }
+  if (at < text.length) out.add(Component.text(text.substring(at)));
+  return out;
+}
+
 class DownloadPage extends StatelessComponent {
   const DownloadPage({super.key});
 
@@ -118,7 +142,7 @@ class DownloadPage extends StatelessComponent {
                     a(href: releaseAsset(name), [Component.text(label)]),
                   ],
                 ]),
-                td([Component.text(note)]),
+                td(_linked(note)),
               ]),
           ]),
         ]),

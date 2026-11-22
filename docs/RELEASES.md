@@ -1,7 +1,7 @@
 # Releasing Bragi
 
 Bragi releases with the shared [Weird Brains](https://weirdbrains.com) release script, vendored as
-`scripts/weirdnet_release.py` and configured in `release.toml`. Never edit the vendored copy.
+`scripts/weirdnet_release.py` and configured in [`release.toml`](../release.toml). Never edit the vendored copy.
 
 ## Steps
 
@@ -17,17 +17,17 @@ Bragi releases with the shared [Weird Brains](https://weirdbrains.com) release s
 5. Update `packaging/arch/bragi-bin` (`pkgver`, `_ver`, both tarballs' sha256 from `SHA256SUMS`,
    `.SRCINFO`) and `packaging/nix/release.json`, then
    `python3 scripts/weirdnet_release.py taur X.Y.Z --dry-run` and again without `--dry-run`.
-6. Bump `latestVersion` in `site/lib/site.dart` and push; check https://bragi.weirdbrains.com/download/.
+6. Bump `latestVersion` in `site/lib/site.dart` and push; check the [download page](https://bragi.weirdbrains.com/download/).
 
 ## What each platform gets
 
 | Platform | Files | Signing |
 | --- | --- | --- |
-| Linux x86_64, ARM64 | `tar.gz`, `zip`; `deb`, `rpm`, Arch `pkg.tar.zst` as `bragi` (desktop entry, icons) and `bragi-standalone` (binary only); TAUR `bragi-bin`; Nix flake (`bragi`, `bragi-standalone`) | none |
+| Linux x86_64, ARM64 | `tar.gz`, `zip`; `deb`, `rpm`, Arch `pkg.tar.zst` as `bragi` (desktop entry, icons) and `bragi-standalone` (binary only); [TAUR](https://pkg.taur.weirdbrains.com/packages/bragi-bin) `bragi-bin`; Nix flake (`bragi`, `bragi-standalone`) | none |
 | macOS (universal) | `Bragi.app` in a `zip` and a `dmg`; the bare binary in a `tar.gz` | ad-hoc only, not notarized |
 | Windows x86_64, ARM64 | standalone `exe` and `zip`; per-user `msi` and a `setup.exe` built with WiX 7 | none |
 | Android | one `apk` per ABI; an `aab` when the release key is set | release key from the `BRAGI_ANDROID_*` secrets, else the debug key (`*-debug-signed.apk`) |
-| iOS | unsigned `ipa` for AltStore, SideStore or Sideloadly | none (you sign it with your own Apple ID) |
+| iOS | unsigned `ipa` for [AltStore](https://altstore.io), [SideStore](https://sidestore.io) or [Sideloadly](https://sideloadly.io) | none (you sign it with your own Apple ID) |
 
 The BSDs are not built: the desktop shell uses GPUI, which does not build there yet, and the phone app is
 Flutter.
@@ -35,7 +35,7 @@ Flutter.
 ## WiX
 
 The Windows installers use WiX Toolset 7, which is licensed under the Open Source Maintenance Fee EULA v1.1
-(https://docs.firegiant.com/wix/osmf/). Weird Brains LLC accepted it on 2026-11-12, so every `wix`
+([terms](https://docs.firegiant.com/wix/osmf/)). Weird Brains LLC accepted it on 2026-11-12, so every `wix`
 command passes `-acceptEula wix7`. The WiX CLI MSI is pinned by version and SHA-256 in the workflow.
 
 ## Android signing
