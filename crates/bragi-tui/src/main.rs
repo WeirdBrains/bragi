@@ -128,7 +128,7 @@ fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>,
             for url in std::mem::take(&mut app.open_urls) {
                 open_url(&url);
             }
-            // The terminal's mouse reporting follows what the app wants (F7 flips it).
+            // The terminal's mouse reporting follows what the app wants (F8 flips it).
             if app.mouse != captured {
                 captured = app.mouse;
                 if captured {
