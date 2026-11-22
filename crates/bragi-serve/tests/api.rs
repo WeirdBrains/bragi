@@ -146,6 +146,10 @@ async fn suggestions_and_rewrites_come_from_the_pool_and_stay_out_of_history() {
     assert!(diff.starts_with("--- a/src/math.rs\n+++ b/src/math.rs\n@@ "), "{diff}");
     assert!(diff.contains("\n-    a - b\n"), "{diff}");
     assert_eq!(rw["stats"]["removed"], 1);
+    let hunks = rw["hunks"].as_array().unwrap();
+    assert_eq!(hunks.len(), 1, "{rw}");
+    assert_eq!(hunks[0]["old_start"], 0, "the hunk starts with its context");
+    assert_eq!(hunks[0]["lines"][1]["tag"], "removed");
 
     let (s, b) = call(&app, "POST", "/v1/code/rewrite", Some(json!({ "context": context(), "instruction": " " }))).await;
     assert_eq!(s, StatusCode::BAD_REQUEST, "{b}");
@@ -273,4 +277,47 @@ async fn code_requests_go_to_the_target_they_name() {
     let asked = mock.requests().into_iter().filter(|r| r.path.ends_with("/chat/completions")).count();
     assert_eq!(asked, 1, "the endpoint answered, not the pool");
     assert!(core.conversations(0, 10).unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn hunks_are_reviewed_and_applied_one_at_a_time() {
+    let d = tempfile::tempdir().unwrap();
+    let core = Core::start(bragi_core::Config { transport: bragi_core::Transport::Memory, ..bragi_core::Config::new(d.path(), "t") }).unwrap();
+    let app = bragi_serve::router(core, TOKEN.into(), PORT);
+    // Two changes far enough apart to be two hunks.
+    let old: String = (1..=12).map(|i| format!("line {i}\n")).collect();
+    let new = old.replace("line 2\n", "LINE 2\n").replace("line 11\n", "line 11\nadded\n");
+
+    let (s, b) = call(&app, "POST", "/v1/code/hunks", Some(json!({ "old": old, "new": new, "path": "a.txt" }))).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let h = json_of(&b);
+    assert_eq!(h["hunks"].as_array().unwrap().len(), 2, "{h}");
+    // The extension's direct-target fallback (editors/vscode/src/test/suite/hunks.test.ts) expects
+    // the same shapes.
+    let shape = |i: usize| ["old_start", "old_len", "new_start", "new_len"].map(|k| h["hunks"][i][k].as_u64().unwrap());
+    assert_eq!(shape(0), [0, 5, 0, 5]);
+    assert_eq!(shape(1), [8, 4, 8, 5]);
+    assert_eq!((h["added"].as_u64(), h["removed"].as_u64()), (Some(2), Some(1)));
+    // The core's own hunks, as the terminal app sees them.
+    let core_hunks = bragi_core::code::FileDiff::compute("a.txt", old.as_str(), new.as_str()).hunks;
+    assert_eq!(h["hunks"], serde_json::to_value(&core_hunks).unwrap());
+
+    // Accept the second hunk only: the first is what is left.
+    let (s, b) = call(&app, "POST", "/v1/code/apply", Some(json!({ "old": old, "new": new, "accepted": [false, true] }))).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let a = json_of(&b);
+    assert_eq!(a["file"].as_str().unwrap(), old.replace("line 11\n", "line 11\nadded\n"));
+    let left = a["remaining"]["hunks"].as_array().unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0]["old_start"], 0);
+    // Accept everything and nothing is left; reject everything and nothing changes.
+    let (_, b) = call(&app, "POST", "/v1/code/apply", Some(json!({ "old": old, "new": new, "accepted": [true, true] }))).await;
+    let a = json_of(&b);
+    assert_eq!(a["file"].as_str().unwrap(), new);
+    assert!(a["remaining"]["hunks"].as_array().unwrap().is_empty());
+    let (_, b) = call(&app, "POST", "/v1/code/apply", Some(json!({ "old": old, "new": new, "accepted": [] }))).await;
+    assert_eq!(json_of(&b)["file"].as_str().unwrap(), old);
+    // These need the token like everything else.
+    let anon = req("POST", "/v1/code/hunks").header("content-type", "application/json");
+    assert_eq!(send(&app, anon, Some(json!({ "old": "", "new": "x" }))).await.0, StatusCode::UNAUTHORIZED);
 }

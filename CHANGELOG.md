@@ -19,6 +19,7 @@ All notable changes to Bragi are listed here. The format follows
   available from the desktop app with `bragi --serve`, and as the headless `bragi-serve` binary.
 - A VS Code and Cursor extension (`editors/vscode`): inline code suggestions, rewrites with a diff
   to accept or reject, and a chat panel that uses the editor's context.
+- Rewrites in the editor extension are reviewed hunk by hunk: Accept and Reject over each hunk, Accept All and Reject All, and the editor's undo takes an accepted hunk back. The hunks come from `bragi serve` (new `/v1/code/hunks` and `/v1/code/apply` routes), the same `bragi_core::code` hunks the terminal app reviews.
 
 ## [0.1.1] - 2026-11-21
 

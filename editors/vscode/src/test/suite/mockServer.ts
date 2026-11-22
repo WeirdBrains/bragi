@@ -2,6 +2,7 @@
 
 import * as http from 'http';
 import { AddressInfo } from 'net';
+import { applyHunks, computeHunks } from '../../hunks';
 
 export interface Seen {
   method: string;
@@ -91,6 +92,11 @@ export class MockServer {
         const target = scope === 'selection' ? ctx.selection : ctx.before + ctx.selection + ctx.after;
         return this.json(res, 200, { code: this.rewrite(target), scope, model: 'gemma-4-e4b' });
       }
+      // bragi serve answers these with bragi-core's FileDiff (tested in crates/bragi-serve).
+      case '/v1/code/hunks':
+        return this.json(res, 200, computeHunks(body.old, body.new));
+      case '/v1/code/apply':
+        return this.json(res, 200, applyHunks(body.old, body.new, body.accepted));
       case '/v1/code/chat': {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         const id = body.conversation ?? 'c-test';
