@@ -16,7 +16,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Not tested**: a real Cursor install; the extension against a real `bragi serve` linked to real Ymir nodes (the Rust tests cover serve against the demo node); macOS and Windows; `bragi --serve` and `bragi serve` on one profile at once (documented as one or the other).
 
-**Left**: full Visual Studio (a different extension model); Marketplace and Open VSX listings (not wanted yet); per-hunk accept in the editor (the core has `FileDiff::apply`; the editor accepts the whole rewrite); file and folder requests from the editor (`CodeRequest`, used by the TUI); the Ymir `docs/DESIGN.md` Bragi milestones need a line for this.
+**Left**: full Visual Studio (a different extension model); Marketplace and Open VSX listings (not wanted yet); per-hunk accept in the editor (the core has `FileDiff::apply`; the editor accepts the whole rewrite); file and folder requests from the editor (`CodeRequest`, used by the TUI); the Bragi milestones in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) need a line for this.
 
 **Next**: the owner's review of the branch.
 
@@ -99,7 +99,7 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 **What's left**:
 - A player for audio files (the card shows the file and saves it).
 - Files larger than a message takes (content roots).
-- The roadmap and Ymir's DESIGN.md were not updated.
+- The roadmap and Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) were not updated.
 
 **What's next**: review of `feature/chat-files`, then LF-16.
 
