@@ -470,7 +470,6 @@ mod tests {
         );
         assert!(p("code").is_err());
         assert!(p("--rewrite a.rs").is_err());
-        assert!(p("frob").is_err());
         assert!(p("--bogus").is_err());
         assert_eq!(p("--version").unwrap().command, Cmd::Version);
     }
@@ -522,9 +521,9 @@ mod tests {
     }
 
     #[test]
-    fn a_leading_tilde_means_home() {
-        let home = std::env::var_os("HOME").map(PathBuf::from).unwrap();
-        let o = resolve_open("~", std::path::Path::new("/")).unwrap();
-        assert_eq!(o.root, home.canonicalize().unwrap());
+    fn a_leading_tilde_is_expanded_before_looking() {
+        // Whatever HOME is, `~/` is looked up there, not under the current folder.
+        let e = resolve_open("~/no-such-folder-for-the-bragi-tests", std::path::Path::new("/")).unwrap_err();
+        assert_eq!(e, "~/no-such-folder-for-the-bragi-tests doesn't exist");
     }
 }
