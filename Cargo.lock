@@ -1059,6 +1059,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "unicode-width",
+ "weirdnet-themes",
 ]
 
 [[package]]
@@ -9475,6 +9476,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73dd85cc5aa7cfb64f9ec433e0957334e1f0176b8ab130895c2a32f1f86f6eb3"
 dependencies = [
  "unicode-segmentation",
+]
+
+[[package]]
+name = "weirdnet-themes"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fd16e15b6f43067f6d2246b30a633476b5756fa23959ca4ef91d4ce59236db2"
+dependencies = [
+ "ratatui",
+ "serde",
+ "thiserror 2.0.21",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]

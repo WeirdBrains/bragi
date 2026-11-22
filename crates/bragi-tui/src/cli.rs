@@ -15,6 +15,11 @@ use crate::session::{Launch, Session};
 pub const USAGE: &str = "\
 usage:
   bragi-tui [--home DIR] [--demo] [--root DIR]     the terminal app (F1 lists its keys)
+      [--theme NAME|FILE.toml] [--mode dark|light|system]
+                                                   its look (weirdnet-themes: bragi, the default,
+                                                   tokyo-night, catppuccin, gruvbox, dracula, nord,
+                                                   one, solarized). NO_COLOR, BRAGI_TUI_COLOR
+                                                   (truecolor|256|16|none) and BRAGI_TUI_ASCII apply
   bragi-tui link [CODE | NODE-ADDRESS] [--yes]     link this terminal: show a code to open on a linked
                                                    device, open a code shown elsewhere, or add a node
                                                    address (ymirctl pool addresses)
@@ -35,6 +40,7 @@ pub struct Args {
     pub launch: Launch,
     pub root: Option<PathBuf>,
     pub command: Cmd,
+    pub theme: crate::theme::Choice,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -79,6 +85,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--home" => out.launch.home = Some(value("--home")?.into()),
             "--root" => out.root = Some(value("--root")?.into()),
             "--demo" => out.launch.demo = true,
+            "--theme" => out.theme.theme = Some(value("--theme")?),
+            "--mode" => out.theme.mode = Some(value("--mode")?),
             "--rewrite" => {
                 task = Some(CodeTaskArg::Rewrite(value("--rewrite")?));
                 code = true;
@@ -367,6 +375,8 @@ mod tests {
     fn parses_commands() {
         assert_eq!(p("").unwrap().command, Cmd::Tui);
         assert!(p("--demo").unwrap().launch.demo);
+        let t = p("--theme nord --mode light").unwrap().theme;
+        assert_eq!((t.theme.as_deref(), t.mode.as_deref()), (Some("nord"), Some("light")));
         assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false });
         assert_eq!(p("link /ip4/1.2.3.4/tcp/1/p2p/X").unwrap().command, Cmd::Link { arg: Some("/ip4/1.2.3.4/tcp/1/p2p/X".into()), yes: false });
         assert_eq!(p("undo --force").unwrap().command, Cmd::Undo { force: true });

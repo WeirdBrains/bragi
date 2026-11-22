@@ -10,5 +10,6 @@ pub mod editor;
 pub mod markdown;
 pub mod session;
 pub mod settings;
+pub mod theme;
 pub mod tree;
 pub mod ui;

@@ -1,6 +1,6 @@
 [package]
 name = "bragi-tui"
-description = "Bragi in a terminal (local or over SSH): link, sessions and folders, endpoints, chat with Markdown and reasoning, attachments, node status and code suggestions and rewrites, all drawn from bragi-core."
+description = "Bragi in a terminal (local or over SSH): link, sessions and folders, endpoints, chat with Markdown and reasoning, attachments, node status and code suggestions and rewrites, all drawn from bragi-core, themed with weirdnet-themes."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -21,6 +21,9 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm",
 tempfile.workspace = true
 tokio.workspace = true
 unicode-width = "0.2"
+# The look: theme files, light/dark and colour depth. Without the default
+# `terminal-background` feature (an OSC 11 query on the tty while the app owns it).
+weirdnet-themes = { version = "0.1.1", default-features = false, features = ["ratatui"] }
 
 [lints]
 workspace = true
