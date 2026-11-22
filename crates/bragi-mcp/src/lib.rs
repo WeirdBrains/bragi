@@ -11,12 +11,15 @@
 //! - Resources: `bragi://status`, `bragi://sessions`, `bragi://sessions/{id}` (Markdown) and
 //!   `bragi://sessions/{id}/files/{name}`.
 //!
+//! - Prompts: [`prompts::PROMPTS`] (review, rewrite, explain, summarize or continue a session).
+//!
 //! Everything goes through [`bragi_core::Core`]; the protocol layer (JSON-RPC, stdio, the HTTP
 //! guard, resources, media content) is `weirdnet-mcp` 0.6.
 
 pub mod cli;
 pub mod code;
 mod collect;
+pub mod prompts;
 pub mod tools;
 
 use std::net::SocketAddr;

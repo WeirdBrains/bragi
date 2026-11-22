@@ -91,6 +91,17 @@ only by you). Delete the file it names (<code>bragi mcp token-path</code>) to ma
 <li>With <code>--allow-writes</code>: <code>bragi_code_apply</code> writes a proposal, or the hunks you pick, and refuses when a file changed since; <code>bragi_code_undo</code> puts the files back (the undo journal is in the Bragi folder, not the project). <code>bragi_file_save</code> saves one of those files into the project folder; it adds <code> (2)</code> to the name rather than replace a file, unless asked to overwrite.</li>
 <li>With <code>--allow-deletes</code>: <code>bragi_session_delete</code> (on every linked device) and <code>bragi_folder_delete</code> (what the folder holds moves up a level).</li>
 </ul>
+<h2 id="prompts">Prompts</h2>
+<p>Prompts are ready-made requests your client fills in and sends to its own model (in Cursor and VS Code, type
+<code>/</code> in the chat; in Claude Desktop, the + menu). Files must be inside the project folder; secrets
+(<code>.env</code>, keys), binaries and big files are refused, as with the code tools.</p>
+<ul>
+<li><code>bragi_review_file</code> (<code>path</code>, optional <code>focus</code>): review a file, or lines of it (<code>src/lib.rs:10-40</code>).</li>
+<li><code>bragi_rewrite</code> (<code>path</code>, <code>instruction</code>): the same request Bragi's own rewrite sends, answered as <code>bragi-edit</code> blocks.</li>
+<li><code>bragi_explain</code> (<code>path</code> or <code>selection</code>, optional <code>language</code>): explain a file, some lines, or pasted code.</li>
+<li><code>bragi_session_summary</code> (<code>session</code>): summarize a Bragi session.</li>
+<li><code>bragi_continue_session</code> (<code>session</code>, optional <code>prompt</code>): a session's last 40 messages as the conversation so far, then your next message.</li>
+</ul>
 <p><strong>Resources:</strong> <code>bragi://status</code>, <code>bragi://sessions</code>, each session as Markdown at
 <code>bragi://sessions/{id}</code>, and its files at <code>bragi://sessions/{id}/files/{file}</code>.</p>
 <p>Bragi is a <a href="https://weirdbrains.com">Weird Brains</a> project. More: <a href="${docs}">documentation index</a>.</p>

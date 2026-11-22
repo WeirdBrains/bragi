@@ -306,3 +306,93 @@ async fn code_suggest_rewrite_apply_and_undo() {
     assert!(fails(&rw, "bragi_code_apply", json!({"proposal": "p-nope"})).await.contains("no proposal"));
     core.shutdown();
 }
+
+async fn prompt(rpc: &Rpc, name: &str, args: Value) -> Value {
+    call(rpc, "prompts/get", json!({"name": name, "arguments": args})).await
+}
+
+/// A prompt's messages; fails the test on an error.
+async fn prompt_ok(rpc: &Rpc, name: &str, args: Value) -> Vec<Value> {
+    let r = prompt(rpc, name, args).await;
+    assert!(r.get("error").is_none(), "{name} failed: {r}");
+    r["result"]["messages"].as_array().unwrap().clone()
+}
+
+/// A prompt's error message; fails the test when it succeeds. Bad arguments are -32602.
+async fn prompt_err(rpc: &Rpc, name: &str, args: Value) -> String {
+    let r = prompt(rpc, name, args).await;
+    assert_eq!(r["error"]["code"], -32602, "{name} should have been refused: {r}");
+    r["error"]["message"].as_str().unwrap().to_string()
+}
+
+fn text(m: &Value) -> &str {
+    m["content"]["text"].as_str().unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn prompts_list_and_get() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (_node, core) = bragi_mcp::cli::demo(&tmp.path().join("bragi")).await.unwrap();
+    let root = tmp.path().join("project");
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/lib.rs"), LIB).unwrap();
+    std::fs::write(root.join(".env"), "TOKEN=x\n").unwrap();
+    std::fs::write(root.join("blob.bin"), [0u8, 1, 2]).unwrap();
+    std::fs::write(tmp.path().join("outside.rs"), "fn x() {}\n").unwrap();
+    let rpc = rpc(&core, &root, false);
+
+    // The capability and the table.
+    let r = call(&rpc, "initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "0"}})).await;
+    assert!(r["result"]["capabilities"]["prompts"].is_object(), "{r}");
+    let r = call(&rpc, "prompts/list", json!({})).await;
+    let list = r["result"]["prompts"].as_array().unwrap();
+    let names: Vec<&str> = list.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(names, ["bragi_review_file", "bragi_rewrite", "bragi_explain", "bragi_session_summary", "bragi_continue_session"]);
+    let rewrite = list.iter().find(|p| p["name"] == "bragi_rewrite").unwrap();
+    assert_eq!(rewrite["title"], "Rewrite code");
+    assert!(rewrite["arguments"].as_array().unwrap().iter().all(|a| a["required"] == true), "{rewrite}");
+
+    // Files: a whole file, some lines, a rewrite in Bragi's edit format, an explanation.
+    let m = prompt_ok(&rpc, "bragi_review_file", json!({"path": "src/lib.rs", "focus": "overflow"})).await;
+    assert_eq!(m[0]["role"], "user");
+    assert!(text(&m[0]).contains("```rust\npub fn add") && text(&m[0]).contains("overflow"), "{}", text(&m[0]));
+    let m = prompt_ok(&rpc, "bragi_review_file", json!({"path": "src/lib.rs:2-2"})).await;
+    assert!(text(&m[0]).contains("lines 2-2 of src/lib.rs") && text(&m[0]).contains("a + b") && !text(&m[0]).contains("pub fn"));
+    let m = prompt_ok(&rpc, "bragi_rewrite", json!({"path": "src/lib.rs:1-3", "instruction": "use checked_add"})).await;
+    let all: String = m.iter().map(text).collect();
+    assert!(all.contains("bragi-edit") && all.contains("use checked_add") && all.contains("src/lib.rs"), "{all}");
+    assert!(m.iter().all(|x| x["role"] == "user" || x["role"] == "assistant"));
+    let m = prompt_ok(&rpc, "bragi_explain", json!({"path": "src/lib.rs"})).await;
+    assert!(text(&m[0]).contains("Explain src/lib.rs"));
+    let m = prompt_ok(&rpc, "bragi_explain", json!({"selection": "x.iter().sum()", "language": "rust"})).await;
+    assert!(text(&m[0]).contains("```rust\nx.iter().sum()\n```"));
+
+    // Bad arguments: missing, outside the root, secrets, binaries, past the end, both or neither.
+    assert!(prompt_err(&rpc, "bragi_review_file", json!({})).await.contains("path"));
+    assert!(prompt_err(&rpc, "bragi_rewrite", json!({"path": "src/lib.rs"})).await.contains("instruction"));
+    assert!(prompt_err(&rpc, "bragi_rewrite", json!({"path": "src/lib.rs", "instruction": "  "})).await.contains("instruction"));
+    assert!(prompt_err(&rpc, "bragi_review_file", json!({"path": "../outside.rs"})).await.contains("outside the project root"));
+    assert!(prompt_err(&rpc, "bragi_review_file", json!({"path": "nope.rs"})).await.contains("nope.rs"));
+    assert!(prompt_err(&rpc, "bragi_explain", json!({"path": ".env"})).await.contains("secret"));
+    assert!(prompt_err(&rpc, "bragi_review_file", json!({"path": "blob.bin"})).await.contains("binary"));
+    assert!(prompt_err(&rpc, "bragi_review_file", json!({"path": "src/lib.rs:2-9"})).await.contains("past the end"));
+    assert!(prompt_err(&rpc, "bragi_explain", json!({})).await.contains("selection"));
+    assert!(prompt_err(&rpc, "bragi_explain", json!({"path": "src/lib.rs", "selection": "x"})).await.contains("not both"));
+    assert!(prompt_err(&rpc, "bragi_nope", json!({})).await.contains("unknown prompt"));
+
+    // Sessions: summary and continuation from a real chat.
+    let r = ok(&rpc, "bragi_chat", json!({"prompt": "what is a pool?"})).await;
+    let session = r["structuredContent"]["session"].as_str().unwrap().to_string();
+    let m = prompt_ok(&rpc, "bragi_session_summary", json!({"session": session})).await;
+    assert!(text(&m[0]).contains("Summarize") && text(&m[0]).contains("what is a pool?"));
+    let m = prompt_ok(&rpc, "bragi_continue_session", json!({"session": session, "prompt": "and a node?"})).await;
+    let roles: Vec<&str> = m.iter().map(|x| x["role"].as_str().unwrap()).collect();
+    assert_eq!(roles, ["user", "assistant", "user"]);
+    assert_eq!(text(&m[0]), "what is a pool?");
+    assert_eq!(text(&m[2]), "and a node?");
+    let m = prompt_ok(&rpc, "bragi_continue_session", json!({"session": session})).await;
+    assert!(text(m.last().unwrap()).contains("Carry on"));
+    assert!(!prompt_err(&rpc, "bragi_session_summary", json!({"session": "nope"})).await.is_empty());
+    assert!(prompt_err(&rpc, "bragi_continue_session", json!({})).await.contains("session"));
+    core.shutdown();
+}

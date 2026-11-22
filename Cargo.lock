@@ -9982,9 +9982,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-mcp"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5680956396892c615245e4404f276b266ef217e8484da7ab9d8537dcd99d19f2"
+checksum = "7e76a01d11ec5feffa37cb305bfd45a3c1637df4cb8a04989fc257eb5da9b727"
 dependencies = [
  "axum",
  "base64 0.22.1",
