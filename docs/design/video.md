@@ -9,6 +9,30 @@ Written for Weird Brains LLC by m3talsmith's agents.
 Attach a video to a message and have any vision model answer about it, play the clip in the chat next to the
 audio player, in all three front ends. Later, hand the whole clip to models that read video natively.
 
+## Which front end ships where
+
+Checked in the repo on 2026-11-22 (README, `scripts/dist-*`, `packaging/`): the desktop is GPUI and only the phones are Flutter.
+
+| Platform | Front end | Evidence |
+|---|---|---|
+| Linux | **GPUI** (`bragi-desktop`, binary `bragi`) plus the terminal app (`bragi-tui`) | `scripts/dist-linux.sh` builds `-p bragi-desktop -p bragi-tui` |
+| macOS | **GPUI** plus the terminal app | `scripts/dist-macos.sh`, same packages, per target |
+| Windows | **GPUI** plus the terminal app | `scripts/dist-windows.ps1`, same packages |
+| Android | **Flutter** (`app/`, over `bragi-bridge`) | `scripts/dist-android.sh` (apk, aab) |
+| iOS | **Flutter** | `scripts/dist-ios.sh` |
+| BSDs | terminal app only (GPUI does not build there yet) | Ymir `docs/DESIGN.md` |
+
+The VS Code extension (`editors/vscode`) is separate and runs wherever VS Code does. Flutter is therefore **not** a desktop front end: no
+Linux or Windows Flutter plugin question exists, and the design below has Flutter on Android and iOS only. (The Flutter app can be built for
+desktop for tests, but nothing ships that way.)
+
+## Decisions (2026-11-22, m3talsmith)
+
+1. **The desktop (GPUI) gets an inline player, with a fallback to the system player** when inline playback cannot handle the clip (codec, size,
+   no decoder). Decided; it is no longer an open question.
+2. **No default frame count or frame size, in Bragi or in Ymir.** How many frames, how large, and how long a soundtrack come from what the
+   chosen model supports. Ymir reports the limits; Bragi plans frames to fit. See "Fitting the clip to the model".
+
 ## What exists today
 
 | Piece | State |
@@ -45,7 +69,7 @@ Options weighed:
 
 | Where | For | Against |
 |---|---|---|
-| **Bragi (client), chosen for phase 1** | The request stays small and already-supported; frames are chosen on the user's device, so the raw clip never leaves it unless the user wants it to (privacy); no ffmpeg needed on any node; the stored message keeps exactly what the model saw (as for images now); works with every pool Bragi can reach, including plain OpenAI endpoints. | Every Bragi platform needs a decoder, including phones. Other OpenAI clients (Cursor, Claude Desktop through `ymirctl mcp`, scripts) get nothing. |
+| **Bragi (client), chosen for phase 1** | The request stays small and already-supported; frames are chosen on the user's device, so the raw clip never leaves it unless the user wants it to (privacy); no ffmpeg needed on any node; the stored message keeps exactly what the model saw (as for images now); works with every pool Bragi can reach, including plain OpenAI endpoints. | Every Bragi platform needs a decoder, including phones. (The chosen planner needs the model's limits from Ymir; see "Fitting the clip to the model".) Other OpenAI clients (Cursor, Claude Desktop through `ymirctl mcp`, scripts) get nothing. |
 | Ymir bridge (server) | Every client of the OpenAI endpoint benefits from a `video_url` part; one ffmpeg, not many. | The clip must travel whole (size, privacy); the node does CPU-heavy decoding on a machine meant for inference; changes what a Ymir node must have installed. |
 | Both, same code | | Needs the shared crate below. |
 
@@ -58,43 +82,80 @@ doc, "Server-side expansion"), which is why the logic belongs in one `weirdnet-m
 
 1. **Probe**: container, duration, width, height, frame rate, audio track present or not. Refuse unreadable, DRM-protected or zero-length files with a clear error.
 2. **Choose timestamps.** One plan, three strategies, all producing a list of times:
-   - `uniform` (default): `fps` frames per second (default 1) capped at `max_frames`; if the cap would be exceeded, spread the cap evenly across the duration instead of truncating the end.
-   - `scene`: frames at scene changes (ffmpeg's `select='gt(scene,T)'`, threshold default 0.3), always including the first frame and, when budget allows, the last; if there are fewer than `min_frames` (default 4), top up uniformly; if more than `max_frames`, keep the strongest changes.
-   - `hybrid`: uniform backbone at a low fps plus scene changes, de-duplicated within 250 ms.
-3. **Extract and shrink.** Decode only those frames (seek, don't decode everything), scale so the long edge is at most `max_edge` (default 768 px, so the image token cost stays predictable), re-encode as JPEG (quality 80) or PNG for screen recordings with flat colour (detected by palette size).
+   Every count below is bounded by the **frame budget** (next section), never by a built-in number.
+   - `uniform` (the default mode): as many evenly spaced frames as the budget allows, at most the user's optional `fps` if set. Spread evenly across the duration instead of truncating the end.
+   - `scene`: frames at scene changes (ffmpeg's `select='gt(scene,T)'`, threshold default 0.3, a detector setting and not a frame count), always including the first frame and, when budget allows, the last; if there are fewer than the budget, top up uniformly; if more, keep the strongest changes.
+   - `hybrid`: a uniform backbone with part of the budget, plus scene changes with the rest, de-duplicated within 250 ms.
+3. **Extract and shrink.** Decode only those frames (seek, don't decode everything), scale to the size the budget gives (the model's own image size where it reports one, else the largest that fits), re-encode as JPEG (quality 80) or PNG for screen recordings with flat colour (detected by palette size).
 4. **Label.** Each frame becomes two parts: a text part `[00:07.5]` and the image part. A leading text part says what the clip is: `Video "name.mp4", 00:42, 6 frames sampled, with sound.` The timestamps let the model say *when* things happen.
-5. **Soundtrack.** If the clip has audio, extract it as mono 16 kHz WAV, capped at `max_audio_seconds` (default 120). Then:
+5. **Soundtrack.** If the clip has audio, extract it as mono 16 kHz WAV, capped by what the model's context or audio limit allows. Then:
    - the chosen model takes audio (`Modalities::AUDIO`): send it as an `input_audio` part;
    - the model does not: **transcribe** it with a speech-to-text model if the pool has one (a Whisper-class model on a node, or a local one), and add the transcript as text parts with timestamps (`[00:03] "…"`). If nothing can transcribe, say so in the leading text part (`sound not included`) and do not fail;
    - the user can switch the soundtrack off.
-6. **Budget.** Estimate tokens before sending (frames × per-image cost for the model, from catalog metadata when known, else a conservative default) and show it in the attach chip. If it exceeds the model's context, reduce `max_frames` and `max_edge` automatically and say so, rather than erroring after the upload.
+6. **Budget.** See the next section. The estimate is shown in the attach chip before sending.
 
 The result is plain `Media::Image` and `Media::Audio` items plus text, so storage, history, sync between devices and
 routing need **no change**. A new `Media::Video { name, duration_ms, frames: Vec<Frame>, audio: Option<..> }` is *only* a
 UI-side grouping so the chat shows one video bubble instead of eight thumbnails; the wire form is the expanded parts.
 
+### Fitting the clip to the model
+
+There is no default frame count, frame size or soundtrack length. The plan is derived from the model the message will go to, using
+metadata Ymir reports in catalog/1 (and in `ymirctl models`); the wish list below names the fields:
+
+| Limit | Comes from | Used for |
+|---|---|---|
+| Context window (tokens), minus room for the prompt, history and the reply | model metadata | the total the frames and transcript may cost |
+| Per-image token cost (as a function of image size, or a fixed cost per image) | model and projector metadata | frames x cost, and the size to scale to |
+| `max_images` per request (or none) | model and backend metadata | a hard ceiling on frames |
+| Preferred or maximum image edge | model and projector metadata | scale size |
+| Audio accepted, and its maximum length | model metadata (`Modalities::AUDIO`, a limit) | soundtrack as audio, its cap, or a transcript |
+| Native video limits (seconds, bytes, frame rate) | model metadata, phase 2 | whether to send the clip whole |
+| Request size the bridge accepts | Ymir (`max_request_bytes`) | a last cap on the bytes sent |
+
+The planner: `frames = min(max_images, (context_budget - text_and_audio_cost) / image_cost)`, then the size is chosen so that frames
+fit the byte limit too, then the timestamps are placed by the chosen mode. If that gives fewer than 2 frames for a clip longer than a
+couple of seconds, the attach says plainly that this model has room for only that much and what the user can do (a model with a longer context, a
+shorter clip, or a trimmed range), instead of sending one poor frame. A short range can be picked with start and end handles, and then
+the budget is spent on that range. The user may *lower* any number (fewer frames, smaller images); they cannot raise one past what the model reports.
+
+**When the metadata is missing** (a node older than the field, a plain OpenAI endpoint, a model never described): Bragi **refuses to
+sample, with a clear message, and offers an explicit per-model override.** The message names what is missing (`this model's image cost and
+context size aren't reported`), says that images alone still work, and offers "set limits for this model" (context tokens, tokens per image,
+max images), stored per model on that device and shown in the chip as a user setting.
+
+Why refuse and not guess, and not probe:
+- A guess is a hidden default under another name. Too high gives an opaque 400 or a silently truncated prompt after the user waited for
+  extraction and upload; too low wastes the model's ability and the user cannot tell why answers are thin.
+- Probing (send growing requests until one fails) costs real tokens and time, may be billed on a third-party endpoint, can fail for reasons other
+  than limits, and is not repeatable. Not chosen.
+- Asking Ymir already happens first: for a pool model the answer comes from the catalog and nothing is asked of the user. Refusing only
+  applies when the answer does not exist, and the override gives the user's own, visible number, which is not a default.
+- Single images keep working as today (they have fixed limits already), so a missing field never breaks what exists.
+
 ### Settings
 
-Per attach (a sheet on the attach chip) with defaults in settings and in the config file:
+Per attach (a sheet on the attach chip) with preferences in settings and in the config file. None of these sets a frame count or size; they only narrow what the model's limits allow:
 
 | Setting | Default | Notes |
 |---|---|---|
 | `video.mode` | `uniform` | `uniform`, `scene`, `hybrid` |
-| `video.fps` | `1.0` | 0.1 to 4 |
-| `video.max_frames` | `16` | hard cap `64`; lower on small-context models |
+| `video.fps` | unset | optional ceiling in frames per second; unset means the budget decides |
+| `video.max_frames` | unset | optional, may only lower the model's limit |
 | `video.scene_threshold` | `0.3` | |
-| `video.max_edge` | `768` | pixels |
+| `video.max_edge` | unset | optional, may only lower the model's size |
 | `video.audio` | `auto` | `auto` (audio part, else transcript), `transcript`, `off` |
-| `video.max_audio_seconds` | `120` | |
+| `video.range` | whole clip | start and end, set per attach |
+| `video.limits.<model>` | none | the explicit override for a model with no reported metadata |
 | `video.keep_original` | `true` | keep the clip file with the message for playback, else keep only the frames |
 
 ### Limits
 
 - Clip: at most 500 MiB read from disk and at most 10 minutes, refused with a message that says what to do (trim it). The limit is on what we *read*, not on what we send.
-- What travels is bounded by frames and audio, not by the clip: with the defaults, at most 16 JPEGs of about 60 to 150 KiB each plus 120 s of 16 kHz mono WAV (about 3.7 MiB) fits inside the infer/2 request. If the total would exceed the request budget, drop frames evenly, then shorten the audio, in that order. The 5 MiB image and 10 MiB audio limits still apply to each part.
-- `MAX_PER_MESSAGE` counts a video as **one** attachment, with its own cap of one video per message in phase 1.
+- What travels is bounded by frames and audio, not by the clip: the frames and soundtrack the plan produces are sized to fit the request limit Ymir reports (`max_request_bytes`) as well as the model's limits. If the total would still exceed it, drop frames evenly, then shorten the audio, in that order. The 5 MiB image and 10 MiB audio limits still apply to each part.
+- `MAX_PER_MESSAGE` counts a video as **one** attachment, and phase 1 takes one video per message (the budget is per request, and two clips would split it).
 - Stored with the message: frames and transcript always (they are what the model saw); the original clip only if `keep_original` is on (needed for the player), under a size cap, stored in the same attachment store the audio clips use, and deleted with the message.
-- Extraction runs with a time limit (60 s plus the clip's duration), on a background thread, with a cancel, and a progress line (`Reading frames 5/16`).
+- Extraction runs with a time limit (60 s plus the clip's duration), on a background thread, with a cancel, and a progress line (`Reading frames 5/N`, N from the plan).
 
 ### Playback
 
@@ -102,11 +163,11 @@ The player mirrors the audio player's split: **the core decides, the shell draws
 
 - `bragi-core::video::Deck` is the audio `Deck` generalised: one media clip plays at a time (audio or video, so a video stops a playing voice note and the other way round), and it stops when the chat on screen changes. Probably the same type with a `Kind`.
 - Time keeping (`clock`, `seek_ms`) is reused as is. The audio clock stays the master clock for a video that has sound (picture follows sound, dropping frames), and a wall clock when it has none.
-- **Flutter GUI** (`app/lib/src/`): a `VideoClipBackend` beside `ClipBackend`, backed by the platform player through the `video_player` plugin (or `media_kit` if it is the better fit for Linux and Windows; to be decided in a spike, since `video_player` has no Linux and weak Windows support). Controls: play and pause, seek bar, elapsed and total, mute, fullscreen, and a "frames the model saw" strip (tap a frame to jump there). A scripted backend for tests, like the audio one.
-- **Desktop shell (GPUI)**: decode through ffmpeg (the `decode` pattern, a `video-decode` feature) into frames on a texture, with the audio output as the clock. Same controls. If that costs too much for the first cut, the desktop opens the clip in the system player and shows the thumbnail strip in the chat; that is an accepted fallback.
-- **TUI**: no inline playback. The chat shows a bubble `video  name.mp4  00:42  16 frames  sound` and the frame strip as small half-block or kitty-graphics images where the terminal supports it (detected the way the rest of the TUI does), else just the line. `Enter` on it opens the clip in the system player (`xdg-open`, `open`, `start`) and `f` shows the sampled frames list with timestamps. The TUI **attach** is the file picker (LF-34) accepting video extensions.
+- **Desktop shell (GPUI), Linux, macOS and Windows: an inline player, decided 2026-11-22.** Decode through ffmpeg (the `decode` pattern, a `video-decode` feature) into frames drawn as a texture, with the audio output as the master clock. Controls: play and pause, seek bar, elapsed and total, mute, fullscreen, and a "frames the model saw" strip (click a frame to jump there). **Fallback to the system player** (`xdg-open`, `open`, `start`) when inline playback can't handle the clip: no decoder for its codec, a size or frame rate the decoder can't keep up with (measured on the first seconds, not guessed), or ffmpeg missing. The chat then shows the thumbnail strip and an "Open in system player" button, and says why. The same fallback is used if the player fails mid-clip.
+- **Flutter app, Android and iOS only**: a `VideoClipBackend` beside `ClipBackend` (`app/lib/src/audio.dart`), over the platform player (the `video_player` plugin, which supports both phones' native players). Same controls, the frame strip, and a scripted backend for tests like the audio one. There is no Flutter desktop player to build.
+- **TUI**: no inline playback. The chat shows a bubble `video  name.mp4  00:42  N frames  sound` and the frame strip as small half-block or kitty-graphics images where the terminal supports it (detected the way the rest of the TUI does), else just the line. `Enter` on it opens the clip in the system player (`xdg-open`, `open`, `start`) and `f` shows the sampled frames list with timestamps. The TUI **attach** is the file picker (LF-34) accepting video extensions.
 - **VS Code extension** (`editors/vscode`): attach through the file dialog or drag and drop onto the chat webview; the webview plays the clip with an HTML5 `<video>` element (VS Code's webview is Chromium, so mp4/H.264 and webm usually play, other codecs show the thumbnail strip and "open externally"). Sampling stays in `bragi-core`, reached through the bridge or the `bragi serve` local server (the extension already talks to it), so the extension never needs its own ffmpeg.
-- **Android and iOS**: attach from the gallery or camera; the platform's decoders do the sampling (MediaMetadataRetriever / AVAssetImageGenerator through a Flutter plugin or a small FFI shim), so no ffmpeg is bundled on phones. Playback through the platform player.
+- **Android and iOS**: attach from the gallery or camera; the platform's decoders do the sampling (MediaMetadataRetriever / AVAssetImageGenerator through a Flutter plugin or a small FFI shim, behind `bragi-bridge`), so no ffmpeg is bundled on phones. Playback through the platform player.
 
 ### Attach and chat UI
 
@@ -131,7 +192,7 @@ A `FrameSource` trait (`probe`, `frames_at(times)`, `audio(range)`) hides which 
 
 ### Platform packaging
 
-Per shared AGENTS.md, Bragi ships on every platform. How video lands on each:
+Per shared AGENTS.md, Bragi ships on every platform. How video lands on each (desktops are GPUI plus the terminal app, phones are Flutter):
 
 | Platform | Package | ffmpeg |
 |---|---|---|
@@ -165,34 +226,35 @@ Where ffmpeg is missing, video attach is hidden or disabled with one sentence of
 - Core unit tests with `FakeSource`: timestamp planning for every mode (cap respected, first frame always included, even spread, short clips, one-frame clips, no audio track), budget reduction, limits and refusals, the leading text and timestamp labels, and the soundtrack branches (audio part, transcript, neither). Property tests: output times are sorted, unique and inside the duration.
 - Capability tests with the demo inference node: a video to a text-only model is refused with the switch suggestion; to a vision model without audio it goes as frames plus a transcript; to one with audio it goes with `input_audio`.
 - `FfmpegCli` tests against tiny generated fixtures (a few KiB, made at test time with ffmpeg `lavfi`, so none are checked in), marked `#[ignore]` unless ffmpeg is present, and run on CI where it is installed. A hostile-file test: a text file named `.mp4`, a truncated file, a `concat` playlist referencing another file.
-- Player tests like the audio ones: `Deck` single-clip rule across audio and video, the scripted Flutter backend, seeking, stop on chat change.
-- Flutter widget tests (demo mode) for the chip, the settings sheet and the video bubble; the TUI scripted test for the bubble and the frame list; an extension test for drag and drop and the webview message.
+- Player tests like the audio ones: `Deck` single-clip rule across audio and video, the scripted Flutter backend, the desktop fallback to the system player when decoding fails, seeking, stop on chat change.
+- Flutter widget tests (demo mode, phones) and GPUI view tests for the chip, the settings sheet and the video bubble; the TUI scripted test for the bubble and the frame list; an extension test for drag and drop and the webview message.
 - A live check, before release of the feature: a real clip on real vision models through a real pool (Gemma 4 E4B, Qwen3.6-35B-A3B) and a check that the answer cites the right timestamps.
 - Never in tests: the real network, a real identity, a model download.
 
 ### Milestones
 
 1. **V1**: `FrameSource` with `FfmpegCli`, the sampling plan, `Media::Video` grouping, attach in `bragi-core` and `bragi-mcp` (`video` input, `video_probe`, `video_frames`), settings. No player yet; the chat shows the frame strip.
-2. **V2**: Flutter player and attach UI; TUI bubble, picker and open-externally; the VS Code attach and webview player.
-3. **V3**: desktop (GPUI) inline player; Android and iOS platform decoders.
+2. **V2**: GPUI desktop inline player with the system-player fallback, and its attach UI; TUI bubble, picker and open-externally; the VS Code attach and webview player.
+3. **V3**: Flutter (Android and iOS) player and platform decoders.
 4. **V4**: native video when Ymir's capability flag exists (Ymir doc, phase 2): the sampler becomes the fallback.
 5. Packaging for each platform is part of V1 (bundled ffmpeg builds), not an afterthought.
 
 ### Open questions
 
-- Flutter video plugin on Linux and Windows (`video_player` vs `media_kit`): spike first.
-- Whether the GPUI desktop gets an inline player in the first cut or the system-player fallback.
-- Default `max_frames` per model: 16 is a guess; measure on Gemma 4 E4B and Qwen3.6 for quality against latency.
+- GPUI's way to draw video frames and keep them in sync with the audio clock (a texture per frame, or the platform's video layer): spike first. The system-player fallback covers the gap while it is built.
+- Which models' metadata the first release can fill in: it depends on Ymir reporting the limits (Ymir doc, milestone 1). Until then video is refused with the clear message and the override, and single images are unaffected.
 - Whether a speech-to-text model joins the standard model catalog (it needs a place in `weirdnet-model`).
+
+(Decided 2026-11-22 and removed from here: desktop inline player with a system-player fallback; no default frame count.)
 
 ## Weirdnet wish list
 
 Bragi does not create or modify `weirdnet-*` crates. For the Weirdnet Lead, in order of use:
 
-1. **`weirdnet-media` (new crate).** The generic half of this design: `probe`, the `FrameSource` trait with an ffmpeg-CLI implementation, `plan_frames(duration, FrameSpec) -> Vec<Time>` (uniform, scene, hybrid), frame scaling and JPEG/PNG encoding, soundtrack extraction to mono 16 kHz WAV, hardened ffmpeg invocation (`protocol_whitelist`, time and memory limits, cancel), locating the binary (`FFMPEG` env var, beside the executable, `PATH`), and a fake source for tests. Mouser's `mouser-media` is the nearest existing code; the player's clock logic (`Deck`, `clock`, `seek_ms`) now lives in Bragi core and is also generic.
+1. **`weirdnet-media` (new crate).** The generic half of this design: `probe`, the `FrameSource` trait with an ffmpeg-CLI implementation, `plan_frames(duration, Budget) -> Vec<Time>` (uniform, scene, hybrid; the `Budget` is derived from the model's reported limits, with no built-in count) and `Budget::from_limits(limits)`, frame scaling and JPEG/PNG encoding, soundtrack extraction to mono 16 kHz WAV, hardened ffmpeg invocation (`protocol_whitelist`, time and memory limits, cancel), locating the binary (`FFMPEG` env var, beside the executable, `PATH`), and a fake source for tests. Mouser's `mouser-media` is the nearest existing code; the player's clock logic (`Deck`, `clock`, `seek_ms`) now lives in Bragi core and is also generic.
 2. **`weirdnet-agent`: a video part and modality.** `ContentPart::video(..)`, `Modalities::VIDEO`, `infer/2` carrying it, and the capability flag in `Capabilities` and catalog `inputs` (Ymir doc, phase 2). Until then Bragi uses image and audio parts only. A part that carries a content-root reference (not inline bytes) would also fix the size problem for good (this is the same gap as in LF-12).
 3. **`weirdnet-openai`: `video_url` handling** in the OpenAI bridge: accept `video_url` (data URL) and map it to the video part when the model takes it, else expand it to frames and sound through `weirdnet-media` when the operator turns that on.
-4. **`weirdnet-model`: speech-to-text and video capability metadata.** A Whisper-class model in the catalog with a `transcribe` role, and per-model fields for video support, frames-per-clip and per-image token cost, so the budget estimate stops guessing.
+4. **`weirdnet-model`: speech-to-text and video capability metadata.** A Whisper-class model in the catalog with a `transcribe` role, and per-model limit fields: context window, per-image token cost (by size), `max_images`, preferred image edge, audio maximum length and native video limits. These are what the frame budget is computed from; there is no fallback default, so a model without them gets the refuse-with-override path.
 5. **`weirdnet-backends`: a transcription call** (audio in, text with timestamps out) next to chat, embeddings and the rest, plus passing a video part to backends that take one.
 6. **`weirdnet-mcp`: image and audio content blocks in tool results** (if not there already) so `video_frames` can return frames as images.
 7. **Bundling help:** an LGPL ffmpeg build recipe or crate (`weirdnet-ffmpeg`?) that every WeirdBrains app can ship, with the notices and a reproducible build, so Mouser, Morph and Bragi do not each carry one.
