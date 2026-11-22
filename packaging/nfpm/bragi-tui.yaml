@@ -1,0 +1,32 @@
+# nfpm config for `bragi-tui`: the terminal app only (no GUI libraries), for servers and SSH sessions.
+# Used by scripts/dist-linux.sh, which sets BRAGI_VERSION, BRAGI_ARCH and BRAGI_BUNDLE. `bragi` and
+# `bragi-standalone` ship bragi-tui too, so it conflicts with them.
+name: bragi-tui
+arch: "${BRAGI_ARCH}"
+platform: linux
+version: "${BRAGI_VERSION}"
+version_schema: semver
+release: "1"
+section: net
+priority: optional
+maintainer: "Weird Brains LLC <m3talsmith@gmail.com>"
+vendor: "Weird Brains LLC"
+homepage: https://github.com/WeirdBrains/bragi
+license: BSD-3-Clause
+description: "Chat with your private AI cloud (Ymir) over Weirdnet, in a terminal (also over SSH), with code suggestions and rewrites."
+conflicts: [bragi, bragi-standalone, bragi-bin]
+overrides:
+  deb:
+    depends: [libc6, libgcc-s1]
+  rpm:
+    depends: [glibc, libgcc]
+  archlinux:
+    depends: [glibc, gcc-libs]
+contents:
+  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
+    dst: /usr/bin/bragi-tui
+    file_info: {mode: 0755}
+  - src: "${BRAGI_BUNDLE}/LICENSE"
+    dst: /usr/share/licenses/bragi-tui/LICENSE
+  - src: "${BRAGI_BUNDLE}/README.md"
+    dst: /usr/share/doc/bragi-tui/README.md
