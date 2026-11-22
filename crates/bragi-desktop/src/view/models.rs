@@ -363,7 +363,16 @@ impl BragiView {
         let t = self.theme;
         let m = &self.models;
         let heading = |s: &str| div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(s.to_string());
-        let mut col = div().id("models-screen").track_scroll(&self.models_scroll).flex().flex_col().gap(px(10.)).px(px(24.)).py(px(16.)).flex_1().overflow_y_scroll();
+        let mut col = div()
+            .id("models-screen")
+            .track_scroll(&self.models_scroll)
+            .flex()
+            .flex_col()
+            .gap(px(10.))
+            .px(px(24.))
+            .py(px(16.))
+            .flex_1()
+            .overflow_y_scroll();
         col = col.child(div().text_size(px(18.)).child("Models"));
         if let Some(e) = &m.error {
             col = col.child(div().text_size(px(12.)).text_color(rgb(t.error)).child(e.clone()));
@@ -385,7 +394,9 @@ impl BragiView {
         match &m.nodes {
             None => col = col.child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child("Asking your devices…")),
             Some(nodes) if nodes.is_empty() => {
-                col = col.child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child("No other devices on your roster yet. Link a Ymir node first."))
+                col = col.child(
+                    div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child("No other devices on your roster yet. Link a Ymir node first."),
+                )
             }
             Some(nodes) => {
                 for n in nodes {
@@ -463,9 +474,7 @@ impl BragiView {
                 .flex()
                 .flex_row()
                 .gap(px(8.))
-                .child(
-                    div().flex_1().px(px(10.)).py(px(8.)).rounded(px(6.)).bg(rgb(t.surface)).text_size(px(13.)).child(self.models_query.clone()),
-                )
+                .child(div().flex_1().px(px(10.)).py(px(8.)).rounded(px(6.)).bg(rgb(t.surface)).text_size(px(13.)).child(self.models_query.clone()))
                 .child(
                     self.button("models-search", if m.searching { "Searching…" } else { "Search" }, true)
                         .when(blocked || m.searching, |d| d.opacity(0.5))
@@ -474,10 +483,8 @@ impl BragiView {
         );
         // Where a pull goes.
         let mut picker = div().flex().flex_row().flex_wrap().items_center().gap(px(6.)).child(div().text_size(px(12.)).child("Pull to"));
-        let mut options: Vec<(SharedString, String, Pick)> = vec![
-            ("pick-auto".into(), "Auto (best fit)".into(), Pick::Auto),
-            ("pick-all".into(), "All nodes".into(), Pick::All),
-        ];
+        let mut options: Vec<(SharedString, String, Pick)> =
+            vec![("pick-auto".into(), "Auto (best fit)".into(), Pick::Auto), ("pick-all".into(), "All nodes".into(), Pick::All)];
         for n in m.ready_nodes() {
             options.push((format!("pick-{}", n.node.peer).into(), n.node.label.clone(), Pick::Node(n.node.peer.clone())));
         }
@@ -550,18 +557,23 @@ impl BragiView {
 
     fn pull_card(&self, p: &PullView, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
-        let mut card = div().id("pull-card").flex().flex_col().gap(px(6.)).p(px(10.)).rounded(px(8.)).border_1().border_color(rgb(t.border)).bg(rgb(t.surface)).child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .child(div().flex_1().text_size(px(14.)).child(format!("Pulling {}", p.repo)))
-                .child(if p.finished {
+        let mut card = div()
+            .id("pull-card")
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .p(px(10.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(rgb(t.border))
+            .bg(rgb(t.surface))
+            .child(div().flex().flex_row().items_center().child(div().flex_1().text_size(px(14.)).child(format!("Pulling {}", p.repo))).child(
+                if p.finished {
                     self.button("pull-dismiss", "Dismiss", false).h(px(26.)).on_click(cx.listener(|v, _, _, cx| v.models_dismiss_pull(cx)))
                 } else {
                     self.button("pull-cancel", "Cancel", false).h(px(26.)).on_click(cx.listener(|v, _, _, cx| v.models_cancel_pull(cx)))
-                }),
-        );
+                },
+            ));
         if let Some(c) = &p.chosen {
             card = card.child(div().id("pull-chosen").text_size(px(12.)).text_color(rgb(t.text_secondary)).child(format!("Auto picked {c}")));
         }
@@ -573,7 +585,12 @@ impl BragiView {
                     .flex()
                     .flex_col()
                     .gap(px(3.))
-                    .child(div().text_size(px(12.)).child(format!("{label}: {} of {} ({:.0}%)", human_bytes(*done), human_bytes(*total), frac * 100.0)))
+                    .child(div().text_size(px(12.)).child(format!(
+                        "{label}: {} of {} ({:.0}%)",
+                        human_bytes(*done),
+                        human_bytes(*total),
+                        frac * 100.0
+                    )))
                     .child(
                         div()
                             .h(px(6.))
@@ -592,7 +609,10 @@ impl BragiView {
         }
         if p.finished && p.results.iter().any(|r| r.contains("serving")) {
             card = card.child(
-                div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("Serving lasts until the node restarts. To keep it, add it to that node's node.toml."),
+                div()
+                    .text_size(px(11.))
+                    .text_color(rgb(t.text_secondary))
+                    .child("Serving lasts until the node restarts. To keep it, add it to that node's node.toml."),
             );
         }
         card
@@ -636,7 +656,10 @@ impl BragiView {
                                 .flex_row()
                                 .gap(px(8.))
                                 .justify_end()
-                                .child(self.button("models-remove-cancel", "Cancel", false).on_click(cx.listener(|v, _, _, cx| v.models_cancel_remove(cx))))
+                                .child(
+                                    self.button("models-remove-cancel", "Cancel", false)
+                                        .on_click(cx.listener(|v, _, _, cx| v.models_cancel_remove(cx))),
+                                )
                                 .child(danger.on_click(cx.listener(|v, _, _, cx| v.models_confirm_remove(cx)))),
                         ),
                 )

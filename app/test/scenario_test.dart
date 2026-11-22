@@ -296,6 +296,8 @@ void main() {
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
     await until('the drawer', () => shown('delete-conv-${target.id}'));
     await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.byKey(Key('delete-conv-${target.id}')));
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(Key('delete-conv-${target.id}')));
     await until('the confirm', () => shown('delete-confirm'));
     await tester.tap(find.byKey(const Key('delete-confirm')));
@@ -305,6 +307,8 @@ void main() {
     await tester.tap(find.byKey(const Key('settings')));
     await until('settings', () => shown('clear-history'));
     await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.byKey(const Key('clear-history')));
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const Key('clear-history')));
     await until('the typed confirm', () => shown('clear-confirm-text'));
     await tester.tap(find.byKey(const Key('clear-confirm')));

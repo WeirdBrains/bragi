@@ -209,20 +209,40 @@ pub enum ModelsEvent {
     /// The repos found (the Hub's order: most downloaded first).
     Hits(Vec<HubHit>),
     /// How one repo fits one node; one event per repo and node.
-    Fit { repo: String, fit: NodeFit },
+    Fit {
+        repo: String,
+        fit: NodeFit,
+    },
     /// The search is over; `error` when the Hub could not be reached.
-    SearchDone { error: Option<String> },
+    SearchDone {
+        error: Option<String>,
+    },
     /// `auto` picked a node, and why.
-    Chosen { node: ModelNode, model: String, size: u64, why: String },
-    Progress { peer: String, label: String, done: u64, total: u64 },
+    Chosen {
+        node: ModelNode,
+        model: String,
+        size: u64,
+        why: String,
+    },
+    Progress {
+        peer: String,
+        label: String,
+        done: u64,
+        total: u64,
+    },
     /// One node finished (or failed) its pull.
-    NodeDone { node: ModelNode, result: Result<PulledView, String> },
+    NodeDone {
+        node: ModelNode,
+        result: Result<PulledView, String>,
+    },
     /// Every node is done.
     Done,
     /// The user cancelled; partial files stay on the nodes and pulling again resumes them.
     Cancelled,
     /// The pull could not start (no node fits, none answered, ...).
-    Failed { message: String },
+    Failed {
+        message: String,
+    },
 }
 
 /// Words a person can act on for a node's error.
@@ -448,11 +468,7 @@ impl ModelsManager {
                 Ok((nodes[i].clone(), fit.model.id.clone(), fit.model.size, reason))
             }
             None if fits.is_empty() => Err(format!("no node answered: {}", why.join("; "))),
-            None => Err(format!(
-                "nothing in {} fits any node{}",
-                spec.repo,
-                spec.model.as_deref().map(|m| format!(" ({m})")).unwrap_or_default()
-            )),
+            None => Err(format!("nothing in {} fits any node{}", spec.repo, spec.model.as_deref().map(|m| format!(" ({m})")).unwrap_or_default())),
         }
     }
 

@@ -11,12 +11,35 @@ import 'package:bragi/src/api.dart';
 import 'package:bragi/src/app.dart';
 import 'package:bragi/src/controller.dart';
 import 'package:bragi/src/models_ui.dart';
+import 'package:bragi/src/theme.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+
+/// A device whose nodes all refuse it: only the models calls exist.
+class _RefusedApi implements BragiApi {
+  @override
+  Future<List<NodeModelsView>> modelsOverview() async => [
+    NodeModelsView(
+      node: const ModelNodeView(peer: 'peer-a', label: 'forge'),
+      status: 'needs_owner_device',
+      detail: 'needs-admission',
+      models: const [],
+    ),
+    NodeModelsView(
+      node: const ModelNodeView(peer: 'peer-b', label: 'anvil'),
+      status: 'needs_owner_device',
+      detail: 'unknown-device',
+      models: const [],
+    ),
+  ];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+}
 
 void main() {
   late Directory dir;
@@ -36,6 +59,20 @@ void main() {
     expect(humanBytes(512), '512 B');
     expect(humanBytes(4400000000), '4.4 GB');
     expect(statusLabel('needs_owner_device'), 'Needs owner device');
+  });
+
+  testWidgets('a device the nodes refuse sees why, and nothing can change', (tester) async {
+    tester.view.physicalSize = const Size(900, 1200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final c = BragiController(_RefusedApi());
+    await tester.pumpWidget(MaterialApp(theme: bragiTheme(), home: ModelsScreen(controller: c)));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('models-owner-banner')), findsOneWidget);
+    expect(find.text('Needs owner device'), findsNWidgets(2));
+    expect(find.textContaining('needs-admission'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.byKey(const Key('models-search'))).onPressed, isNull);
+    expect(tester.widget<TextField>(find.byKey(const Key('models-search-field'))).enabled, isFalse);
   });
 
   testWidgets('models: nodes, search with fit badges, pull with progress and cancel, auto, remove', (tester) async {

@@ -1248,7 +1248,12 @@ impl BragiView {
             .when(self.models_open, |d| d.child(self.models_screen(cx)))
             .when(!self.settings_open && !self.models_open, |d| d.child(self.message_area(body, cx)))
             .children(self.undo_bar(cx))
-            .children(self.notice.clone().filter(|_| !self.models_open).map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
+            .children(
+                self.notice
+                    .clone()
+                    .filter(|_| !self.models_open)
+                    .map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)),
+            )
             .children(self.state.node_search.line().map(|line| {
                 let color = match &self.state.node_search {
                     NodeSearch::Found { .. } => t.success,

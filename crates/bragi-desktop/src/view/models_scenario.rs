@@ -44,7 +44,8 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
         v.toggle_models(cx);
     })
     .map_err(e)?;
-    wait_for(this, cx, "the nodes", |v| v.models.nodes.as_ref().is_some_and(|n| n.iter().filter(|n| n.status == NodeStatus::Ready).count() == 2)).await?;
+    wait_for(this, cx, "the nodes", |v| v.models.nodes.as_ref().is_some_and(|n| n.iter().filter(|n| n.status == NodeStatus::Ready).count() == 2))
+        .await?;
     if this.read_with(cx, |v, _| v.models.owner_blocked()).map_err(e)? {
         return Err("a linked device was not admitted by the nodes".into());
     }
@@ -102,20 +103,27 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
         v.models_pull("demo/Tiny-Chat-GGUF", cx)
     })
     .map_err(e)?;
-    wait_for(this, cx, "the pull", |v| v.models.pull.as_ref().is_some_and(|p| p.finished && p.results.iter().any(|r| r.contains("downloaded and serving")))).await?;
-    if !this.read_with(cx, |v, _| v.models.pull.as_ref().and_then(|p| p.chosen.clone()).is_some_and(|c| c.contains("can hold the biggest one"))).map_err(e)? {
+    wait_for(this, cx, "the pull", |v| {
+        v.models.pull.as_ref().is_some_and(|p| p.finished && p.results.iter().any(|r| r.contains("downloaded and serving")))
+    })
+    .await?;
+    if !this
+        .read_with(cx, |v, _| v.models.pull.as_ref().and_then(|p| p.chosen.clone()).is_some_and(|c| c.contains("can hold the biggest one")))
+        .map_err(e)?
+    {
         return Err("auto did not say why".into());
     }
-    wait_for(this, cx, "the list", |v| v.models.nodes.iter().flatten().any(|n| n.models.iter().any(|m| m.id == "Tiny-Chat-Q8_0" && m.served_as.is_some()))).await?;
+    wait_for(this, cx, "the list", |v| {
+        v.models.nodes.iter().flatten().any(|n| n.models.iter().any(|m| m.id == "Tiny-Chat-Q8_0" && m.served_as.is_some()))
+    })
+    .await?;
     scroll_to(cx, 0.)?;
     cx.background_executor().timer(Duration::from_millis(300)).await;
     shot(cx, "44-models-pulled").await;
 
     // Remove asks first; Cancel keeps it, Remove deletes it.
     let (peer, id) = this
-        .read_with(cx, |v, _| {
-            v.models.nodes.iter().flatten().find_map(|n| n.models.first().map(|m| (n.node.peer.clone(), m.id.clone())))
-        })
+        .read_with(cx, |v, _| v.models.nodes.iter().flatten().find_map(|n| n.models.first().map(|m| (n.node.peer.clone(), m.id.clone()))))
         .map_err(e)?
         .ok_or("nothing to remove")?;
     this.update(cx, |v, cx| v.models_ask_remove(&peer, &id, cx)).map_err(e)?;
@@ -129,7 +137,10 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
         v.models_confirm_remove(cx)
     })
     .map_err(e)?;
-    wait_for(this, cx, "the removal", |v| v.models.nodes.iter().flatten().all(|n| n.models.is_empty()) && v.models.notice.as_deref().is_some_and(|n| n.contains("freed"))).await?;
+    wait_for(this, cx, "the removal", |v| {
+        v.models.nodes.iter().flatten().all(|n| n.models.is_empty()) && v.models.notice.as_deref().is_some_and(|n| n.contains("freed"))
+    })
+    .await?;
     shot(cx, "46-models-removed").await;
     this.update(cx, |v, cx| v.toggle_models(cx)).map_err(e)?;
     println!("bragi-scenario: models");

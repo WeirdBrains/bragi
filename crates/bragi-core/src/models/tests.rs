@@ -156,7 +156,10 @@ async fn a_named_node_and_all_nodes() {
     spec.serve = false;
     let ev = pull(&f, spec).await;
     // The small node's best is the 4 kB one; the repo's best fit is picked on that node.
-    assert!(ev.iter().any(|e| matches!(e, ModelsEvent::NodeDone { node, result: Ok(p) } if node.label == "small" && p.id == "n-Q4_0" && !p.served)), "{ev:?}");
+    assert!(
+        ev.iter().any(|e| matches!(e, ModelsEvent::NodeDone { node, result: Ok(p) } if node.label == "small" && p.id == "n-Q4_0" && !p.served)),
+        "{ev:?}"
+    );
     let ev = pull(&f, PullSpec::new("o/n", PullTarget::All)).await;
     let done: Vec<_> = ev
         .iter()
@@ -179,10 +182,7 @@ async fn a_named_node_and_all_nodes() {
 async fn a_node_that_refuses_reports_it_without_stopping_the_others() {
     let f = fixture(Duration::ZERO, "me");
     let ev = pull(&f, PullSpec::new("o/n", PullTarget::Node("peer-locked".into()))).await;
-    assert!(
-        ev.iter().any(|e| matches!(e, ModelsEvent::NodeDone { result: Err(m), .. } if m.contains("only devices linked to its owner"))),
-        "{ev:?}"
-    );
+    assert!(ev.iter().any(|e| matches!(e, ModelsEvent::NodeDone { result: Err(m), .. } if m.contains("only devices linked to its owner"))), "{ev:?}");
     // Not the owner at all: every node refuses.
     let f = fixture(Duration::ZERO, "stranger");
     let ev = pull(&f, PullSpec::new("o/n", PullTarget::Auto)).await;
@@ -241,4 +241,23 @@ async fn remove_needs_a_confirm_and_frees_the_space() {
 fn sizes_read_like_sentences() {
     assert_eq!(human_bytes(512), "512 B");
     assert_eq!(human_bytes(4_400_000_000), "4.4 GB");
+}
+
+/// A real, read-only search of the Hugging Face Hub from this device (no node involved). Run by hand:
+/// `cargo test -p bragi-core --lib live_hub_search -- --ignored --nocapture`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the internet"]
+async fn live_hub_search() {
+    let dialer: Arc<dyn Dialer> = Arc::new(MemoryDialer::new());
+    let mgr = ModelsManager::new(ModelsClient::new(dialer), Arc::new(Vec::new), weirdnet_model::store::HUB);
+    let (tx, rx) = unbounded_channel();
+    mgr.search("DeepSeek-V4-Pro-Qwen3.5-9B", 30, &tx).await;
+    drop(tx);
+    let ev = drain(rx).await;
+    let ModelsEvent::Hits(hits) = &ev[0] else { panic!("{ev:?}") };
+    for h in hits {
+        println!("{} ({} downloads, {} likes)", h.repo, h.downloads, h.likes);
+    }
+    assert!(hits.iter().any(|h| h.repo == "mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-GGUF"), "{hits:?}");
+    assert_eq!(ev.last(), Some(&ModelsEvent::SearchDone { error: None }));
 }

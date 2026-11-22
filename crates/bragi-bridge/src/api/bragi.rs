@@ -1182,14 +1182,9 @@ fn models_event_view(e: bragi_core::ModelsEvent) -> ModelsEventView {
             ModelsEventView { kind: "progress".into(), node: Some(ModelNodeView { peer, label }), done, total, ..base }
         }
         E::NodeDone { node, result } => match result {
-            Ok(p) => ModelsEventView {
-                kind: "node_done".into(),
-                node: Some(node_view(&node)),
-                model: Some(p.id),
-                size: p.size,
-                served: p.served,
-                ..base
-            },
+            Ok(p) => {
+                ModelsEventView { kind: "node_done".into(), node: Some(node_view(&node)), model: Some(p.id), size: p.size, served: p.served, ..base }
+            }
             Err(m) => ModelsEventView { kind: "node_done".into(), node: Some(node_view(&node)), text: Some(m), ..base },
         },
         E::Done => ModelsEventView { kind: "done".into(), ..base },

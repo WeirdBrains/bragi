@@ -728,11 +728,21 @@ pub fn hub_url() -> String {
                     "mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-GGUF",
                     18_420,
                     212,
-                    &[("DeepSeek-V4-Pro-Qwen3.5-9B.Q4_K_M.gguf", 5_600_000_000), ("DeepSeek-V4-Pro-Qwen3.5-9B.Q6_K.gguf", 7_500_000_000), ("DeepSeek-V4-Pro-Qwen3.5-9B.Q8_0.gguf", 9_790_000_000)],
+                    &[
+                        ("DeepSeek-V4-Pro-Qwen3.5-9B.Q4_K_M.gguf", 5_600_000_000),
+                        ("DeepSeek-V4-Pro-Qwen3.5-9B.Q6_K.gguf", 7_500_000_000),
+                        ("DeepSeek-V4-Pro-Qwen3.5-9B.Q8_0.gguf", 9_790_000_000),
+                    ],
                 ),
                 MockRepo::new("unsloth/Qwen3-14B-GGUF", 912_300, 640, &[("Qwen3-14B-Q4_K_M.gguf", 9 * GB), ("Qwen3-14B-Q8_0.gguf", 15_700_000_000)]),
-                MockRepo::new("bartowski/gemma-3-27b-it-GGUF", 301_800, 388, &[("gemma-3-27b-it-Q4_K_M.gguf", 16_500_000_000), ("gemma-3-27b-it-Q8_0.gguf", 28_700_000_000)]),
-                MockRepo::new("demo/Tiny-Chat-GGUF", 42, 3, &[("Tiny-Chat-Q4_K_M.gguf", 3_000_000), ("Tiny-Chat-Q8_0.gguf", 5_000_000)]).downloadable(),
+                MockRepo::new(
+                    "bartowski/gemma-3-27b-it-GGUF",
+                    301_800,
+                    388,
+                    &[("gemma-3-27b-it-Q4_K_M.gguf", 16_500_000_000), ("gemma-3-27b-it-Q8_0.gguf", 28_700_000_000)],
+                ),
+                MockRepo::new("demo/Tiny-Chat-GGUF", 42, 3, &[("Tiny-Chat-Q4_K_M.gguf", 3_000_000), ("Tiny-Chat-Q8_0.gguf", 5_000_000)])
+                    .downloadable(),
             ],
             Duration::from_millis(60),
         )
