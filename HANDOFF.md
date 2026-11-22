@@ -2,27 +2,6 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
-## 2026-11-21: per-hunk accept and reject in the editor extension (branch `feature/extension-hunks`, not merged)
-
-**What changed**
-- [`crates/bragi-serve`](crates/bragi-serve/src/lib.rs): `POST /v1/code/hunks` (the hunks between the document and a proposal) and `POST /v1/code/apply` (the document with only the accepted hunks, and what is left to review), both straight from `bragi_core::code::FileDiff` ([`code/diff.rs`](crates/bragi-core/src/code/diff.rs)), the same hunks and `FileDiff::apply` the TUI's code mode uses. `/v1/code/rewrite` also returns `hunks`.
-- The extension's rewrites ([`rewrite.ts`](editors/vscode/src/rewrite.ts)) are a review:
-  - CodeLenses: Accept (+added −removed) and Reject over each hunk, and a summary, Accept All and Reject All at the top. The removed lines are marked, an end-of-line hint and a hover show what comes in, and the diff opens beside the editor.
-  - Accepting a hunk is one minimal edit to the document, so the editor's undo (and redo) takes it back, and the hunk comes back for review, even after Accept All.
-  - The user's own edits while reviewing go into the proposal too where the two agree (through the unchanged lines), so they never show up as hunks to undo.
-  - Commands `bragi.acceptHunk` / `bragi.rejectHunk` (Ctrl+Alt+Y / Ctrl+Alt+N, the hunk at the cursor) and `bragi.showRewriteDiff` ([`package.json`](editors/vscode/package.json)). A lens from before the hunks changed does nothing.
-- The direct target has no Bragi behind it, so [`hunks.ts`](editors/vscode/src/hunks.ts) works hunks out the same way; [`hunks.test.ts`](editors/vscode/src/test/suite/hunks.test.ts) and [`api.rs`](crates/bragi-serve/tests/api.rs) check the same shapes.
-
-**Commits** on `feature/extension-hunks`, off `main` at `3de0499`, one slice each: `46792c8` (the serve routes), `525866b` (the review in the extension), `031be97` (its tests), `e7e2f0e` (the screenshots), then this entry.
-
-**Checks**: `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace (new `hunks_are_reviewed_and_applied_one_at_a_time`), `flutter analyze`, the Flutter tests in demo mode, the extension's lint, and its tests in a downloaded VS Code under Xvfb (`env -i`, throwaway HOME and profile) against a mock `bragi serve`: hunk by hunk with lenses, undo and redo of an accepted hunk, Reject, Accept All and its undo, and an edit of yours during the review. 27 extension tests pass. Screenshots from that run: `04-hunk-review` and `05-hunk-accepted` (with the earlier inline suggestion, rewrite and chat ones). One `flutter test` run failed in `settings_test.dart` (a snackbar check, with `/tmp` out of quota on the build machine); it passed on the rerun, and the app is not changed here.
-
-**Not tested**: a real Cursor install; against a real `bragi serve` (the Rust tests cover the routes); very large files (each change asks `bragi serve` for the hunks again).
-
-**Left**: the diff tab's title keeps the hunk count it opened with; the diff editor shows lenses only with VS Code's `diffEditor.codeLens` on, so the review lives in the editor beside it; added lines are a hint and a hover, not shown inline; undoing your own typing during a review is taken as a change of yours, not of the proposal; Reject has no undo (Reject All drops the review).
-
-**Next**: the owner's review of the branch.
-
 ## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
 
 **What changed**
@@ -65,6 +44,38 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 - Neither the desktop nor Flutter uses the crate yet.
 
 **Next:** move the extra roles into weirdnet-themes once it has them, and drop the adapter's stand-ins.
+
+## 2026-11-22: merges of the audio player, terminal polish, MCP server and per-hunk review
+
+**What changed**: four branches are on `main`, merged one at a time with `--no-ff`.
+- `feature/audio-player`: [`crates/bragi-core/src/audio.rs`](crates/bragi-core/src/audio.rs), [`crates/bragi-desktop/src/audio.rs`](crates/bragi-desktop/src/audio.rs), [`app/lib/src/audio.dart`](app/lib/src/audio.dart). Clean merge.
+- `feature/tui-polish`: the terminal app's look on the weirdnet-themes adapter ([`crates/bragi-tui/src/theme.rs`](crates/bragi-tui/src/theme.rs)). Conflict only in this file; kept both entries.
+- `feature/bragi-mcp`: [`bragi mcp`](crates/bragi-mcp/src/lib.rs). Conflicts in this file and [`crates/bragi-desktop/Cargo.toml`](crates/bragi-desktop/Cargo.toml) (kept `decode`, `cpal` and `bragi-mcp`). After `feature/tui-path` landed, [`main.rs`](crates/bragi-desktop/src/main.rs) checks `mcp` before the terminal hand-off (`wants_mcp`, with a test).
+- `feature/extension-hunks`: per-hunk review in [`editors/vscode`](editors/vscode/src/rewrite.ts). Conflict only in this file.
+
+**Checks** (each merge): `cargo fmt --check`, build, `clippy -D warnings` and `cargo test --workspace` pass; `flutter analyze` passes. `flutter test` needs `BRAGI_BRIDGE_LIB`; the known flaky "settings and sessions" test failed twice on the tui-polish merge (the only failure) and passed on the others. The extension's own npm tests were not rerun here; CI covers them.
+
+
+## 2026-11-21: per-hunk accept and reject in the editor extension (branch `feature/extension-hunks`, not merged)
+
+**What changed**
+- [`crates/bragi-serve`](crates/bragi-serve/src/lib.rs): `POST /v1/code/hunks` (the hunks between the document and a proposal) and `POST /v1/code/apply` (the document with only the accepted hunks, and what is left to review), both straight from `bragi_core::code::FileDiff` ([`code/diff.rs`](crates/bragi-core/src/code/diff.rs)), the same hunks and `FileDiff::apply` the TUI's code mode uses. `/v1/code/rewrite` also returns `hunks`.
+- The extension's rewrites ([`rewrite.ts`](editors/vscode/src/rewrite.ts)) are a review:
+  - CodeLenses: Accept (+added −removed) and Reject over each hunk, and a summary, Accept All and Reject All at the top. The removed lines are marked, an end-of-line hint and a hover show what comes in, and the diff opens beside the editor.
+  - Accepting a hunk is one minimal edit to the document, so the editor's undo (and redo) takes it back, and the hunk comes back for review, even after Accept All.
+  - The user's own edits while reviewing go into the proposal too where the two agree (through the unchanged lines), so they never show up as hunks to undo.
+  - Commands `bragi.acceptHunk` / `bragi.rejectHunk` (Ctrl+Alt+Y / Ctrl+Alt+N, the hunk at the cursor) and `bragi.showRewriteDiff` ([`package.json`](editors/vscode/package.json)). A lens from before the hunks changed does nothing.
+- The direct target has no Bragi behind it, so [`hunks.ts`](editors/vscode/src/hunks.ts) works hunks out the same way; [`hunks.test.ts`](editors/vscode/src/test/suite/hunks.test.ts) and [`api.rs`](crates/bragi-serve/tests/api.rs) check the same shapes.
+
+**Commits** on `feature/extension-hunks`, off `main` at `3de0499`, one slice each: `46792c8` (the serve routes), `525866b` (the review in the extension), `031be97` (its tests), `e7e2f0e` (the screenshots), then this entry.
+
+**Checks**: `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace (new `hunks_are_reviewed_and_applied_one_at_a_time`), `flutter analyze`, the Flutter tests in demo mode, the extension's lint, and its tests in a downloaded VS Code under Xvfb (`env -i`, throwaway HOME and profile) against a mock `bragi serve`: hunk by hunk with lenses, undo and redo of an accepted hunk, Reject, Accept All and its undo, and an edit of yours during the review. 27 extension tests pass. Screenshots from that run: `04-hunk-review` and `05-hunk-accepted` (with the earlier inline suggestion, rewrite and chat ones). One `flutter test` run failed in `settings_test.dart` (a snackbar check, with `/tmp` out of quota on the build machine); it passed on the rerun, and the app is not changed here.
+
+**Not tested**: a real Cursor install; against a real `bragi serve` (the Rust tests cover the routes); very large files (each change asks `bragi serve` for the hunks again).
+
+**Left**: the diff tab's title keeps the hunk count it opened with; the diff editor shows lenses only with VS Code's `diffEditor.codeLens` on, so the review lives in the editor beside it; added lines are a hint and a hover, not shown inline; undoing your own typing during a review is taken as a change of yours, not of the proposal; Reject has no undo (Reject All drops the review).
+
+**Next**: the owner's review of the branch.
 
 ## 2026-11-21: LF-12 follow-up, the audio player on chat file cards (branch only)
 
