@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1087565777;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -763948500;
 
 // Section: executor
 
@@ -237,6 +237,32 @@ fn wire__crate__api__bragi__chat_event_view_default_impl(
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok = Ok::<_, ()>(crate::api::bragi::ChatEventView::default())?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__chat_files_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "chat_files",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::chat_files(api_id)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -715,6 +741,33 @@ fn wire__crate__api__bragi__endpoints_impl(
         },
     )
 }
+fn wire__crate__api__bragi__file_bytes_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "file_bytes",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_conversation = <String>::sse_decode(&mut deserializer);
+            let api_file = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::file_bytes(api_conversation, api_file)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__bragi__folders_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -762,6 +815,34 @@ fn wire__crate__api__bragi__follow_chat_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::bragi::follow_chat(api_request_id, api_sink)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__follow_models_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "follow_models",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_run_id = <String>::sse_decode(&mut deserializer);
+            let api_sink =
+                <StreamSink<crate::api::bragi::ModelsEventView, flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::follow_models(api_run_id, api_sink)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -864,6 +945,145 @@ fn wire__crate__api__bragi__markdown_json_impl(
                 let output_ok = Ok::<_, ()>(crate::api::bragi::markdown_json(api_text, api_streaming))?;
                 std::result::Result::Ok(output_ok)
             })())
+        },
+    )
+}
+fn wire__crate__api__bragi__models_event_view_default_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "models_event_view_default",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Ok::<_, ()>(crate::api::bragi::ModelsEventView::default())?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__models_overview_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "models_overview",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::bragi::models_overview().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__models_pull_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "models_pull",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_repo = <String>::sse_decode(&mut deserializer);
+            let api_model = <Option<String>>::sse_decode(&mut deserializer);
+            let api_target = <String>::sse_decode(&mut deserializer);
+            let api_serve = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::models_pull(api_repo, api_model, api_target, api_serve)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__models_remove_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "models_remove",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_peer = <String>::sse_decode(&mut deserializer);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            let api_confirmed = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::bragi::models_remove(api_peer, api_id, api_confirmed).await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__models_search_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "models_search",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_query = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::models_search(api_query)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
         },
     )
 }
@@ -1273,6 +1493,34 @@ fn wire__crate__api__bragi__resumed_impl(
             move |context| {
                 transform_result_sse::<_, String>((move || {
                     let output_ok = crate::api::bragi::resumed()?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__bragi__save_file_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "save_file",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_conversation = <String>::sse_decode(&mut deserializer);
+            let api_file = <String>::sse_decode(&mut deserializer);
+            let api_dest = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::save_file(api_conversation, api_file, api_dest)?;
                     std::result::Result::Ok(output_ok)
                 })())
             }
@@ -1754,6 +2002,14 @@ impl SseDecode for StreamSink<crate::api::bragi::ChatEventView, flutter_rust_bri
     }
 }
 
+impl SseDecode for StreamSink<crate::api::bragi::ModelsEventView, flutter_rust_bridge::for_generated::SseCodec> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <String>::sse_decode(deserializer);
+        return StreamSink::deserialize(inner);
+    }
+}
+
 impl SseDecode for StreamSink<crate::api::bragi::StateView, flutter_rust_bridge::for_generated::SseCodec> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1941,6 +2197,32 @@ impl SseDecode for f64 {
     }
 }
 
+impl SseDecode for crate::api::bragi::FileView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_messageId = <String>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_path = <Option<String>>::sse_decode(deserializer);
+        let mut var_mime = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_origin = <String>::sse_decode(deserializer);
+        let mut var_preview = <Option<String>>::sse_decode(deserializer);
+        return crate::api::bragi::FileView {
+            id: var_id,
+            message_id: var_messageId,
+            name: var_name,
+            path: var_path,
+            mime: var_mime,
+            size: var_size,
+            kind: var_kind,
+            origin: var_origin,
+            preview: var_preview,
+        };
+    }
+}
+
 impl SseDecode for crate::api::bragi::FolderView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1948,6 +2230,18 @@ impl SseDecode for crate::api::bragi::FolderView {
         let mut var_name = <String>::sse_decode(deserializer);
         let mut var_parent = <Option<String>>::sse_decode(deserializer);
         return crate::api::bragi::FolderView { id: var_id, name: var_name, parent: var_parent };
+    }
+}
+
+impl SseDecode for crate::api::bragi::HubHitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_repo = <String>::sse_decode(deserializer);
+        let mut var_downloads = <u64>::sse_decode(deserializer);
+        let mut var_likes = <u64>::sse_decode(deserializer);
+        let mut var_gated = <bool>::sse_decode(deserializer);
+        let mut var_updated = <Option<String>>::sse_decode(deserializer);
+        return crate::api::bragi::HubHitView { repo: var_repo, downloads: var_downloads, likes: var_likes, gated: var_gated, updated: var_updated };
     }
 }
 
@@ -2013,6 +2307,18 @@ impl SseDecode for Vec<crate::api::bragi::EndpointView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::bragi::FileView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::FileView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::bragi::FolderView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2020,6 +2326,18 @@ impl SseDecode for Vec<crate::api::bragi::FolderView> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::bragi::FolderView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::bragi::HubHitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::HubHitView>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2061,6 +2379,18 @@ impl SseDecode for Vec<crate::api::bragi::ModelView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::bragi::NodeModelsView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::NodeModelsView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2073,6 +2403,18 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::api::bragi::QuantFitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::QuantFitView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::bragi::SessionView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2080,6 +2422,18 @@ impl SseDecode for Vec<crate::api::bragi::SessionView> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::bragi::SessionView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::bragi::StoredModelView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::StoredModelView>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -2126,6 +2480,7 @@ impl SseDecode for crate::api::bragi::MessageView {
         let mut var_standin = <Option<String>>::sse_decode(deserializer);
         let mut var_resumes = <u32>::sse_decode(deserializer);
         let mut var_attachments = <Vec<crate::api::bragi::AttachmentView>>::sse_decode(deserializer);
+        let mut var_files = <Vec<crate::api::bragi::FileView>>::sse_decode(deserializer);
         let mut var_tools = <Vec<String>>::sse_decode(deserializer);
         let mut var_agent = <bool>::sse_decode(deserializer);
         let mut var_atMs = <i64>::sse_decode(deserializer);
@@ -2144,10 +2499,20 @@ impl SseDecode for crate::api::bragi::MessageView {
             standin: var_standin,
             resumes: var_resumes,
             attachments: var_attachments,
+            files: var_files,
             tools: var_tools,
             agent: var_agent,
             at_ms: var_atMs,
         };
+    }
+}
+
+impl SseDecode for crate::api::bragi::ModelNodeView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_peer = <String>::sse_decode(deserializer);
+        let mut var_label = <String>::sse_decode(deserializer);
+        return crate::api::bragi::ModelNodeView { peer: var_peer, label: var_label };
     }
 }
 
@@ -2174,6 +2539,71 @@ impl SseDecode for crate::api::bragi::ModelView {
             vision: var_vision,
             audio: var_audio,
         };
+    }
+}
+
+impl SseDecode for crate::api::bragi::ModelsEventView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_kind = <String>::sse_decode(deserializer);
+        let mut var_hits = <Vec<crate::api::bragi::HubHitView>>::sse_decode(deserializer);
+        let mut var_repo = <Option<String>>::sse_decode(deserializer);
+        let mut var_fit = <Option<crate::api::bragi::NodeFitView>>::sse_decode(deserializer);
+        let mut var_node = <Option<crate::api::bragi::ModelNodeView>>::sse_decode(deserializer);
+        let mut var_model = <Option<String>>::sse_decode(deserializer);
+        let mut var_text = <Option<String>>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_done = <u64>::sse_decode(deserializer);
+        let mut var_total = <u64>::sse_decode(deserializer);
+        let mut var_served = <bool>::sse_decode(deserializer);
+        return crate::api::bragi::ModelsEventView {
+            kind: var_kind,
+            hits: var_hits,
+            repo: var_repo,
+            fit: var_fit,
+            node: var_node,
+            model: var_model,
+            text: var_text,
+            size: var_size,
+            done: var_done,
+            total: var_total,
+            served: var_served,
+        };
+    }
+}
+
+impl SseDecode for crate::api::bragi::NodeFitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_node = <crate::api::bragi::ModelNodeView>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        let mut var_verdict = <String>::sse_decode(deserializer);
+        let mut var_best = <Option<String>>::sse_decode(deserializer);
+        let mut var_bestSize = <u64>::sse_decode(deserializer);
+        let mut var_usableBytes = <u64>::sse_decode(deserializer);
+        let mut var_quants = <Vec<crate::api::bragi::QuantFitView>>::sse_decode(deserializer);
+        return crate::api::bragi::NodeFitView {
+            node: var_node,
+            status: var_status,
+            detail: var_detail,
+            verdict: var_verdict,
+            best: var_best,
+            best_size: var_bestSize,
+            usable_bytes: var_usableBytes,
+            quants: var_quants,
+        };
+    }
+}
+
+impl SseDecode for crate::api::bragi::NodeModelsView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_node = <crate::api::bragi::ModelNodeView>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        let mut var_models = <Vec<crate::api::bragi::StoredModelView>>::sse_decode(deserializer);
+        return crate::api::bragi::NodeModelsView { node: var_node, status: var_status, detail: var_detail, models: var_models };
     }
 }
 
@@ -2204,6 +2634,28 @@ impl SseDecode for Option<i64> {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<i64>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::bragi::ModelNodeView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::bragi::ModelNodeView>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<crate::api::bragi::NodeFitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::api::bragi::NodeFitView>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -2265,6 +2717,18 @@ impl SseDecode for crate::api::bragi::PairView {
     }
 }
 
+impl SseDecode for crate::api::bragi::QuantFitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_quant = <Option<String>>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_footprint = <u64>::sse_decode(deserializer);
+        let mut var_fits = <bool>::sse_decode(deserializer);
+        return crate::api::bragi::QuantFitView { id: var_id, quant: var_quant, size: var_size, footprint: var_footprint, fits: var_fits };
+    }
+}
+
 impl SseDecode for crate::api::bragi::SessionView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2306,6 +2770,18 @@ impl SseDecode for crate::api::bragi::StateView {
             node_search: var_nodeSearch,
             node_search_line: var_nodeSearchLine,
         };
+    }
+}
+
+impl SseDecode for crate::api::bragi::StoredModelView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_complete = <bool>::sse_decode(deserializer);
+        let mut var_servedAs = <Option<String>>::sse_decode(deserializer);
+        let mut var_state = <Option<String>>::sse_decode(deserializer);
+        return crate::api::bragi::StoredModelView { id: var_id, size: var_size, complete: var_complete, served_as: var_servedAs, state: var_state };
     }
 }
 
@@ -2386,54 +2862,63 @@ fn pde_ffi_dispatcher_primary_impl(
         1 => wire__crate__api__bragi__add_endpoint_impl(port, ptr, rust_vec_len, data_len),
         6 => wire__crate__api__bragi__bind_session_impl(port, ptr, rust_vec_len, data_len),
         8 => wire__crate__api__bragi__chat_event_view_default_impl(port, ptr, rust_vec_len, data_len),
-        9 => wire__crate__api__bragi__clear_history_impl(port, ptr, rust_vec_len, data_len),
-        10 => wire__crate__api__bragi__continue_answer_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__bragi__conversation_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__bragi__conversations_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__bragi__create_folder_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__bragi__delete_conversation_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__bragi__delete_conversations_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__bragi__delete_endpoint_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__bragi__delete_folder_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__bragi__delete_message_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__bragi__demo_answer_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__bragi__demo_fail_next_answer_after_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__bragi__edit_endpoint_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__bragi__edit_link_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__bragi__endpoint_models_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__bragi__endpoints_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__bragi__folders_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__bragi__links_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__bragi__move_endpoint_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__bragi__move_folder_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__bragi__react_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__bragi__remove_link_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__bragi__rename_folder_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__bragi__send_to_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__bragi__sessions_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__bragi__set_session_folder_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__bragi__targets_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__bragi__test_endpoint_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__bragi__test_endpoint_address_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        9 => wire__crate__api__bragi__chat_files_impl(port, ptr, rust_vec_len, data_len),
+        10 => wire__crate__api__bragi__clear_history_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__bragi__continue_answer_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__bragi__conversation_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__bragi__conversations_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__bragi__create_folder_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__bragi__delete_conversation_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__bragi__delete_conversations_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__bragi__delete_endpoint_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__bragi__delete_folder_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__bragi__delete_message_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__bragi__demo_answer_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__bragi__demo_fail_next_answer_after_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__bragi__edit_endpoint_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__bragi__edit_link_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__bragi__endpoint_models_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__bragi__endpoints_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__bragi__file_bytes_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__bragi__folders_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__bragi__follow_chat_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__bragi__follow_models_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__bragi__init_app_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__bragi__links_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__bragi__models_event_view_default_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__bragi__models_overview_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__bragi__models_pull_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__bragi__models_remove_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__bragi__models_search_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__bragi__move_endpoint_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__bragi__move_folder_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__bragi__network_changed_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__bragi__pair_accept_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__bragi__pair_accept_confirm_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__bragi__pair_cancel_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__bragi__pair_confirm_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__bragi__pair_offer_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__bragi__pair_view_default_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__bragi__paused_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__bragi__react_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__bragi__remove_link_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__bragi__rename_folder_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__bragi__resumed_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__bragi__save_file_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__bragi__send_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__bragi__send_agent_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__bragi__send_to_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__bragi__send_with_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__bragi__sessions_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__bragi__set_session_folder_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__bragi__targets_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__bragi__test_endpoint_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__bragi__test_endpoint_address_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2451,15 +2936,15 @@ fn pde_ffi_dispatcher_sync_impl(
         4 => wire__crate__api__bragi__attach_bytes_impl(ptr, rust_vec_len, data_len),
         5 => wire__crate__api__bragi__attach_file_impl(ptr, rust_vec_len, data_len),
         7 => wire__crate__api__bragi__cancel_impl(ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__bragi__demo_node_address_impl(ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__bragi__dismiss_node_search_impl(ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__bragi__is_node_address_impl(ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__bragi__markdown_json_impl(ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__bragi__quick_reactions_impl(ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__bragi__demo_node_address_impl(ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__bragi__dismiss_node_search_impl(ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__bragi__is_node_address_impl(ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__bragi__markdown_json_impl(ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__bragi__peers_impl(ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__bragi__quick_reactions_impl(ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2626,6 +3111,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::EndpointView> for crat
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::FileView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.message_id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.path.into_into_dart().into_dart(),
+            self.mime.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.origin.into_into_dart().into_dart(),
+            self.preview.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::FileView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::FileView> for crate::api::bragi::FileView {
+    fn into_into_dart(self) -> crate::api::bragi::FileView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::bragi::FolderView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.id.into_into_dart().into_dart(), self.name.into_into_dart().into_dart(), self.parent.into_into_dart().into_dart()].into_dart()
@@ -2634,6 +3142,25 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::FolderView {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::FolderView {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::FolderView> for crate::api::bragi::FolderView {
     fn into_into_dart(self) -> crate::api::bragi::FolderView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::HubHitView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.repo.into_into_dart().into_dart(),
+            self.downloads.into_into_dart().into_dart(),
+            self.likes.into_into_dart().into_dart(),
+            self.gated.into_into_dart().into_dart(),
+            self.updated.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::HubHitView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::HubHitView> for crate::api::bragi::HubHitView {
+    fn into_into_dart(self) -> crate::api::bragi::HubHitView {
         self
     }
 }
@@ -2679,6 +3206,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
             self.standin.into_into_dart().into_dart(),
             self.resumes.into_into_dart().into_dart(),
             self.attachments.into_into_dart().into_dart(),
+            self.files.into_into_dart().into_dart(),
             self.tools.into_into_dart().into_dart(),
             self.agent.into_into_dart().into_dart(),
             self.at_ms.into_into_dart().into_dart(),
@@ -2689,6 +3217,18 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::MessageView {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::MessageView> for crate::api::bragi::MessageView {
     fn into_into_dart(self) -> crate::api::bragi::MessageView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::ModelNodeView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.peer.into_into_dart().into_dart(), self.label.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::ModelNodeView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::ModelNodeView> for crate::api::bragi::ModelNodeView {
+    fn into_into_dart(self) -> crate::api::bragi::ModelNodeView {
         self
     }
 }
@@ -2716,6 +3256,71 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::ModelView> for crate::
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::ModelsEventView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.kind.into_into_dart().into_dart(),
+            self.hits.into_into_dart().into_dart(),
+            self.repo.into_into_dart().into_dart(),
+            self.fit.into_into_dart().into_dart(),
+            self.node.into_into_dart().into_dart(),
+            self.model.into_into_dart().into_dart(),
+            self.text.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+            self.done.into_into_dart().into_dart(),
+            self.total.into_into_dart().into_dart(),
+            self.served.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::ModelsEventView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::ModelsEventView> for crate::api::bragi::ModelsEventView {
+    fn into_into_dart(self) -> crate::api::bragi::ModelsEventView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::NodeFitView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.node.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.verdict.into_into_dart().into_dart(),
+            self.best.into_into_dart().into_dart(),
+            self.best_size.into_into_dart().into_dart(),
+            self.usable_bytes.into_into_dart().into_dart(),
+            self.quants.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::NodeFitView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::NodeFitView> for crate::api::bragi::NodeFitView {
+    fn into_into_dart(self) -> crate::api::bragi::NodeFitView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::NodeModelsView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.node.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.models.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::NodeModelsView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::NodeModelsView> for crate::api::bragi::NodeModelsView {
+    fn into_into_dart(self) -> crate::api::bragi::NodeModelsView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::bragi::PairView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2733,6 +3338,25 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::PairView {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::PairView {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::PairView> for crate::api::bragi::PairView {
     fn into_into_dart(self) -> crate::api::bragi::PairView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::QuantFitView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.quant.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+            self.footprint.into_into_dart().into_dart(),
+            self.fits.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::QuantFitView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::QuantFitView> for crate::api::bragi::QuantFitView {
+    fn into_into_dart(self) -> crate::api::bragi::QuantFitView {
         self
     }
 }
@@ -2775,6 +3399,25 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::StateView {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::StateView {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::StateView> for crate::api::bragi::StateView {
     fn into_into_dart(self) -> crate::api::bragi::StateView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::StoredModelView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.size.into_into_dart().into_dart(),
+            self.complete.into_into_dart().into_dart(),
+            self.served_as.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::StoredModelView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::StoredModelView> for crate::api::bragi::StoredModelView {
+    fn into_into_dart(self) -> crate::api::bragi::StoredModelView {
         self
     }
 }
@@ -2835,6 +3478,13 @@ impl SseEncode for flutter_rust_bridge::for_generated::anyhow::Error {
 }
 
 impl SseEncode for StreamSink<crate::api::bragi::ChatEventView, flutter_rust_bridge::for_generated::SseCodec> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        unimplemented!("")
+    }
+}
+
+impl SseEncode for StreamSink<crate::api::bragi::ModelsEventView, flutter_rust_bridge::for_generated::SseCodec> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         unimplemented!("")
@@ -2972,12 +3622,38 @@ impl SseEncode for f64 {
     }
 }
 
+impl SseEncode for crate::api::bragi::FileView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.message_id, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <Option<String>>::sse_encode(self.path, serializer);
+        <String>::sse_encode(self.mime, serializer);
+        <u64>::sse_encode(self.size, serializer);
+        <String>::sse_encode(self.kind, serializer);
+        <String>::sse_encode(self.origin, serializer);
+        <Option<String>>::sse_encode(self.preview, serializer);
+    }
+}
+
 impl SseEncode for crate::api::bragi::FolderView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <String>::sse_encode(self.id, serializer);
         <String>::sse_encode(self.name, serializer);
         <Option<String>>::sse_encode(self.parent, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::HubHitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.repo, serializer);
+        <u64>::sse_encode(self.downloads, serializer);
+        <u64>::sse_encode(self.likes, serializer);
+        <bool>::sse_encode(self.gated, serializer);
+        <Option<String>>::sse_encode(self.updated, serializer);
     }
 }
 
@@ -3035,12 +3711,32 @@ impl SseEncode for Vec<crate::api::bragi::EndpointView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::bragi::FileView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::FileView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::bragi::FolderView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::bragi::FolderView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::bragi::HubHitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::HubHitView>::sse_encode(item, serializer);
         }
     }
 }
@@ -3075,6 +3771,16 @@ impl SseEncode for Vec<crate::api::bragi::ModelView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::bragi::NodeModelsView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::NodeModelsView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<u8> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3085,12 +3791,32 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::api::bragi::QuantFitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::QuantFitView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::bragi::SessionView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::bragi::SessionView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::bragi::StoredModelView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::StoredModelView>::sse_encode(item, serializer);
         }
     }
 }
@@ -3132,9 +3858,18 @@ impl SseEncode for crate::api::bragi::MessageView {
         <Option<String>>::sse_encode(self.standin, serializer);
         <u32>::sse_encode(self.resumes, serializer);
         <Vec<crate::api::bragi::AttachmentView>>::sse_encode(self.attachments, serializer);
+        <Vec<crate::api::bragi::FileView>>::sse_encode(self.files, serializer);
         <Vec<String>>::sse_encode(self.tools, serializer);
         <bool>::sse_encode(self.agent, serializer);
         <i64>::sse_encode(self.at_ms, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::ModelNodeView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.peer, serializer);
+        <String>::sse_encode(self.label, serializer);
     }
 }
 
@@ -3150,6 +3885,47 @@ impl SseEncode for crate::api::bragi::ModelView {
         <Option<String>>::sse_encode(self.standin, serializer);
         <bool>::sse_encode(self.vision, serializer);
         <bool>::sse_encode(self.audio, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::ModelsEventView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.kind, serializer);
+        <Vec<crate::api::bragi::HubHitView>>::sse_encode(self.hits, serializer);
+        <Option<String>>::sse_encode(self.repo, serializer);
+        <Option<crate::api::bragi::NodeFitView>>::sse_encode(self.fit, serializer);
+        <Option<crate::api::bragi::ModelNodeView>>::sse_encode(self.node, serializer);
+        <Option<String>>::sse_encode(self.model, serializer);
+        <Option<String>>::sse_encode(self.text, serializer);
+        <u64>::sse_encode(self.size, serializer);
+        <u64>::sse_encode(self.done, serializer);
+        <u64>::sse_encode(self.total, serializer);
+        <bool>::sse_encode(self.served, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::NodeFitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::bragi::ModelNodeView>::sse_encode(self.node, serializer);
+        <String>::sse_encode(self.status, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+        <String>::sse_encode(self.verdict, serializer);
+        <Option<String>>::sse_encode(self.best, serializer);
+        <u64>::sse_encode(self.best_size, serializer);
+        <u64>::sse_encode(self.usable_bytes, serializer);
+        <Vec<crate::api::bragi::QuantFitView>>::sse_encode(self.quants, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::NodeModelsView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::bragi::ModelNodeView>::sse_encode(self.node, serializer);
+        <String>::sse_encode(self.status, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+        <Vec<crate::api::bragi::StoredModelView>>::sse_encode(self.models, serializer);
     }
 }
 
@@ -3179,6 +3955,26 @@ impl SseEncode for Option<i64> {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <i64>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::bragi::ModelNodeView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::bragi::ModelNodeView>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<crate::api::bragi::NodeFitView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::api::bragi::NodeFitView>::sse_encode(value, serializer);
         }
     }
 }
@@ -3226,6 +4022,17 @@ impl SseEncode for crate::api::bragi::PairView {
     }
 }
 
+impl SseEncode for crate::api::bragi::QuantFitView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <Option<String>>::sse_encode(self.quant, serializer);
+        <u64>::sse_encode(self.size, serializer);
+        <u64>::sse_encode(self.footprint, serializer);
+        <bool>::sse_encode(self.fits, serializer);
+    }
+}
+
 impl SseEncode for crate::api::bragi::SessionView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -3249,6 +4056,17 @@ impl SseEncode for crate::api::bragi::StateView {
         <Option<String>>::sse_encode(self.default_model, serializer);
         <String>::sse_encode(self.node_search, serializer);
         <Option<String>>::sse_encode(self.node_search_line, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::StoredModelView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <u64>::sse_encode(self.size, serializer);
+        <bool>::sse_encode(self.complete, serializer);
+        <Option<String>>::sse_encode(self.served_as, serializer);
+        <Option<String>>::sse_encode(self.state, serializer);
     }
 }
 

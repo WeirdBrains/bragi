@@ -52,6 +52,7 @@ impl BragiView {
 
     pub fn toggle_settings(&mut self, cx: &mut Context<Self>) {
         self.settings_open = !self.settings_open;
+        self.models_open = false;
         self.refresh_prefs();
         cx.notify();
     }

@@ -1,5 +1,7 @@
 // The seam between the widgets and bragi-core: [RustBragiApi] calls the bridge; tests may
 // pass their own. The data types are the bridge's (lib/src/rust/api/bragi.dart).
+import 'dart:typed_data';
+
 import 'rust/api/bragi.dart' as rust;
 
 export 'rust/api/bragi.dart'
@@ -12,14 +14,22 @@ export 'rust/api/bragi.dart'
         DeletedView,
         EndpointForm,
         EndpointView,
+        FileView,
         FolderView,
+        HubHitView,
         LinkView,
         SessionView,
         TargetView,
         TestResultView,
         LinkCheckView,
         MessageView,
+        ModelNodeView,
         ModelView,
+        ModelsEventView,
+        NodeFitView,
+        NodeModelsView,
+        QuantFitView,
+        StoredModelView,
         PairView,
         StateView,
         SummaryView;
@@ -46,6 +56,8 @@ abstract class BragiApi {
   bool cancel(String requestId);
   Future<List<rust.SummaryView>> conversations(int offset, int limit);
   Future<rust.ConversationView> conversation(String id);
+  Future<Uint8List> fileBytes(String conversation, String file);
+  Future<String> saveFile(String conversation, String file, String dest);
   Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply);
   Future<rust.DeletedView> deleteConversations(List<String> ids);
   Future<void> undoDelete(String undo);
@@ -79,6 +91,15 @@ abstract class BragiApi {
   Future<void> moveFolder(String id, String? parent);
   Future<void> deleteFolder(String id);
   Future<void> setSessionFolder(String conversation, String? folder);
+
+  // Models on the user's Ymir pool (LF-30).
+  Future<List<rust.NodeModelsView>> modelsOverview();
+  /// Starts a Hub search with a fit per node; stream it with [followModels].
+  Future<String> modelsSearch(String query);
+  /// Starts a pull to `target` (`auto`, `all` or a node's peer id); stream it with [followModels]; [cancel] stops it.
+  Future<String> modelsPull(String repo, String? model, String target, bool serve);
+  Stream<rust.ModelsEventView> followModels(String runId);
+  Future<BigInt> modelsRemove(String peer, String id, bool confirmed);
 }
 
 class RustBragiApi implements BragiApi {
@@ -130,6 +151,10 @@ class RustBragiApi implements BragiApi {
   Future<List<rust.SummaryView>> conversations(int offset, int limit) => rust.conversations(offset: offset, limit: limit);
   @override
   Future<rust.ConversationView> conversation(String id) => rust.conversation(id: id);
+  @override
+  Future<Uint8List> fileBytes(String conversation, String file) => rust.fileBytes(conversation: conversation, file: file);
+  @override
+  Future<String> saveFile(String conversation, String file, String dest) => rust.saveFile(conversation: conversation, file: file, dest: dest);
   @override
   Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply) =>
       rust.deleteMessage(conversation: conversation, id: id, withReply: withReply);
@@ -194,4 +219,16 @@ class RustBragiApi implements BragiApi {
   Future<void> deleteFolder(String id) => rust.deleteFolder(id: id);
   @override
   Future<void> setSessionFolder(String conversation, String? folder) => rust.setSessionFolder(conversation: conversation, folder: folder);
+
+  @override
+  Future<List<rust.NodeModelsView>> modelsOverview() => rust.modelsOverview();
+  @override
+  Future<String> modelsSearch(String query) async => rust.modelsSearch(query: query);
+  @override
+  Future<String> modelsPull(String repo, String? model, String target, bool serve) async =>
+      rust.modelsPull(repo: repo, model: model, target: target, serve: serve);
+  @override
+  Stream<rust.ModelsEventView> followModels(String runId) => rust.followModels(runId: runId);
+  @override
+  Future<BigInt> modelsRemove(String peer, String id, bool confirmed) => rust.modelsRemove(peer: peer, id: id, confirmed: confirmed);
 }

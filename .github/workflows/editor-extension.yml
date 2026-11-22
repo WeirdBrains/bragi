@@ -1,0 +1,43 @@
+# The VS Code and Cursor extension: compile, test it headless in a downloaded VS Code, and package
+# the VSIX as a build artifact. Nothing is published (no Marketplace, no Open VSX).
+name: Editor extension
+on:
+  push:
+    paths: ['editors/vscode/**', 'crates/bragi-serve/**', 'crates/bragi-core/src/code.rs', '.github/workflows/editor-extension.yml']
+  pull_request:
+    paths: ['editors/vscode/**', 'crates/bragi-serve/**', 'crates/bragi-core/src/code.rs', '.github/workflows/editor-extension.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vscode:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: editors/vscode
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run compile
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libasound2t64 libgbm1 libgtk-3-0 libnss3 libxss1 libxkbfile1 libsecret-1-0
+      - name: Tests (headless, clean environment, throwaway profile)
+        run: env -i HOME="$HOME" PATH="$PATH" XDG_RUNTIME_DIR="$(mktemp -d)" xvfb-run -a npm test
+      - run: npx vsce package --no-dependencies -o bragi-vscode-${{ github.sha }}.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bragi-vscode
+          path: editors/vscode/bragi-vscode-*.vsix
+          if-no-files-found: error
+  serve:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p bragi-serve
+      - run: cargo test -p bragi-core --lib code

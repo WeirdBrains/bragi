@@ -2,6 +2,24 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-14, the VS Code and Cursor extension and `bragi serve` (branch only)
+
+**What changed**
+- [`editors/vscode`](editors/vscode/README.md): one VSIX for VS Code, Cursor and other VS Code-based editors (Open VSX-compatible manifest, no proposed APIs). Inline suggestions ([`inline.ts`](editors/vscode/src/inline.ts)); rewrite the selection or file with a diff to accept or reject ([`rewrite.ts`](editors/vscode/src/rewrite.ts)); a chat panel that can send the file, the selection, other open files and the file's problems ([`chat.ts`](editors/vscode/src/chat.ts), [`context.ts`](editors/vscode/src/context.ts)); a target and model picker in the status bar ([`extension.ts`](editors/vscode/src/extension.ts)). The API token lives in the editor's SecretStorage and is imported from the Bragi profile on first use ([`tokens.ts`](editors/vscode/src/tokens.ts)).
+- [`crates/bragi-serve`](crates/bragi-serve/src/lib.rs): `bragi serve` (also `bragi --serve` from the desktop app, and the headless `bragi-serve` binary, [`cli.rs`](crates/bragi-serve/src/cli.rs)). Loopback only, a bearer token in `<home>/serve/token` (mode 0600), a loopback `Host` check and no browser `Origin`. Routes: state, targets, `code/suggest`, `code/rewrite`, `code/chat` (server-sent events, kept in history), cancel, and OpenAI-compatible `models` and `chat/completions`. Code requests go through `Core::complete_to` with an optional target (the pool or an endpoint and model from Settings), chat through `Core::send_to`.
+- The prompts, reading code out of answers and the diffs are `bragi_core::code` ([`code/editor.rs`](crates/bragi-core/src/code/editor.rs)), shared with the TUI. The extension's direct target (an OpenAI-compatible URL called without Bragi, off unless set) uses a TypeScript copy, [`prompts.ts`](editors/vscode/src/prompts.ts), with tests that mirror the Rust ones.
+- [`editor-extension.yml`](.github/workflows/editor-extension.yml) lints, tests headless and packages the VSIX as a CI artifact only.
+
+**Commits**: `feature/editor-extension` merged with `feature/code-core` (`89e4466`), then the commit that moves `bragi serve` to `complete_to` and targets and adds this entry.
+
+**Checks**: `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace (including [`bragi-serve/tests/api.rs`](crates/bragi-serve/tests/api.rs) against the demo node and the mock endpoint), `flutter analyze`, the Flutter tests in demo mode, the extension's lint, and its tests in a downloaded VS Code under Xvfb (`env -i`, throwaway HOME and profile) against a mock `bragi serve`. Screenshots from that run: inline suggestion, rewrite diff, chat panel.
+
+**Not tested**: a real Cursor install; the extension against a real `bragi serve` linked to real Ymir nodes (the Rust tests cover serve against the demo node); macOS and Windows; `bragi --serve` and `bragi serve` on one profile at once (documented as one or the other).
+
+**Left**: full Visual Studio (a different extension model); Marketplace and Open VSX listings (not wanted yet); per-hunk accept in the editor (the core has `FileDiff::apply`; the editor accepts the whole rewrite); file and folder requests from the editor (`CodeRequest`, used by the TUI); the Bragi milestones in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) need a line for this.
+
+**Next**: the owner's review of the branch.
+
 ## 2026-11-21: LF-13, the terminal app (branch `feature/tui`, not merged)
 
 **What changed**
@@ -45,6 +63,65 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 - The Bragi status in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) is not updated (another repo).
 
 **Next:** review, then merge `feature/tui` when m3talsmith says so.
+
+## 2026-11-21: merges of the models screen, chat files, the terminal app and the editor extension
+
+**What changed**: four branches are on main, each with `git merge --no-ff`: the Models screen (LF-30 M4, see [`models_ui.dart`](app/lib/src/models_ui.dart)), files in a chat (LF-12, see [`files.rs`](crates/bragi-core/src/files.rs)), the terminal app (LF-13, [`bragi-tui`](crates/bragi-tui/)) and the VS Code and Cursor extension (LF-14, [`editors/vscode`](editors/vscode/) with [`bragi-serve`](crates/bragi-serve/)). The "Saved to …" notice now shows in the success colour in [`view.rs`](crates/bragi-desktop/src/view.rs) and [`chat_screen.dart`](app/lib/src/chat_screen.dart). Conflicts were in [`CHANGELOG.md`](CHANGELOG.md), this file, [`demo.rs`](crates/bragi-core/src/demo.rs) (both the file answer and the code answer kept), [`Cargo.toml`](Cargo.toml) and [`Cargo.lock`](Cargo.lock); the Flutter bridge was regenerated once after chat files. The cancel-and-resume test in [`tests.rs`](crates/bragi-core/src/models/tests.rs) now waits for the node to drop a cancelled pull.
+
+**Checks**: fmt, build, clippy `-D warnings`, `cargo test --workspace`, `flutter analyze`, the extension's lint, compile and headless tests. **Known flake**: the Flutter test in [`settings_test.dart`](app/test/settings_test.dart) ("settings and sessions") fails on some runs under load and passes alone.
+
+## 2026-11-21: LF-12, files in a chat: view and save (branch only)
+
+**What changed**
+- [`files.rs`](crates/bragi-core/src/files.rs) in `bragi-core` lists a chat's files as `ChatFile` cards, each with id, message, name, path, media type, size, kind (text, image or audio), origin and a text preview:
+  - every attachment ([`attach.rs`](crates/bragi-core/src/attach.rs)): text, plus the images and audio from LF-18, whose bytes are the inline base64;
+  - every file an answer wrote: a fenced code block that names its file (in the info string, as in ```` ```rust src/main.rs ```` or `title="a.py"`, or on the line just before the fence, as in `**src/main.rs**`), or a Markdown image with a `data:` URL. When a name repeats, the last block wins.
+- A card's id is `<message id>#a<n>` or `<message id>#r<n>`, so deleting other messages does not change it.
+- `Core::files`, `Core::file_bytes` and `Core::save_file` in [`core.rs`](crates/bragi-core/src/core.rs). A save writes atomically, through a temp file and a rename. Saving to a picked path replaces that file. Saving into a folder adds ` (2)`, ` (3)` and so on instead of replacing anything.
+- Nothing new is stored. The cards are read from the message as it is, so they sync with it and work for older records.
+- Bridge ([`bragi.rs`](crates/bragi-bridge/src/api/bragi.rs)): `FileView`, `MessageView.files`, `chat_files`, `file_bytes` and `save_file`. `flutter_rust_bridge_codegen generate` was re-run.
+- Phone and Flutter desktop ([`chat_screen.dart`](app/lib/src/chat_screen.dart), [`controller.dart`](app/lib/src/controller.dart)): file cards under the message, with an icon, name or path, type, size, origin, text preview, image preview (`Image.memory`) and Save.
+  - On Android and iOS, Save hands the bytes to the system save sheet. On a computer, the dialog returns a path and the core writes the file.
+  - The demo build saves into a temp folder.
+- GPUI desktop ([`view.rs`](crates/bragi-desktop/src/view.rs)): the same cards, with a decoded image preview (cached) and Save. Save opens the system save dialog, starting in Downloads.
+- Demo: a prompt with "as a file" ([`demo.rs`](crates/bragi-core/src/demo.rs), `FILE_TRIGGER`) gets an answer with a named `hello.py` block. The desktop scenario attaches [`demo-chart.png`](crates/bragi-desktop/assets/demo-chart.png).
+
+**Commits**: [`173750f`](https://github.com/WeirdBrains/bragi/commit/173750f) (the feature, on `feature/chat-files`, from `main` at `431ea3c`), then the commit that adds this entry.
+
+**Checks** (whole workspace):
+- `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` and the build.
+- Tests: the unit tests in `files.rs` (named blocks, a repeated name, data-URL images, cards by message id, save rules) and `tests/breadth.rs` `the_files_in_a_chat_are_listed_and_saved`.
+- `flutter analyze`, and the Flutter scenario test in demo mode: the attachment card, the reply card, and Save writing `hello.py` with the right content.
+- The headless desktop scenario on a virtual X server, in a clean environment with a throwaway profile. Screenshots 16b (image card with preview) and 16c (reply file card, saved).
+
+**Not tested**: a real phone and its save sheet; the real save dialogs on desktop (the scenarios save to a folder directly); two devices syncing; a real model's answers.
+
+**What's left**:
+- A player for audio files (the card shows the file and saves it).
+- Files larger than a message takes (content roots).
+- The roadmap and Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) were not updated.
+
+**What's next**: review of `feature/chat-files`, then LF-16.
+
+## 2026-11-21: LF-30 M4, the Models screen (branch only)
+
+**What changed**
+- [`models.rs`](crates/bragi-core/src/models.rs) in `bragi-core`: `ModelsManager` runs Ymir's `/weirdnet-backends/models/1` protocol through `weirdnet-backends` 0.3's `ModelsClient`, with this device's certificate. Search asks the Hugging Face Hub from this device (anonymous, `weirdnet-model`'s `Hub`; a node searches for us if the Hub is unreachable from here) and then asks every ready node how each hit fits (`files`), one `Fit` event per repo and node. Pull goes to one node, `auto` (the node that holds the biggest model of the repo, with the reason in words) or all ready nodes, streams `Progress`, and cancels by dropping the stream (the node keeps the partial file; pulling again resumes). List and remove are per node; remove refuses without `confirmed`.
+- [`models_core.rs`](crates/bragi-core/src/models_core.rs): `Core::models_overview`, `models_search`, `models_pull`, `models_remove`; a run is cancelled with the existing `Core::cancel`.
+- The bridge ([`bragi.rs`](crates/bragi-bridge/src/api/bragi.rs), regenerated): `models_overview`, `models_search`, `models_pull`, `follow_models`, `models_remove`.
+- Flutter: [`models_ui.dart`](app/lib/src/models_ui.dart), reached from the drawer and from Settings. Desktop (GPUI): [`models.rs`](crates/bragi-desktop/src/view/models.rs), a Models button in the sidebar. Both show nodes with their status, search with fit badges, a target picker (auto, a node, all), a quantization choice, progress bars with Cancel, per-node lists, and a remove confirm.
+- Demo: the demo nodes now serve models/1 behind the same `RosterAuth` Ymir uses ([`demo.rs`](crates/bragi-core/src/demo.rs)), with a mock Hub ([`demo_models.rs`](crates/bragi-core/src/demo_models.rs)) whose repos have real sizes for the fit verdicts and one tiny repo that downloads slowly enough to see progress.
+- Roadmap B7 in [`roadmap.toml`](roadmap.toml) (and the generated roadmap pages).
+
+**Owner auth** (read from `weirdnet-backends` 0.3, `weirdnet-agent` 0.5 and Ymir main): `ymird` serves models/1 with plain `RosterAuth` (`Roster::check_caller`), without `require_roles` and without the `[model] callers` allow-list (that list only narrows raw infer/2 on a model node). So any device linked to the owner's roster is admitted, a Bragi device included, provided it presents its certificate (it does) and the node's roster has it (the roster syncs after linking). `RosterAuth` refuses with `unknown-device`, `revoked`, `wrong-user` or `needs-admission`; Bragi shows that as "Needs owner device" with the reason, and when every node refuses it turns the controls off behind a banner. Proven in [`models.rs`](crates/bragi-core/tests/models.rs): a linked device is admitted by the demo nodes' `RosterAuth` over the real Weirdnet stack and manages models; an unlinked one gets `NotPaired`. Nothing is needed from Ymir or weirdnet for this.
+
+**Checks run** (whole workspace): `cargo fmt --check`, build, `cargo clippy -D warnings`, `cargo test` (the mock-node tests: fit per node, auto, one node, all, progress, cancel and resume, remove with and without confirm, a node that refuses, a node that is not a model node; the live-stack test above), `flutter analyze`, the Flutter tests in demo mode with `BRAGI_BRIDGE_LIB` ([`models_test.dart`](app/test/models_test.dart), including a device every node refuses), and the headless desktop scenario (virtual X server, clean environment, throwaway profile; screenshots 40 to 46). Read-only check against the real Hub: a live search through `weirdnet-model`'s `Hub`.
+
+**Not tested**: a real Ymir node (no real pull or remove was run on any node); a real phone; iOS and Android builds with the new dependencies (`weirdnet-backends` with `node` pulls `weirdnet-model`); the Flutter screenshots use the test font (boxes for text), so the desktop screenshots are the readable ones; Windows and macOS CI for this branch (CI does not run on branch pushes).
+
+**What's left**: Ymir's design doc should list the Bragi Models screen under the Bragi milestones; a check against a real node by the owner; quantization choice by file name; showing a node's free disk space.
+
+**What's next**: the Bragi MCP server on `weirdnet-mcp` 0.6, then LF-12 (chat files).
 
 ## 2026-11-21: LF-18, Weirdnet 0.5 and image and audio attachments (branch only)
 

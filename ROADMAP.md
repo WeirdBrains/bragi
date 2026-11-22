@@ -41,3 +41,9 @@ Weirdnet crates: `weirdnet-agent`.
 Any OpenAI-compatible server, with an optional API key, next to the Weirdnet pool or as a fallback when it is down. Settings add, edit, delete, test and reorder both Weirdnet links and endpoints; keys are sealed on the device and never synced. Each chat is bound to one target and keeps its own history, and chats nest in folders. Built in the core and the Flutter app (desktop and phone); the GPUI desktop shell is next.
 
 Weirdnet crates: `weirdnet-agent`.
+
+## B7 Models on your pool (In progress)
+
+A Models screen on both shells: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting one or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's own identity, and the nodes accept it only from devices linked to their owner; a device a node refuses is shown as needing an owner device. Built in the core, the Flutter app and the GPUI desktop shell, and tried against demo nodes and a mock Hub. Next: a check against a real Ymir node.
+
+Weirdnet crates: `weirdnet-backends`, `weirdnet-model`.

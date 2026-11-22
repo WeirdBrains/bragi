@@ -13,6 +13,13 @@ String splice(String text, int offset, String delta) {
   return kept + delta;
 }
 
+/// A size for people: `512 B`, `12 KiB`, `3.4 MiB` (as bragi-core writes it).
+String humanSize(int n) {
+  if (n < 1024) return '$n B';
+  if (n < 1024 * 1024) return '${(n + 1023) ~/ 1024} KiB';
+  return '${(n / (1024 * 1024)).toStringAsFixed(1)} MiB';
+}
+
 /// An agent task's approval card, waiting for the user.
 class ApprovalCard {
   const ApprovalCard({required this.requestId, required this.ask, required this.summary, required this.tier});
@@ -329,6 +336,30 @@ class BragiController extends ChangeNotifier {
     notifyListeners();
   }
 
+  final Map<String, Future<Uint8List>> _bytes = {};
+
+  /// A file's bytes in the current chat (an image preview, or the phone's save sheet), fetched once.
+  Future<Uint8List> fileBytes(FileView f) {
+    final c = current;
+    if (c == null) return Future.error('no chat open');
+    return _bytes.putIfAbsent('${c.id}/${f.id}', () => api.fileBytes(c.id, f.id));
+  }
+
+  /// Saves a file of the current chat at [dest] (a save dialog's path, or a folder: then under
+  /// its own name, never replacing one), and says where it went.
+  Future<void> saveFileTo(FileView f, String dest) => _try(() async {
+    final c = current;
+    if (c == null) return;
+    final at = await api.saveFile(c.id, f.id, dest);
+    notice = 'Saved ${f.name} to $at';
+  });
+
+  /// Shows [text] in the notice line.
+  void say(String text) {
+    notice = text;
+    notifyListeners();
+  }
+
   void detach(int index) {
     attachments = [...attachments]..removeAt(index);
     notifyListeners();
@@ -471,6 +502,7 @@ class BragiController extends ChangeNotifier {
           standin: standin ?? last.standin,
           resumes: resumes ?? last.resumes,
           attachments: last.attachments,
+          files: last.files,
           tools: tools ?? last.tools,
           agent: last.agent,
           atMs: last.atMs,
