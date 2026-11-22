@@ -9,6 +9,7 @@ All notable changes to Bragi are listed here. The format follows
 ### Added
 
 - A Models screen on the desktop and phone apps: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting node or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's identity; nodes accept it only from devices linked to their owner.
+- See and save the files in a chat, on desktop and phone. Each file attached to a message (text, image or audio) and each file an answer writes (a code block that names its file, such as ```` ```python hello.py ````, or an embedded image) gets a card under its message with its name, type and size, a preview (the first lines of a text file, or the picture), and Save. On desktop, Save opens the system save dialog. On the phone, it opens the system save sheet.
 
 ## [0.1.1] - 2026-11-21
 

@@ -1,5 +1,7 @@
 // The seam between the widgets and bragi-core: [RustBragiApi] calls the bridge; tests may
 // pass their own. The data types are the bridge's (lib/src/rust/api/bragi.dart).
+import 'dart:typed_data';
+
 import 'rust/api/bragi.dart' as rust;
 
 export 'rust/api/bragi.dart'
@@ -12,6 +14,7 @@ export 'rust/api/bragi.dart'
         DeletedView,
         EndpointForm,
         EndpointView,
+        FileView,
         FolderView,
         HubHitView,
         LinkView,
@@ -53,6 +56,8 @@ abstract class BragiApi {
   bool cancel(String requestId);
   Future<List<rust.SummaryView>> conversations(int offset, int limit);
   Future<rust.ConversationView> conversation(String id);
+  Future<Uint8List> fileBytes(String conversation, String file);
+  Future<String> saveFile(String conversation, String file, String dest);
   Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply);
   Future<rust.DeletedView> deleteConversations(List<String> ids);
   Future<void> undoDelete(String undo);
@@ -146,6 +151,10 @@ class RustBragiApi implements BragiApi {
   Future<List<rust.SummaryView>> conversations(int offset, int limit) => rust.conversations(offset: offset, limit: limit);
   @override
   Future<rust.ConversationView> conversation(String id) => rust.conversation(id: id);
+  @override
+  Future<Uint8List> fileBytes(String conversation, String file) => rust.fileBytes(conversation: conversation, file: file);
+  @override
+  Future<String> saveFile(String conversation, String file, String dest) => rust.saveFile(conversation: conversation, file: file, dest: dest);
   @override
   Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply) =>
       rust.deleteMessage(conversation: conversation, id: id, withReply: withReply);

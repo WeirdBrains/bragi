@@ -95,6 +95,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double dco_decode_f_64(dynamic raw);
 
   @protected
+  FileView dco_decode_file_view(dynamic raw);
+
+  @protected
   FolderView dco_decode_folder_view(dynamic raw);
 
   @protected
@@ -117,6 +120,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<EndpointView> dco_decode_list_endpoint_view(dynamic raw);
+
+  @protected
+  List<FileView> dco_decode_list_file_view(dynamic raw);
 
   @protected
   List<FolderView> dco_decode_list_folder_view(dynamic raw);
@@ -317,6 +323,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   double sse_decode_f_64(SseDeserializer deserializer);
 
   @protected
+  FileView sse_decode_file_view(SseDeserializer deserializer);
+
+  @protected
   FolderView sse_decode_folder_view(SseDeserializer deserializer);
 
   @protected
@@ -343,6 +352,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<EndpointView> sse_decode_list_endpoint_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<FileView> sse_decode_list_file_view(SseDeserializer deserializer);
 
   @protected
   List<FolderView> sse_decode_list_folder_view(SseDeserializer deserializer);
@@ -582,6 +594,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_f_64(double self, SseSerializer serializer);
 
   @protected
+  void sse_encode_file_view(FileView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_folder_view(FolderView self, SseSerializer serializer);
 
   @protected
@@ -610,6 +625,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<EndpointView> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_file_view(List<FileView> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_folder_view(

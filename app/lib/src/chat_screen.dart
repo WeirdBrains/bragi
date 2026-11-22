@@ -1,6 +1,7 @@
 // The chat: pick a model from the catalog, ask, watch it stream, stop it, continue it.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
@@ -141,7 +142,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (c.notice != null)
               Padding(
                 padding: const EdgeInsets.all(6),
-                child: Text(c.notice!, style: const TextStyle(color: BragiColors.error, fontSize: 12)),
+                child: Text(c.notice!, style: TextStyle(color: c.notice!.startsWith('Saved ') ? BragiColors.warm : BragiColors.error, fontSize: 12)),
               ),
             if (c.nodeSearchLine != null)
               Padding(
@@ -373,7 +374,9 @@ class _Bubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            for (final a in message.attachments)
+            // Saved messages show their files as cards (below); one still being sent, its labels.
+            if (message.files.isEmpty)
+              for (final a in message.attachments)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
@@ -400,6 +403,8 @@ class _Bubble extends StatelessWidget {
               )
             else
               MarkdownView(key: const Key('bubble-markdown'), doc: controller.markdown(message.text, streaming || message.state == 'streaming')),
+            if (!streaming)
+              for (final f in message.files) _FileCard(controller: controller, file: f),
             if (message.reactions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -440,6 +445,117 @@ class _Bubble extends StatelessWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+IconData _kindIcon(String kind) => switch (kind) {
+  'image' => Icons.image_outlined,
+  'audio' => Icons.graphic_eq,
+  _ => Icons.description_outlined,
+};
+
+/// Saves a file card's file. On a phone the system sheet takes the bytes and writes them where
+/// the user picks; on a computer the save dialog returns a path and bragi-core writes it. The
+/// scripted demo, with no one to answer a dialog, saves into a temp folder.
+Future<void> saveFile(BragiController c, FileView f) async {
+  if (_scripted) {
+    await c.saveFileTo(f, Directory.systemTemp.createTempSync('bragi-saved').path);
+    return;
+  }
+  final mobile = Platform.isAndroid || Platform.isIOS;
+  try {
+    final bytes = mobile ? await c.fileBytes(f) : null;
+    final dest = await FilePicker.platform.saveFile(dialogTitle: 'Save ${f.name}', fileName: f.name, bytes: bytes);
+    if (dest == null) return;
+    if (mobile) {
+      c.say('Saved ${f.name}');
+    } else {
+      await c.saveFileTo(f, dest);
+    }
+  } catch (e) {
+    c.say('Could not save ${f.name}: $e');
+  }
+}
+
+/// A file in the chat: its name, type and size, a preview (the first lines of a text file, or
+/// the picture), and Save.
+class _FileCard extends StatelessWidget {
+  const _FileCard({required this.controller, required this.file});
+
+  final BragiController controller;
+  final FileView file;
+
+  @override
+  Widget build(BuildContext context) {
+    final f = file;
+    final from = f.origin == 'reply' ? 'from the answer' : 'attached';
+    return Container(
+      key: Key('file-${f.id}'),
+      margin: const EdgeInsets.only(top: 6, bottom: 2),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: BragiColors.background,
+        border: Border.all(color: BragiColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(_kindIcon(f.kind), size: 18, color: BragiColors.textSecondary),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(f.path ?? f.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                    Text(
+                      '${f.mime} · ${humanSize(f.size.toInt())} · $from',
+                      style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                key: Key('save-${f.id}'),
+                onPressed: () => saveFile(controller, f),
+                icon: const Icon(Icons.download, size: 16),
+                label: const Text('Save'),
+              ),
+            ],
+          ),
+          if (f.preview != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                f.preview!,
+                maxLines: 8,
+                overflow: TextOverflow.fade,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: BragiColors.textSecondary),
+              ),
+            ),
+          if (f.kind == 'image')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: FutureBuilder(
+                future: controller.fileBytes(f),
+                builder: (_, snap) => snap.hasData
+                    ? ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: Image.memory(
+                          snap.data!,
+                          key: Key('preview-${f.id}'),
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const Text('(no preview)', style: TextStyle(fontSize: 11)),
+                        ),
+                      )
+                    : const SizedBox(height: 4),
+              ),
+            ),
+        ],
       ),
     );
   }

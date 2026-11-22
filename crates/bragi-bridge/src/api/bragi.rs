@@ -136,6 +136,25 @@ pub struct AttachmentView {
     pub data: String,
 }
 
+/// A file in a chat, for its card: what was attached, or what an answer wrote.
+#[derive(Debug, Clone)]
+pub struct FileView {
+    /// What `file_bytes` and `save_file` take.
+    pub id: String,
+    pub message_id: String,
+    pub name: String,
+    /// The path an answer gave it (`src/main.rs`), when it had one.
+    pub path: Option<String>,
+    pub mime: String,
+    pub size: u64,
+    /// `text`, `image` or `audio`.
+    pub kind: String,
+    /// `attached` or `reply`.
+    pub origin: String,
+    /// A text file's first lines.
+    pub preview: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ChatStarted {
     pub request_id: String,
@@ -166,6 +185,8 @@ pub struct MessageView {
     /// Times the answer moved to another node mid-stream.
     pub resumes: u32,
     pub attachments: Vec<AttachmentView>,
+    /// The message's file cards: its attachments, then the files its answer wrote.
+    pub files: Vec<FileView>,
     /// Agent mode: the tools the task used, in order.
     pub tools: Vec<String>,
     /// The answer came from an agent task on a node.
@@ -414,11 +435,30 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 standin: m.standin.clone(),
                 resumes: m.resumes,
                 attachments: m.attachments.iter().map(|a| attachment_view(a, false)).collect(),
+                files: bragi_core::files::describe(m).iter().map(file_view).collect(),
                 tools: m.tools.clone(),
                 agent: m.agent,
                 at_ms: m.at_ms,
             })
             .collect(),
+    }
+}
+
+fn file_view(f: &bragi_core::ChatFile) -> FileView {
+    FileView {
+        id: f.id.clone(),
+        message_id: f.message_id.clone(),
+        name: f.name.clone(),
+        path: f.path.clone(),
+        mime: f.mime.clone(),
+        size: f.size,
+        kind: f.kind.name().into(),
+        origin: match f.origin {
+            bragi_core::FileOrigin::Attached => "attached",
+            bragi_core::FileOrigin::Reply => "reply",
+        }
+        .into(),
+        preview: f.preview.clone(),
     }
 }
 
@@ -735,6 +775,22 @@ pub fn conversations(offset: u32, limit: u32) -> Result<Vec<SummaryView>, String
 
 pub fn conversation(id: String) -> Result<ConversationView, String> {
     core()?.conversation(&id).map(|c| conversation_view(&c)).map_err(err)
+}
+
+/// Every file in conversation `id`, oldest first.
+pub fn chat_files(id: String) -> Result<Vec<FileView>, String> {
+    core()?.files(&id).map(|f| f.iter().map(file_view).collect()).map_err(err)
+}
+
+/// A file's bytes: an image preview, or saving through the phone's share/save sheet.
+pub fn file_bytes(conversation: String, file: String) -> Result<Vec<u8>, String> {
+    core()?.file_bytes(&conversation, &file).map(|(_, b)| b).map_err(err)
+}
+
+/// Saves a file at `dest` (a path a save dialog returned is replaced; a folder gets the file's
+/// name without replacing anything). Returns where it went.
+pub fn save_file(conversation: String, file: String, dest: String) -> Result<String, String> {
+    core()?.save_file(&conversation, &file, std::path::Path::new(&dest)).map(|p| p.display().to_string()).map_err(err)
 }
 
 /// The quick reaction bar, in order.

@@ -245,3 +245,45 @@ async fn a_node_that_runs_no_tasks_says_so() {
     assert!(message.contains("can't run agent tasks"), "{message}");
     core.shutdown();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_files_in_a_chat_are_listed_and_saved() {
+    use bragi_core::demo::{DEMO_FILE, FILE_TRIGGER};
+    use bragi_core::{FileKind, FileOrigin};
+    let tmp = tempfile::tempdir().unwrap();
+    let (_demo, core) = cloud(tmp.path()).await;
+    let img = Attachment::from_bytes("shot.png", PNG).unwrap();
+    let note = Attachment::from_bytes("notes.md", b"# Plan\n- one\n").unwrap();
+    done(&ask_with(&core, &format!("Write hello world {FILE_TRIGGER}"), vec![img, note]).await);
+    let id = core.conversations(0, 10).unwrap()[0].id.clone();
+
+    // Attachments first, then what the answer wrote; each card knows its message.
+    let files = core.files(&id).unwrap();
+    let got: Vec<(&str, FileKind, FileOrigin, u64)> = files.iter().map(|f| (f.name.as_str(), f.kind, f.origin, f.size)).collect();
+    assert_eq!(
+        got,
+        vec![
+            ("shot.png", FileKind::Image, FileOrigin::Attached, PNG.len() as u64),
+            ("notes.md", FileKind::Text, FileOrigin::Attached, 13),
+            (DEMO_FILE.0, FileKind::Text, FileOrigin::Reply, DEMO_FILE.1.len() as u64),
+        ]
+    );
+    let c = core.conversation(&id).unwrap();
+    assert_eq!(files[0].message_id, c.messages[0].id);
+    assert_eq!(files[2].message_id, c.messages[1].id);
+    assert_eq!(files[2].preview.as_deref(), Some(DEMO_FILE.1.trim_end()));
+    assert_eq!(core.file_bytes(&id, &files[0].id).unwrap().1, PNG.to_vec());
+
+    // Saved into a folder it never replaces anything; at a picked path it does.
+    let out = tmp.path().join("out");
+    std::fs::create_dir(&out).unwrap();
+    let a = core.save_file(&id, &files[2].id, &out).unwrap();
+    let b = core.save_file(&id, &files[2].id, &out).unwrap();
+    assert_eq!((a.file_name().unwrap().to_str().unwrap(), b.file_name().unwrap().to_str().unwrap()), ("hello.py", "hello (2).py"));
+    assert_eq!(std::fs::read_to_string(&b).unwrap(), DEMO_FILE.1);
+    let picked = out.join("chart.png");
+    assert_eq!(core.save_file(&id, &files[0].id, &picked).unwrap(), picked);
+    assert_eq!(std::fs::read(&picked).unwrap(), PNG.to_vec());
+    assert_eq!(core.save_file(&id, "nope#a0", &out).unwrap_err().kind, ErrorKind::NotFound);
+    core.shutdown();
+}

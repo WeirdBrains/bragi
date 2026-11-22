@@ -91,7 +91,7 @@ class SettingsScreen extends StatelessWidget {
               if (c.notice != null)
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(c.notice!, key: const Key('settings-notice'), style: const TextStyle(color: BragiColors.error)),
+                  child: Text(c.notice!, key: const Key('settings-notice'), style: TextStyle(color: c.notice!.startsWith('Saved ') ? BragiColors.warm : BragiColors.error)),
                 ),
             ],
           ),
