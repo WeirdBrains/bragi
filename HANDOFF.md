@@ -2,6 +2,24 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-14, the VS Code and Cursor extension and `bragi serve` (branch only)
+
+**What changed**
+- [`editors/vscode`](editors/vscode/README.md): one VSIX for VS Code, Cursor and other VS Code-based editors (Open VSX-compatible manifest, no proposed APIs). Inline suggestions ([`inline.ts`](editors/vscode/src/inline.ts)); rewrite the selection or file with a diff to accept or reject ([`rewrite.ts`](editors/vscode/src/rewrite.ts)); a chat panel that can send the file, the selection, other open files and the file's problems ([`chat.ts`](editors/vscode/src/chat.ts), [`context.ts`](editors/vscode/src/context.ts)); a target and model picker in the status bar ([`extension.ts`](editors/vscode/src/extension.ts)). The API token lives in the editor's SecretStorage and is imported from the Bragi profile on first use ([`tokens.ts`](editors/vscode/src/tokens.ts)).
+- [`crates/bragi-serve`](crates/bragi-serve/src/lib.rs): `bragi serve` (also `bragi --serve` from the desktop app, and the headless `bragi-serve` binary, [`cli.rs`](crates/bragi-serve/src/cli.rs)). Loopback only, a bearer token in `<home>/serve/token` (mode 0600), a loopback `Host` check and no browser `Origin`. Routes: state, targets, `code/suggest`, `code/rewrite`, `code/chat` (server-sent events, kept in history), cancel, and OpenAI-compatible `models` and `chat/completions`. Code requests go through `Core::complete_to` with an optional target (the pool or an endpoint and model from Settings), chat through `Core::send_to`.
+- The prompts, reading code out of answers and the diffs are `bragi_core::code` ([`code/editor.rs`](crates/bragi-core/src/code/editor.rs)), shared with the TUI. The extension's direct target (an OpenAI-compatible URL called without Bragi, off unless set) uses a TypeScript copy, [`prompts.ts`](editors/vscode/src/prompts.ts), with tests that mirror the Rust ones.
+- [`editor-extension.yml`](.github/workflows/editor-extension.yml) lints, tests headless and packages the VSIX as a CI artifact only.
+
+**Commits**: `feature/editor-extension` merged with `feature/code-core` (`89e4466`), then the commit that moves `bragi serve` to `complete_to` and targets and adds this entry.
+
+**Checks**: `cargo fmt --check`, build, `cargo clippy -D warnings` and `cargo test` on the whole workspace (including [`bragi-serve/tests/api.rs`](crates/bragi-serve/tests/api.rs) against the demo node and the mock endpoint), `flutter analyze`, the Flutter tests in demo mode, the extension's lint, and its tests in a downloaded VS Code under Xvfb (`env -i`, throwaway HOME and profile) against a mock `bragi serve`. Screenshots from that run: inline suggestion, rewrite diff, chat panel.
+
+**Not tested**: a real Cursor install; the extension against a real `bragi serve` linked to real Ymir nodes (the Rust tests cover serve against the demo node); macOS and Windows; `bragi --serve` and `bragi serve` on one profile at once (documented as one or the other).
+
+**Left**: full Visual Studio (a different extension model); Marketplace and Open VSX listings (not wanted yet); per-hunk accept in the editor (the core has `FileDiff::apply`; the editor accepts the whole rewrite); file and folder requests from the editor (`CodeRequest`, used by the TUI); the Ymir `docs/DESIGN.md` Bragi milestones need a line for this.
+
+**Next**: the owner's review of the branch.
+
 ## 2026-11-21: LF-13, the terminal app (branch `feature/tui`, not merged)
 
 **What changed**

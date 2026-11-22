@@ -1089,6 +1089,7 @@ name = "bragi-desktop"
 version = "0.1.1"
 dependencies = [
  "bragi-core",
+ "bragi-serve",
  "gpui",
  "gpui_platform",
  "qrcode",
@@ -1096,6 +1097,24 @@ dependencies = [
  "tokio",
  "unicode-segmentation",
  "weirdnet-text",
+]
+
+[[package]]
+name = "bragi-serve"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "bragi-core",
+ "futures",
+ "getrandom 0.3.4",
+ "http-body-util",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tower",
+ "tracing",
 ]
 
 [[package]]

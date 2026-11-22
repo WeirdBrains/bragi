@@ -44,6 +44,8 @@ pub struct Launch {
     pub home: Option<PathBuf>,
     pub demo: bool,
     pub scenario: bool,
+    /// Also serve the local API (`bragi serve`) on this loopback port, from this app's core.
+    pub serve: Option<u16>,
 }
 
 struct Streaming {
@@ -1921,6 +1923,29 @@ fn default_home() -> PathBuf {
     base.join("bragi")
 }
 
+/// Serves the local API from the app's own core, so an editor and the app share one node.
+fn start_serve(core: &Core, home: &std::path::Path, port: u16) {
+    let token = match bragi_serve::load_or_create_token(home) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("bragi: serve: {e:#}");
+            return;
+        }
+    };
+    let c = core.clone();
+    core.handle().spawn(async move {
+        match bragi_serve::bind(std::net::SocketAddr::from(([127, 0, 0, 1], port))).await {
+            Ok(l) => {
+                eprintln!("bragi: serving the local API on http://127.0.0.1:{port}");
+                if let Err(e) = bragi_serve::serve(c, token, l, std::future::pending()).await {
+                    eprintln!("bragi: serve: {e:#}");
+                }
+            }
+            Err(e) => eprintln!("bragi: serve: {e:#}"),
+        }
+    });
+}
+
 fn label() -> String {
     let host = std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string()).unwrap_or_default();
     if host.is_empty() { "Bragi desktop".into() } else { format!("Bragi on {host}") }
@@ -1973,6 +1998,9 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
     };
     let play = launch.scenario;
     let app = gpui_platform::application();
+    if let Some(port) = launch.serve {
+        start_serve(&core, &launch.home.clone().unwrap_or_else(default_home), port);
+    }
     let for_app = core.clone();
     app.run(move |cx: &mut App| {
         let mut keys = text_input::bindings();
