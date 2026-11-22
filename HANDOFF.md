@@ -64,6 +64,12 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 
 **Next:** review, then merge `feature/tui` when m3talsmith says so.
 
+## 2026-11-21: merges of the models screen, chat files, the terminal app and the editor extension
+
+**What changed**: four branches are on main, each with `git merge --no-ff`: the Models screen (LF-30 M4, see [`models_ui.dart`](app/lib/src/models_ui.dart)), files in a chat (LF-12, see [`files.rs`](crates/bragi-core/src/files.rs)), the terminal app (LF-13, [`bragi-tui`](crates/bragi-tui/)) and the VS Code and Cursor extension (LF-14, [`editors/vscode`](editors/vscode/) with [`bragi-serve`](crates/bragi-serve/)). The "Saved to …" notice now shows in the success colour in [`view.rs`](crates/bragi-desktop/src/view.rs) and [`chat_screen.dart`](app/lib/src/chat_screen.dart). Conflicts were in [`CHANGELOG.md`](CHANGELOG.md), this file, [`demo.rs`](crates/bragi-core/src/demo.rs) (both the file answer and the code answer kept), [`Cargo.toml`](Cargo.toml) and [`Cargo.lock`](Cargo.lock); the Flutter bridge was regenerated once after chat files. The cancel-and-resume test in [`tests.rs`](crates/bragi-core/src/models/tests.rs) now waits for the node to drop a cancelled pull.
+
+**Checks**: fmt, build, clippy `-D warnings`, `cargo test --workspace`, `flutter analyze`, the extension's lint, compile and headless tests. **Known flake**: the Flutter test in [`settings_test.dart`](app/test/settings_test.dart) ("settings and sessions") fails on some runs under load and passes alone.
+
 ## 2026-11-21: LF-12, files in a chat: view and save (branch only)
 
 **What changed**
