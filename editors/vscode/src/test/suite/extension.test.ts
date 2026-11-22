@@ -125,7 +125,10 @@ suite('Bragi extension', () => {
     const e = await editor('a\nb\nc\n', 'plaintext');
     e.selection = new vscode.Selection(1, 0, 1, 1);
     await vscode.commands.executeCommand('bragi.rewriteSelection', 'shout');
-    await e.edit((b) => b.insert(new vscode.Position(0, 0), 'top\n'));
+    // The diff now has focus, so edit the document the way another tool would.
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(e.document.uri, new vscode.Position(0, 0), 'top\n');
+    assert.ok(await vscode.workspace.applyEdit(edit));
     assert.strictEqual(await vscode.commands.executeCommand('bragi.acceptRewrite'), true);
     assert.strictEqual(e.document.getText(), 'top\na\nB\nc\n');
   });
@@ -137,7 +140,8 @@ suite('Bragi extension', () => {
     assert.strictEqual(api.chat.controller.conversationId, 'c-test');
     const first = mock.last('/v1/code/chat')!;
     assert.strictEqual(first.body.prompt, 'What does add do?');
-    assert.ok(first.body.context.before.includes('fn add'));
+    const ctx = first.body.context;
+    assert.strictEqual(ctx.before + ctx.selection + ctx.after, e.document.getText());
     assert.strictEqual(first.body.conversation, undefined);
     await api.chat.controller.send('And sub?');
     assert.strictEqual(mock.last('/v1/code/chat')!.body.conversation, 'c-test');
