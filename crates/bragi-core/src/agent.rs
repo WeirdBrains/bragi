@@ -187,6 +187,9 @@ impl Core {
         attachments: Vec<Attachment>,
     ) -> Result<ChatHandle> {
         let net = self.net()?;
+        if crate::attach::needs(&attachments) != weirdnet_agent::Modalities::TEXT {
+            return Err(CoreError::new(ErrorKind::BadRequest, "agent mode takes text and text files only for now; send images and audio in a chat"));
+        }
         let node = match node.filter(|n| !n.is_empty()) {
             Some(n) => n,
             None => self
@@ -199,7 +202,7 @@ impl Core {
         };
         let companion = companion.filter(|c| !c.is_empty()).unwrap_or_else(|| DEFAULT_COMPANION.into());
         let (conv, mut messages) = self.begin_turn(conversation, prompt, &companion, attachments)?;
-        let input = messages.pop().map(|m| m.content).unwrap_or_default();
+        let input = messages.pop().map(|m| m.content.into_text()).unwrap_or_default();
         let request_id = random_id("r");
         let cancel = CancelToken::new();
         lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
@@ -255,7 +258,11 @@ impl Core {
 
     fn finish_agent(&self, conversation: &str, text: String, state: MessageState, node: String, companion: String, tools: Vec<String>) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
-        if let Some(m) = c.messages.last_mut().filter(|m| m.role == crate::history::Role::Assistant) {
+        // The answer was deleted while the task ran: nothing to write.
+        let Some(m) = c.messages.last_mut().filter(|m| m.role == crate::history::Role::Assistant && m.state == MessageState::Streaming) else {
+            return;
+        };
+        {
             m.text = text;
             m.state = state;
             m.node = Some(node);

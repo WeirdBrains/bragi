@@ -40,8 +40,7 @@ class Home extends StatelessComponent {
             h2([Component.text('The desktop app')]),
             p([
               Component.text(
-                'Screenshots of the Linux desktop app on a demo profile with a simulated inference node '
-                '(not a real Ymir cloud yet), captured in a virtual workspace.',
+                'Screenshots of the Linux desktop app on a demo profile, captured in a virtual workspace.',
               ),
             ]),
           ]),
@@ -65,7 +64,7 @@ class Home extends StatelessComponent {
             h2([Component.text('The phone app')]),
             p([
               Component.text(
-                'The Android app on the same demo profile, run on a headless emulator. It does the same things '
+                'The Android app on the same demo profile, captured on a headless emulator. It does the same things '
                 'through the same core.',
               ),
             ]),
@@ -88,7 +87,7 @@ class Home extends StatelessComponent {
             p([Component.text('One shared Rust core does all the work. The desktop and phone apps only draw it.')]),
           ]),
           div(classes: 'grid', [
-            _card('Bragi', 'The chat client for desktop (GPUI, Linux first) and phone (Flutter, Android first).'),
+            _card('Bragi', 'The chat client for desktop (GPUI: Linux, macOS and Windows) and phone (Flutter: Android and iOS).'),
             _card('Ymir', 'Your cloud of models across your own devices. Bragi asks it for models and prompts.'),
             _card('Weirdnet', 'The peer-to-peer network that links your devices. No open ports, no accounts.'),
           ]),

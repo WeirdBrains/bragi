@@ -76,6 +76,13 @@ export class MockServer {
     switch (path) {
       case '/v1/state':
         return this.json(res, 200, { linked: true, models: [{ id: 'gemma-4-e4b', status: 'warm' }, { id: 'qwen3-32b', status: 'loadable' }], default_model: 'gemma-4-e4b' });
+      case '/v1/targets':
+        return this.json(res, 200, {
+          targets: [
+            { label: 'Weirdnet pool', target: { kind: 'pool' }, models: ['gemma-4-e4b', 'qwen3-32b'] },
+            { label: 'Ymir bridge · qwen3.6-35b-a3b', target: { kind: 'endpoint', id: 'e-1', model: 'qwen3.6-35b-a3b' }, models: [] },
+          ],
+        });
       case '/v1/code/suggest':
         return this.json(res, 200, { text: this.suggestion, model: body.model ?? 'gemma-4-e4b' });
       case '/v1/code/rewrite': {

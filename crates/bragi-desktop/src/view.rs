@@ -1,7 +1,10 @@
 //! The window: draws `bragi-core`'s [`AppState`] and the current conversation, and turns
 //! clicks and keys into `Core` actions. No behaviour lives here.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
@@ -9,17 +12,27 @@ use std::time::{Duration, Instant};
 use bragi_core::demo::{DemoNode, Faults};
 use bragi_core::{
     AppState, Attachment, ChatEvent, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus,
-    PairState, Role, Transport,
+    NodeSearch, PairState, Role, Transport,
 };
 use gpui::{
     App, Bounds, Context, Entity, Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Task, WeakEntity, Window, WindowBounds,
     WindowDecorations, WindowOptions, actions, div, prelude::*, px, rgb, size,
 };
 
+use crate::markdown;
 use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
-actions!(bragi, [Quit, Stop]);
+mod delete;
+mod endpoints;
+mod react;
+mod settings_scenario;
+
+actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
+
+/// The picker's emoji beyond the quick bar.
+const EXTRA_REACTIONS: [&str; 20] =
+    ["🙏", "👏", "🔥", "😮", "😢", "😡", "🚀", "✅", "❌", "💡", "👀", "🙌", "💯", "🤯", "😅", "🥳", "😍", "🤝", "⭐", "💀"];
 
 /// The process exit code: 0 ok, 1 the scenario failed.
 static EXIT: AtomicU8 = AtomicU8::new(0);
@@ -45,6 +58,9 @@ struct Card {
     tier: String,
 }
 
+/// A reply's text, whether it was parsed while streaming, and its parsed Markdown.
+type ParsedReply = (String, bool, Rc<bragi_core::markdown::Document>);
+
 pub struct BragiView {
     core: Core,
     theme: Theme,
@@ -65,8 +81,35 @@ pub struct BragiView {
     agent: bool,
     card: Option<Card>,
     notice: Option<String>,
+    /// Thinking sections the user opened or closed, by conversation and message index (the
+    /// default: open while the model reasons, closed once the answer starts).
+    thinking_flipped: std::collections::HashSet<(String, usize)>,
+    /// When the streaming answer's first reasoning arrived, for the live elapsed time.
+    thinking_since: Option<Instant>,
     scroll: ScrollHandle,
+    /// Follow the newest text; false once the reader scrolls up.
+    stick: bool,
+    /// A scroll gesture moved the list: re-read whether it sits at the bottom on the next frame.
+    recheck: bool,
+    /// The scrollbar thumb is being dragged.
+    dragging: bool,
+    /// The message whose extra-emoji picker is open.
+    react_picker: Option<String>,
     close_only: bool,
+    /// The monospace family for code, and the code block or message just copied ("Copied").
+    mono: SharedString,
+    copied_block: Option<SharedString>,
+    /// Each shown reply's parsed Markdown, by message key, kept until its text changes.
+    markdown: RefCell<HashMap<String, ParsedReply>>,
+    /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
+    /// all history wants, the last delete while it can be undone, and the Settings view.
+    confirm: Option<delete::Confirm>,
+    confirm_input: Entity<TextInput>,
+    deleted: Option<bragi_core::Deleted>,
+    settings_open: bool,
+    /// Endpoints, links, folders and the target picker (see `endpoints`).
+    prefs: endpoints::Prefs,
+    fields: endpoints::Fields,
     _tasks: Vec<Task<()>>,
 }
 
@@ -89,8 +132,15 @@ impl BragiView {
     fn new(core: Core, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let theme = Theme::default();
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
-        let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code or node address", theme, cx));
-        let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
+        let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
+        let attach_input = cx.new(|cx| TextInput::new("Path of a text, image or audio file…", theme, cx));
+        let confirm_input = cx.new(|cx| TextInput::new(delete::CLEAR_WORD, theme, cx));
+        cx.subscribe_in(&confirm_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+            TextInputEvent::Submit { .. } => this.confirm_delete(false, cx),
+            TextInputEvent::Cancel => this.cancel_confirm(cx),
+            _ => cx.notify(),
+        })
+        .detach();
         cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
             if let TextInputEvent::Submit { .. } = ev {
                 this.attach_typed(cx);
@@ -118,7 +168,16 @@ impl BragiView {
         let state = core.state();
         let conversations = core.conversations(0, 100).unwrap_or_default();
         window.focus(&prompt.focus_handle(cx), cx);
-        Self {
+        let fields = endpoints::Fields::new(theme, cx);
+        for input in [&fields.name, &fields.url, &fields.key, &fields.model] {
+            cx.subscribe_in(input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+                TextInputEvent::Submit { .. } => this.form_save(cx),
+                TextInputEvent::Cancel => this.close_form(cx),
+                _ => {}
+            })
+            .detach();
+        }
+        let mut this = Self {
             core,
             theme,
             state,
@@ -130,16 +189,33 @@ impl BragiView {
             link_input,
             link_check: None,
             copied: false,
+            mono: markdown::pick_mono(&cx.text_system().all_font_names()),
+            copied_block: None,
+            markdown: RefCell::default(),
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
             agent: false,
             card: None,
             notice: None,
+            thinking_flipped: Default::default(),
+            thinking_since: None,
             scroll: ScrollHandle::new(),
+            stick: true,
+            recheck: false,
+            dragging: false,
+            react_picker: None,
             close_only: tiling_wm(),
+            confirm: None,
+            confirm_input,
+            deleted: None,
+            settings_open: false,
+            prefs: endpoints::Prefs::default(),
+            fields,
             _tasks: vec![follow],
-        }
+        };
+        this.refresh_prefs();
+        this
     }
 
     fn on_state(&mut self, s: AppState, cx: &mut Context<Self>) {
@@ -163,6 +239,7 @@ impl BragiView {
 
     fn reload(&mut self) {
         self.conversations = self.core.conversations(0, 100).unwrap_or_default();
+        self.refresh_prefs();
         if let Some(c) = &self.current {
             self.current = self.core.conversation(&c.id).ok();
         }
@@ -205,6 +282,38 @@ impl BragiView {
         .detach();
     }
 
+    /// Copies `text` (a code block, or a whole reply as its raw Markdown); its button says
+    /// "Copied" for a moment.
+    pub fn copy_text(&mut self, id: SharedString, text: String, cx: &mut Context<Self>) {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+        self.copied_block = Some(id.clone());
+        cx.notify();
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            cx.background_executor().timer(Duration::from_secs(2)).await;
+            let _ = this.update(cx, |v, cx| {
+                if v.copied_block.as_ref() == Some(&id) {
+                    v.copied_block = None;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// A reply's Markdown, parsed once per text (streaming text is parsed tolerantly).
+    fn parsed(&self, key: &str, text: &str, streaming: bool) -> Rc<bragi_core::markdown::Document> {
+        let mut cache = self.markdown.borrow_mut();
+        if let Some((t, s, doc)) = cache.get(key)
+            && t == text
+            && *s == streaming
+        {
+            return doc.clone();
+        }
+        let doc = Rc::new(if streaming { bragi_core::markdown::parse_streaming(text) } else { bragi_core::markdown::parse(text) });
+        cache.insert(key.to_string(), (text.to_string(), streaming, doc.clone()));
+        doc
+    }
+
     pub fn confirm_code(&mut self, matches: bool, cx: &mut Context<Self>) {
         if let Err(e) = self.core.pair_confirm(matches) {
             self.notice = Some(e.message);
@@ -213,17 +322,85 @@ impl BragiView {
     }
 
     pub fn new_chat(&mut self, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         self.current = None;
+        self.settings_open = false;
         cx.notify();
     }
 
     pub fn open(&mut self, id: &str, cx: &mut Context<Self>) {
         self.current = self.core.conversation(id).ok();
+        self.settings_open = false;
+        self.jump_to_latest();
+        cx.notify();
+    }
+
+    /// Go to the newest message and follow it again.
+    fn jump_to_latest(&mut self) {
+        self.stick = true;
         self.scroll.scroll_to_bottom();
+    }
+
+    /// New text arrived: stay at the bottom unless the reader scrolled up.
+    fn follow_bottom(&mut self) {
+        if self.stick {
+            self.scroll.scroll_to_bottom();
+        }
+    }
+
+    fn at_bottom(&self) -> bool {
+        self.scroll.max_offset().y <= px(0.) || self.scroll.offset().y <= -self.scroll.max_offset().y + px(4.)
+    }
+
+    /// Scroll the list by `dy` (positive moves down); `None` goes to an end.
+    fn scroll_by(&mut self, dy: Option<f32>, to_top: bool, cx: &mut Context<Self>) {
+        let max = self.scroll.max_offset().y;
+        let mut o = self.scroll.offset();
+        o.y = match dy {
+            Some(d) => (o.y - px(d)).clamp(-max, px(0.)),
+            None if to_top => px(0.),
+            None => -max,
+        };
+        self.scroll.set_offset(o);
+        self.recheck = true;
+        cx.notify();
+    }
+
+    fn page(&self) -> f32 {
+        (self.scroll.bounds().size.height.as_f32() * 0.9).max(80.)
+    }
+
+    /// Put the list where the scrollbar was grabbed.
+    fn drag_to(&mut self, y: gpui::Pixels, cx: &mut Context<Self>) {
+        let b = self.scroll.bounds();
+        let max = self.scroll.max_offset().y;
+        if b.size.height <= px(0.) || max <= px(0.) {
+            return;
+        }
+        let frac = ((y - b.origin.y) / b.size.height).clamp(0., 1.);
+        self.scroll.set_offset(gpui::point(self.scroll.offset().x, -max * frac));
+        self.recheck = true;
+        cx.notify();
+    }
+
+    /// Toggles a reaction on a message of the open conversation (the same one again removes it).
+    pub fn react(&mut self, message: &str, emoji: &str, cx: &mut Context<Self>) {
+        self.react_picker = None;
+        let Some(c) = &self.current else { return };
+        match self.core.react(&c.id, message, emoji) {
+            Ok(_) => self.current = self.core.conversation(&c.id).ok(),
+            Err(e) => self.notice = Some(e.message),
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_react_picker(&mut self, message: &str, cx: &mut Context<Self>) {
+        self.react_picker = if self.react_picker.as_deref() == Some(message) { None } else { Some(message.to_string()) };
         cx.notify();
     }
 
     pub fn pick_model(&mut self, id: &str, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         self.model = Some(id.to_string());
         cx.notify();
     }
@@ -280,6 +457,7 @@ impl BragiView {
     }
 
     pub fn send(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.core.dismiss_node_search();
         if self.streaming.is_some() {
             return;
         }
@@ -289,7 +467,8 @@ impl BragiView {
         let sent = if self.agent {
             self.core.send_agent(conv.as_deref(), &text, None, None, files.clone())
         } else {
-            self.core.send_with(conv.as_deref(), &text, self.model(), files.clone())
+            let target = if conv.is_none() { self.prefs.new_target.clone() } else { None };
+            self.core.send_to(conv.as_deref(), &text, self.model(), files.clone(), target)
         };
         match sent {
             Err(e) => {
@@ -324,11 +503,11 @@ impl BragiView {
         let link = self.link_input.read(cx).text().to_string();
         // A node address (`/ip4/…/tcp/4848/p2p/…`, from `ymirctl pool addresses`) rather than a code:
         // dial that node from now on.
-        if link.trim().starts_with('/') {
-            self.notice = Some(match self.core.add_peer(&link) {
-                Ok(()) => "Added the node's address; looking for it…".into(),
-                Err(e) => e.message,
-            });
+        self.core.dismiss_node_search();
+        if bragi_core::is_node_address(&link) {
+            // Progress and the outcome come as the core's node search (drawn below the chat, not
+            // in red); only a refused address is an error.
+            self.notice = self.core.add_node(&link).err().map(|e| e.message);
             self.link_input.update(cx, |i, cx| i.set_text("", cx));
             cx.notify();
             return;
@@ -373,7 +552,24 @@ impl BragiView {
         self.streaming = Some(Streaming { request_id: h.request_id.clone(), conversation: h.conversation_id.clone() });
         self.current = self.core.conversation(&h.conversation_id).ok();
         self.reload();
-        self.scroll.scroll_to_bottom();
+        self.jump_to_latest();
+        self.thinking_since = None;
+        // Redraws the Thinking section's elapsed time while the model reasons.
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(500)).await;
+                let going = this.update(cx, |v, cx| {
+                    if v.thinking_since.is_some() {
+                        cx.notify();
+                    }
+                    v.streaming.is_some()
+                });
+                if !matches!(going, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
         cx.spawn(async move |this: WeakEntity<Self>, cx| {
             while let Some(ev) = h.events.recv().await {
                 let end = matches!(ev, ChatEvent::Done { .. } | ChatEvent::Error { .. });
@@ -387,9 +583,10 @@ impl BragiView {
             }
             let _ = this.update(cx, |v, cx| {
                 v.streaming = None;
+                v.thinking_since = None;
                 v.card = None;
                 v.reload();
-                v.scroll.scroll_to_bottom();
+                v.follow_bottom();
                 cx.notify();
             });
         })
@@ -402,7 +599,17 @@ impl BragiView {
         match ev {
             ChatEvent::Delta { offset, text } => {
                 splice(&mut last.text, offset, &text);
+                self.follow_bottom();
+            }
+            ChatEvent::Reasoning { offset, text } => {
+                self.thinking_since.get_or_insert_with(Instant::now);
+                splice(&mut last.reasoning, offset, &text);
                 self.scroll.scroll_to_bottom();
+            }
+            ChatEvent::Thought { elapsed_ms } => {
+                // A continued answer adds to the time already spent.
+                last.thinking_ms = Some(elapsed_ms);
+                self.thinking_since = None;
             }
             ChatEvent::Started { node, model, .. } => {
                 last.node = Some(node);
@@ -558,25 +765,7 @@ impl BragiView {
 
     fn sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let mut list = div().id("conversations").flex().flex_col().gap(px(2.)).flex_1().overflow_y_scroll();
-        for c in &self.conversations {
-            let selected = self.current.as_ref().is_some_and(|x| x.id == c.id);
-            let id = c.id.clone();
-            list = list.child(
-                div()
-                    .id(SharedString::from(format!("conv-{}", c.id)))
-                    .px(px(10.))
-                    .py(px(7.))
-                    .rounded(px(6.))
-                    .text_size(px(13.))
-                    .text_color(rgb(if selected { t.text_primary } else { t.text_secondary }))
-                    .when(selected, |d| d.bg(rgb(t.surface_variant)))
-                    .hover(|s| s.bg(rgb(t.surface_variant)))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |v, _, _, cx| v.open(&id, cx)))
-                    .child(c.title.clone()),
-            );
-        }
+        let list = div().id("conversations").flex().flex_col().gap(px(2.)).flex_1().overflow_y_scroll().children(self.history_tree(cx));
         let link_box = match &self.link_check {
             Some(check) => div()
                 .flex()
@@ -596,7 +785,16 @@ impl BragiView {
                 .flex_col()
                 .gap(px(6.))
                 .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("LINK A DEVICE"))
-                .child(div().px(px(8.)).py(px(6.)).rounded(px(6.)).bg(rgb(t.background)).text_size(px(12.)).child(self.link_input.clone()))
+                .child(
+                    div()
+                        .px(px(8.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .bg(rgb(t.background))
+                        .text_size(px(12.))
+                        .overflow_hidden()
+                        .child(self.link_input.clone()),
+                )
                 .child(self.button("link-go", "Link", false).on_click(cx.listener(|v, _, _, cx| v.link_device(cx)))),
         };
         div()
@@ -610,9 +808,27 @@ impl BragiView {
             .border_r_1()
             .border_color(rgb(t.border))
             .child(self.button("new-chat", "+ New chat", false).on_click(cx.listener(|v, _, _, cx| v.new_chat(cx))))
-            .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .child(div().flex_1().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
+                    .child(
+                        div()
+                            .id("new-folder")
+                            .px(px(6.))
+                            .text_size(px(12.))
+                            .text_color(rgb(t.text_secondary))
+                            .hover(|s| s.text_color(rgb(t.accent)))
+                            .cursor_pointer()
+                            .on_click(cx.listener(|v, _, _, cx| v.folder_form(None, None, cx)))
+                            .child("+ Folder"),
+                    ),
+            )
             .child(list)
             .child(link_box)
+            .child(self.button("open-settings", "Settings", self.settings_open).on_click(cx.listener(|v, _, _, cx| v.toggle_settings(cx))))
     }
 
     fn models(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -672,7 +888,65 @@ impl BragiView {
         row
     }
 
-    fn bubble(&self, m: &ChatMessage) -> impl IntoElement {
+    /// The collapsible Thinking section above an answer: the model's reasoning as plain text,
+    /// streaming live, with the time it took. Open while the model reasons, closed once the
+    /// answer starts; a click flips it.
+    fn thinking(&self, index: usize, m: &ChatMessage, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        if m.role != Role::Assistant || m.reasoning.trim().is_empty() {
+            return None;
+        }
+        let t = self.theme;
+        let streaming = m.state == MessageState::Streaming;
+        let reasoning_now = streaming && m.text.is_empty() && m.thinking_ms.is_none();
+        let conversation = self.current.as_ref().map(|c| c.id.clone()).unwrap_or_default();
+        let key = (conversation, index);
+        let open = reasoning_now != self.thinking_flipped.contains(&key);
+        let elapsed = match (reasoning_now, self.thinking_since) {
+            (true, Some(since)) => since.elapsed().as_millis() as u64,
+            _ => m.thinking_ms.unwrap_or(0),
+        };
+        let title = format!("{} {}", if open { "▾" } else { "▸" }, bragi_core::think::label(elapsed, !reasoning_now));
+        let header = div()
+            .id(SharedString::from(format!("thinking-{index}")))
+            .text_size(px(12.))
+            .text_color(rgb(t.text_secondary))
+            .cursor_pointer()
+            .hover(|s| s.opacity(0.8))
+            .child(title)
+            .on_click(cx.listener(move |v, _, _, cx| {
+                if !v.thinking_flipped.remove(&key) {
+                    v.thinking_flipped.insert(key.clone());
+                }
+                cx.notify();
+            }));
+        Some(div().flex().flex_col().gap(px(4.)).child(header).when(open, |d| {
+            d.child(
+                div()
+                    .pl(px(10.))
+                    .border_l_2()
+                    .border_color(rgb(t.border))
+                    .text_size(px(13.))
+                    .line_height(px(19.))
+                    .text_color(rgb(t.text_secondary))
+                    .child(self.reasoning_markdown(index, m, cx)),
+            )
+        }))
+    }
+
+    /// The reasoning through the same Markdown renderer as the answer (no Copy button: thinking is not part of the answer).
+    fn reasoning_markdown(&self, index: usize, m: &ChatMessage, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let key = format!("think-{conv}-{index}");
+        let doc = self.parsed(&key, m.reasoning.trim(), m.state == MessageState::Streaming && m.thinking_ms.is_none());
+        let weak = cx.entity().downgrade();
+        let on_copy: markdown::OnCopy = Rc::new(move |id, text, cx| {
+            let _ = weak.update(cx, |v, cx| v.copy_text(id, text, cx));
+        });
+        let style = markdown::Style { theme: self.theme, mono: self.mono.clone(), copied: self.copied_block.clone(), on_copy };
+        markdown::render(&doc, &style, &key).into_any_element()
+    }
+
+    fn bubble(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let mine = m.role == Role::User;
         let meta = match (m.role, m.state) {
@@ -697,12 +971,14 @@ impl BragiView {
             (None, false) if m.role == Role::Assistant => Some(flags.join(" · ")),
             (meta, _) => meta,
         };
+        let _ = cx;
         div().flex().flex_row().when(mine, |d| d.justify_end()).child(
             div()
                 .flex()
                 .flex_col()
                 .gap(px(4.))
                 .max_w(px(620.))
+                .when(!mine, |d| d.w_full())
                 .px(px(14.))
                 .py(px(10.))
                 .rounded(px(12.))
@@ -716,23 +992,128 @@ impl BragiView {
                         .bg(rgb(t.surface_variant))
                         .text_size(px(12.))
                         .text_color(rgb(t.text_secondary))
-                        .child(format!("attached: {} ({} lines)", a.name, a.text.lines().count()))
+                        .child(format!("attached: {}", a.label()))
                 }))
-                .child(div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary)).child(if m.text.is_empty() {
-                    "…".to_string()
-                } else {
-                    m.text.clone()
-                })),
+                .children(self.thinking(i, m, cx))
+                .child(self.message_text(i, m, cx)),
         )
+    }
+
+    /// The message list, filling the space between the header and the composer: a scrollbar on
+    /// its right edge and a "jump to latest" button when the reader is above the newest text.
+    fn message_area(&self, body: impl IntoElement, cx: &mut Context<Self>) -> impl IntoElement {
+        let t = self.theme;
+        let max = self.scroll.max_offset().y.as_f32();
+        let view = self.scroll.bounds().size.height.as_f32();
+        let mut area = div()
+            .id("message-area")
+            .relative()
+            .flex_1()
+            .min_h(px(0.))
+            .overflow_hidden()
+            .on_mouse_move(cx.listener(|v, e: &gpui::MouseMoveEvent, _, cx| {
+                if v.dragging && e.pressed_button == Some(MouseButton::Left) {
+                    v.drag_to(e.position.y, cx);
+                }
+            }))
+            .on_mouse_up(
+                MouseButton::Left,
+                cx.listener(|v, _, _, _| {
+                    v.dragging = false;
+                }),
+            )
+            .child(body);
+        if max > 0. && view > 0. {
+            let total = max + view;
+            let thumb = (view * view / total).max(28.);
+            let top = (-self.scroll.offset().y.as_f32() / max).clamp(0., 1.) * (view - thumb);
+            area = area.child(
+                div()
+                    .id("scrollbar")
+                    .absolute()
+                    .top(px(0.))
+                    .bottom(px(0.))
+                    .right(px(0.))
+                    .w(px(12.))
+                    .cursor_pointer()
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|v, e: &gpui::MouseDownEvent, _, cx| {
+                            v.dragging = true;
+                            v.drag_to(e.position.y, cx);
+                        }),
+                    )
+                    .child(div().absolute().top(px(top)).right(px(3.)).w(px(6.)).h(px(thumb)).rounded(px(3.)).bg(rgb(t.text_secondary)).opacity(0.5)),
+            );
+        }
+        if !self.stick && max > 0. {
+            area = area.child(div().absolute().bottom(px(12.)).left(px(0.)).right(px(0.)).flex().justify_center().child(
+                self.button("jump-latest", "↓ Jump to latest", true).on_click(cx.listener(|v, _, _, cx| {
+                    v.jump_to_latest();
+                    cx.notify();
+                })),
+            ));
+        }
+        area
+    }
+
+    /// A user's message as typed; a reply as Markdown, with a Copy button for its raw text.
+    fn message_text(&self, i: usize, m: &ChatMessage, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let t = self.theme;
+        let text = div().text_size(px(14.)).line_height(px(21.)).text_color(rgb(t.text_primary));
+        if m.text.is_empty() {
+            // Nothing from the model yet: say so, until reasoning or text arrives.
+            let waiting = m.state == MessageState::Streaming && m.reasoning.trim().is_empty();
+            return text.child(if waiting { "Waiting for a reply…" } else { "…" }).into_any_element();
+        }
+        if m.role == Role::User {
+            return text.child(m.text.clone()).into_any_element();
+        }
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let key = format!("{conv}-{i}");
+        let doc = self.parsed(&key, &m.text, m.state == MessageState::Streaming);
+        let weak = cx.entity().downgrade();
+        let on_copy: markdown::OnCopy = Rc::new(move |id, text, cx| {
+            let _ = weak.update(cx, |v, cx| v.copy_text(id, text, cx));
+        });
+        let style = markdown::Style { theme: t, mono: self.mono.clone(), copied: self.copied_block.clone(), on_copy };
+        let copy_id = SharedString::from(format!("msg-{key}"));
+        let copied = self.copied_block.as_ref() == Some(&copy_id);
+        let raw = m.text.clone();
+        let copy = div()
+            .id(SharedString::from(format!("copy-{key}")))
+            .px(px(8.))
+            .py(px(2.))
+            .rounded(px(5.))
+            .text_size(px(11.))
+            .text_color(rgb(t.text_secondary))
+            .cursor_pointer()
+            .hover(|h| h.bg(rgb(t.surface_variant)).text_color(rgb(t.text_primary)))
+            .on_click(cx.listener(move |v, _, _, cx| v.copy_text(copy_id.clone(), raw.clone(), cx)))
+            .child(if copied { "Copied" } else { "Copy" });
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(text.child(markdown::render(&doc, &style, &key)))
+            .when(m.state != MessageState::Streaming, |d| d.child(div().flex().flex_row().justify_end().child(copy)))
+            .into_any_element()
     }
 
     fn chat(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let mut body = div().id("messages").track_scroll(&self.scroll).flex().flex_col().gap(px(12.)).p(px(16.)).flex_1().overflow_y_scroll();
+        let mut body =
+            div().id("messages").track_scroll(&self.scroll).flex().flex_col().gap(px(12.)).p(px(16.)).size_full().overflow_y_scroll().on_scroll(
+                cx.listener(|v, _, _, cx| {
+                    v.recheck = true;
+                    cx.notify();
+                }),
+            );
         match &self.current {
             Some(c) => {
-                for m in &c.messages {
-                    body = body.child(self.bubble(m));
+                for (i, m) in c.messages.iter().enumerate() {
+                    let bubble = self.bubble(i, m, cx);
+                    body = body.child(self.message_row(i, m, bubble, cx));
                 }
             }
             None => {
@@ -780,7 +1161,7 @@ impl BragiView {
                         .text_size(px(12.))
                         .cursor_pointer()
                         .on_click(cx.listener(move |v, _, _, cx| v.detach(i, cx)))
-                        .child(format!("{} ({} lines) ×", a.name, a.text.lines().count())),
+                        .child(format!("{} ×", a.label())),
                 );
             }
             above = above.child(chips);
@@ -840,35 +1221,63 @@ impl BragiView {
             .flex_col()
             .flex_1()
             .min_w(px(0.))
+            .min_h(px(0.))
             .overflow_hidden()
             .child(self.models(cx))
-            .child(body)
+            .children(self.target_bar(cx))
+            .when(self.settings_open, |d| d.child(self.settings(cx)))
+            .when(!self.settings_open, |d| d.child(self.message_area(body, cx)))
+            .children(self.undo_bar(cx))
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
-            .children(any.then_some(above))
-            .child(div().border_t_1().border_color(rgb(t.border)).child(bar))
+            .children(self.state.node_search.line().map(|line| {
+                let color = match &self.state.node_search {
+                    NodeSearch::Found { .. } => t.success,
+                    s if s.is_problem() => t.warning,
+                    _ => t.text_secondary,
+                };
+                div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(color)).child(line)
+            }))
+            .children(any.then_some(above.flex_none().max_h(px(220.)).overflow_hidden()))
+            .child(div().flex_none().border_t_1().border_color(rgb(t.border)).child(bar))
     }
 }
 
 impl Render for BragiView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        if std::mem::take(&mut self.recheck) {
+            self.stick = self.at_bottom();
+        }
         let linked = matches!(self.state.pair, PairState::Linked { .. });
         let main = if linked {
-            div().flex().flex_row().flex_1().child(self.sidebar(cx)).child(self.chat(cx))
+            div().flex().flex_row().flex_1().min_h(px(0.)).child(self.sidebar(cx)).child(self.chat(cx))
         } else {
-            div().flex().flex_1().child(self.pairing(cx))
+            div().flex().flex_1().min_h(px(0.)).child(self.pairing(cx))
         };
         div()
             .key_context("Bragi")
             .on_action(cx.listener(|v, _: &Stop, _, cx| v.stop(cx)))
             .on_action(cx.listener(|_, _: &Quit, _, cx| cx.quit()))
+            .on_action(cx.listener(|v, _: &ChatPageUp, _, cx| {
+                let d = v.page();
+                v.scroll_by(Some(-d), false, cx)
+            }))
+            .on_action(cx.listener(|v, _: &ChatPageDown, _, cx| {
+                let d = v.page();
+                v.scroll_by(Some(d), false, cx)
+            }))
+            .on_action(cx.listener(|v, _: &ChatTop, _, cx| v.scroll_by(None, true, cx)))
+            .on_action(cx.listener(|v, _: &ChatBottom, _, cx| v.scroll_by(None, false, cx)))
             .flex()
             .flex_col()
             .size_full()
             .bg(rgb(t.background))
             .text_color(rgb(t.text_primary))
+            .relative()
             .child(self.title_bar(cx))
             .child(main)
+            .children(self.confirm_card(cx))
+            .children(self.prefs_overlay(cx))
     }
 }
 
@@ -1066,6 +1475,211 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("agent task");
     shot(cx, "18-agent-answer").await;
+    // Reactions: add two, turn one off again with the same click, see the pills and the picker.
+    let id = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.id).unwrap_or_default()).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        v.react(&id, "👍", cx);
+        v.react(&id, "🎉", cx);
+        v.react(&id, "🎉", cx);
+        v.react(&id, "🤔", cx);
+    })
+    .map_err(|e| e.to_string())?;
+    let got = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.reactions).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if got != ["👍", "🤔"] {
+        return Err(format!("reactions: {got:?}"));
+    }
+    step("reactions");
+    shot(cx, "19-reactions").await;
+    this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
+    shot(cx, "20-reaction-picker").await;
+    this.update(cx, |v, cx| v.toggle_react_picker(&id, cx)).map_err(|e| e.to_string())?;
+
+    settings_scenario::run(&this, cx, pause).await?;
+
+    // A node address pasted into Link a device: the placeholder fits the field, progress is
+    // not red, a node that never answers turns into advice, and a found one says so and clears.
+    shot(cx, "19-link-field").await;
+    let demo = DEMO.get().ok_or("no demo node")?.clone();
+    let second = demo.siblings().first().cloned().ok_or("no second demo node")?;
+    let gone = second.address();
+    second.stop();
+    wait_for(&this, cx, "the stopped node gone", |v| v.state.catalog.nodes.len() == 1).await?;
+    this.update(cx, |v, cx| {
+        v.core.set_node_search_limit(Duration::from_secs(4));
+        v.link_input.update(cx, |i, cx| i.set_text(&gone, cx));
+        v.link_device(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "looking", |v| matches!(v.state.node_search, NodeSearch::Looking { .. }) && v.notice.is_none()).await?;
+    step("looking for the node");
+    shot(cx, "20-node-looking").await;
+    wait_for(&this, cx, "the advice", |v| v.state.node_search.is_problem()).await?;
+    step("node not found: advice");
+    shot(cx, "21-node-not-found").await;
+    let first = demo.address();
+    this.update(cx, |v, cx| {
+        v.link_input.update(cx, |i, cx| i.set_text(&first, cx));
+        v.link_device(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "connected", |v| matches!(v.state.node_search, NodeSearch::Found { .. })).await?;
+    step("node found");
+    shot(cx, "22-node-found").await;
+    wait_for(&this, cx, "the line cleared", |v| v.state.node_search == NodeSearch::Idle).await?;
+    step("node line cleared");
+    shot(cx, "23-node-cleared").await;
+    // A long chat: it opens at the newest message, then the reader scrolls to the middle; the
+    // composer stays put and "jump to latest" shows.
+    this.update(cx, |v, cx| {
+        if let Some(c) = v.current.as_mut() {
+            let seed = c.messages.clone();
+            for i in 0..40 {
+                let mut m = seed[i % seed.len()].clone();
+                m.text = format!("Message {i}. {}", m.text);
+                c.messages.push(m);
+            }
+        }
+        v.jump_to_latest();
+        cx.notify();
+    })
+    .map_err(|e| e.to_string())?;
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    this.update(cx, |v, cx| {
+        let half = v.scroll.max_offset().y.as_f32() / 2.;
+        v.scroll_by(Some(-half), false, cx);
+    })
+    .map_err(|e| e.to_string())?;
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    let (stuck, max) = this.read_with(cx, |v, _| (v.stick, v.scroll.max_offset().y.as_f32())).map_err(|e| e.to_string())?;
+    if stuck || max <= 0. {
+        return Err(format!("the long chat did not scroll up (stick {stuck}, max {max})"));
+    }
+    step("scrolled to the middle");
+    shot(cx, "24-scrolled-middle").await;
+    // Markdown: a reply with a heading, a list, a table and a code block renders as such while it
+    // streams (a half-open fence is code already) and when done; Copy gives the raw Markdown.
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        if v.agent {
+            v.toggle_agent(cx);
+        }
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.set_prompt("Show me some Markdown.", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "a half-open fence", |v| last_assistant(v).is_some_and(|m| m.text.contains("fn main()"))).await?;
+    let streaming = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.text).unwrap_or_default()).map_err(|e| e.to_string())?;
+    if !bragi_core::markdown::parse_streaming(&streaming).blocks.iter().any(|b| matches!(b, bragi_core::markdown::Block::Code { closed: false, .. }))
+    {
+        return Err(format!("a half-open fence did not render as code: {streaming:?}"));
+    }
+    shot(cx, "25-markdown-streaming").await;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let text = this.read_with(cx, |v, _| last_assistant(v).map(|m| m.text).unwrap_or_default()).map_err(|e| e.to_string())?;
+    let doc = bragi_core::markdown::parse(&text);
+    use bragi_core::markdown::Block as B;
+    let has = |f: fn(&B) -> bool| doc.blocks.iter().any(f);
+    if !(has(|b| matches!(b, B::Heading { .. }))
+        && has(|b| matches!(b, B::List { .. }))
+        && has(|b| matches!(b, B::Table { .. }))
+        && has(|b| matches!(b, B::Code { closed: true, .. }))
+        && has(|b| matches!(b, B::Paragraph { spans } if spans.iter().any(|s| s.bold && s.text == "4"))))
+    {
+        return Err(format!("the Markdown reply did not parse into every block: {doc:?}"));
+    }
+    let key = this
+        .read_with(cx, |v, _| v.current.as_ref().map(|c| format!("{}-{}", c.id, c.messages.len() - 1)))
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+    let code = doc.code_blocks()[0].to_string();
+    let got = this
+        .update(cx, |v, cx| {
+            v.copy_text(SharedString::from(format!("msg-{key}")), text.clone(), cx);
+            let whole = cx.read_from_clipboard().and_then(|i| i.text());
+            v.copy_text(SharedString::from(format!("{key}-code")), code.clone(), cx);
+            (whole, cx.read_from_clipboard().and_then(|i| i.text()))
+        })
+        .map_err(|e| e.to_string())?;
+    if got.0.as_deref() != Some(text.as_str()) || got.1.as_deref() != Some(code.as_str()) {
+        return Err("Copy did not give the raw Markdown and the code".into());
+    }
+    step("markdown");
+    shot(cx, "26-markdown").await;
+    // The model's reasoning streams in an open Thinking section, which closes when the answer starts.
+    let prompt = format!("{} which node answers?", bragi_core::demo::THINK_PROMPT);
+    this.update(cx, |v, cx| {
+        if v.agent {
+            v.toggle_agent(cx);
+        }
+        v.new_chat(cx);
+        v.pick_model(bragi_core::demo::WARM_MODEL, cx);
+        v.set_prompt(&prompt, cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the reasoning", |v| last_assistant(v).is_some_and(|m| m.reasoning.split(' ').count() > 5 && m.text.is_empty())).await?;
+    step("thinking");
+    shot(cx, "27-thinking").await;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let (text, reasoning, ms) =
+        this.read_with(cx, |v, _| last_assistant(v).map(|m| (m.text, m.reasoning, m.thinking_ms)).unwrap_or_default()).map_err(|e| e.to_string())?;
+    let want = bragi_core::demo::reasoning_for(&prompt).unwrap_or_default();
+    if text != bragi_core::demo::answer_for(bragi_core::demo::WARM_MODEL, &prompt) || reasoning.trim() != want || ms.is_none() {
+        return Err(format!("thinking: {text:?} {reasoning:?} {ms:?}"));
+    }
+    step("thought");
+    shot(cx, "28-thought").await;
+    // A click opens the closed section again.
+    this.update(cx, |v, cx| {
+        if let Some(c) = &v.current {
+            v.thinking_flipped.insert((c.id.clone(), c.messages.len() - 1));
+        }
+        cx.notify();
+    })
+    .map_err(|e| e.to_string())?;
+    shot(cx, "29-thought-opened").await;
+    // Delete from the history: a question and its answer (asked, then undone), a conversation
+    // from the list, then everything from Settings behind the typed word.
+    let target = this.read_with(cx, |v, _| v.conversations.last().map(|c| c.id.clone())).map_err(|e| e.to_string())?.ok_or("no conversations")?;
+    this.update(cx, |v, cx| v.open(&target, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the first conversation", |v| v.current.as_ref().is_some_and(|c| c.messages.len() == 4)).await?;
+    let question = this.read_with(cx, |v, _| v.current.as_ref().map(|c| c.messages[2].id.clone())).map_err(|e| e.to_string())?.unwrap_or_default();
+    this.update(cx, |v, cx| v.ask_delete_message(&question, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the confirm card", |v| matches!(v.confirm, Some(delete::Confirm::Message { has_reply: true, .. }))).await?;
+    shot(cx, "30-delete-confirm").await;
+    this.update(cx, |v, cx| v.confirm_delete(true, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the delete", |v| v.deleted.is_some() && v.current.as_ref().is_some_and(|c| c.messages.len() == 2)).await?;
+    step("deleted a message and its answer");
+    shot(cx, "31-deleted-undo").await;
+    this.update(cx, |v, cx| v.undo_delete(cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the undo", |v| v.current.as_ref().is_some_and(|c| c.messages.len() == 4 && c.messages[2].id == question)).await?;
+    step("undone");
+    let before = this.read_with(cx, |v, _| v.conversations.len()).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| v.ask_delete_conversation(&target, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the confirm card", |v| matches!(v.confirm, Some(delete::Confirm::Conversation { .. }))).await?;
+    this.update(cx, |v, cx| v.confirm_delete(false, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the conversation gone", |v| v.conversations.len() == before - 1 && v.current.is_none()).await?;
+    step("deleted a conversation");
+    this.update(cx, |v, cx| {
+        v.toggle_settings(cx);
+        v.ask_clear(cx);
+    })
+    .map_err(|e| e.to_string())?;
+    shot(cx, "32-clear-confirm").await;
+    // Not without the word.
+    this.update(cx, |v, cx| v.confirm_delete(false, cx)).map_err(|e| e.to_string())?;
+    if this.read_with(cx, |v, _| v.conversations.is_empty() || v.confirm.is_none()).map_err(|e| e.to_string())? {
+        return Err("Clear all history went ahead without the typed word".into());
+    }
+    this.update(cx, |v, cx| {
+        v.confirm_input.update(cx, |i, cx| i.set_text(delete::CLEAR_WORD, cx));
+        v.confirm_delete(false, cx)
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "all history gone", |v| v.conversations.is_empty() && v.confirm.is_none()).await?;
+    step("cleared all history");
+    shot(cx, "33-cleared").await;
     Ok(())
 }
 
@@ -1152,7 +1766,11 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
         let mut cfg = Config::new(home, label());
         cfg.transport = Transport::Internet;
         match Core::start(cfg) {
-            Ok(c) => c,
+            Ok(c) => {
+                // API keys go to the OS keychain when one is running; otherwise the sealed file.
+                c.use_os_keychain();
+                c
+            }
             Err(e) => {
                 eprintln!("bragi: {e}");
                 return std::process::ExitCode::FAILURE;
@@ -1168,6 +1786,13 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
     app.run(move |cx: &mut App| {
         let mut keys = text_input::bindings();
         keys.push(KeyBinding::new("escape", Stop, Some("Bragi")));
+        // The text field's own Home/End win while it has focus; these reach the list otherwise.
+        keys.push(KeyBinding::new("pageup", ChatPageUp, Some("Bragi")));
+        keys.push(KeyBinding::new("pagedown", ChatPageDown, Some("Bragi")));
+        keys.push(KeyBinding::new("home", ChatTop, Some("Bragi")));
+        keys.push(KeyBinding::new("end", ChatBottom, Some("Bragi")));
+        keys.push(KeyBinding::new("ctrl-home", ChatTop, Some("Bragi")));
+        keys.push(KeyBinding::new("ctrl-end", ChatBottom, Some("Bragi")));
         keys.push(KeyBinding::new("ctrl-q", Quit, None));
         cx.bind_keys(keys);
         let bounds = Bounds::centered(None, size(px(1100.), px(720.)), cx);

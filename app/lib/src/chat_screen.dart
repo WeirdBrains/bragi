@@ -1,11 +1,17 @@
 // The chat: pick a model from the catalog, ask, watch it stream, stop it, continue it.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
 import 'controller.dart';
+import 'markdown.dart';
+import 'delete_ui.dart';
+import 'sessions_ui.dart';
+import 'settings_ui.dart';
 import 'theme.dart';
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -23,6 +29,26 @@ class _ChatScreenState extends State<ChatScreen> {
   final _prompt = TextEditingController();
   final _link = TextEditingController();
   final _scroll = ScrollController();
+
+  /// Follow the newest text; false once the reader scrolls up.
+  bool _stick = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final atBottom = _scroll.position.maxScrollExtent - _scroll.position.pixels <= 24;
+    if (atBottom != _stick) setState(() => _stick = atBottom);
+  }
+
+  void _jumpToLatest() {
+    setState(() => _stick = true);
+    if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+  }
 
   @override
   void dispose() {
@@ -56,7 +82,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (_stick && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
     return Scaffold(
       appBar: AppBar(
@@ -65,8 +91,8 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: _Models(controller: c),
+          preferredSize: const Size.fromHeight(92),
+          child: Column(children: [TargetBar(controller: c), _Models(controller: c)]),
         ),
       ),
       drawer: _History(controller: c, link: _link),
@@ -78,18 +104,59 @@ class _ChatScreenState extends State<ChatScreen> {
                   ? const Center(
                       child: Text('Ask your own cloud something.', style: TextStyle(color: BragiColors.textSecondary)),
                     )
-                  : ListView.builder(
-                      key: const Key('messages'),
-                      controller: _scroll,
-                      padding: const EdgeInsets.all(12),
-                      itemCount: c.messages.length,
-                      itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
+                  // Replies stay selectable; each reply's copy button gives its raw Markdown.
+                  : Stack(
+                      children: [
+                        SelectionArea(child: ListView.builder(
+                          key: const Key('messages'),
+                          controller: _scroll,
+                          padding: const EdgeInsets.all(12),
+                          itemCount: c.messages.length,
+                          itemBuilder: (context, i) => GestureDetector(
+                            key: Key('bubble-$i'),
+                            // Long-press (or right-click) a message for its menu; not while an answer streams.
+                            onLongPress: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                            onSecondaryTap: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                            child: _Bubble(key: ValueKey('bubble-${c.current?.id}-$i'), message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1, controller: c),
+                          ),
+                        )),
+                        if (!_stick)
+                          Positioned(
+                            bottom: 8,
+                            left: 0,
+                            right: 0,
+                            child: Center(
+                              child: FilledButton.icon(
+                                key: const Key('jump-latest'),
+                                onPressed: _jumpToLatest,
+                                icon: const Icon(Icons.arrow_downward, size: 16),
+                                label: const Text('Jump to latest'),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
             ),
             if (c.notice != null)
               Padding(
                 padding: const EdgeInsets.all(6),
                 child: Text(c.notice!, style: const TextStyle(color: BragiColors.error, fontSize: 12)),
+              ),
+            if (c.nodeSearchLine != null)
+              Padding(
+                padding: const EdgeInsets.all(6),
+                child: Text(
+                  c.nodeSearchLine!,
+                  key: const Key('node-search'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: switch (c.nodeSearch) {
+                      'found' => BragiColors.warm,
+                      'not_found' => BragiColors.busy,
+                      _ => BragiColors.textSecondary,
+                    },
+                  ),
+                ),
               ),
             if (c.card != null) _Card(controller: c),
             if (c.attachments.isNotEmpty)
@@ -101,7 +168,8 @@ class _ChatScreenState extends State<ChatScreen> {
                     for (final (i, a) in c.attachments.indexed)
                       InputChip(
                         key: Key('chip-$i'),
-                        label: Text('${a.name} (${a.text.trimRight().split('\n').length} lines)'),
+                        label: Text(_attachmentLabel(a)),
+                        avatar: a.kind == 'text' ? null : Icon(a.kind == 'image' ? Icons.image_outlined : Icons.graphic_eq, size: 16),
                         onDeleted: () => c.detach(i),
                       ),
                   ],
@@ -116,7 +184,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   IconButton(
                     key: const Key('attach'),
-                    tooltip: 'Attach a text file',
+                    tooltip: 'Attach a file, image or audio',
                     onPressed: _attach,
                     icon: const Icon(Icons.attach_file),
                   ),
@@ -266,10 +334,13 @@ class _Models extends StatelessWidget {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({required this.message, required this.streaming});
+  const _Bubble({super.key, required this.message, required this.streaming, required this.controller});
 
   final MessageView message;
   final bool streaming;
+  final BragiController controller;
+
+  /// Parses a reply's Markdown (bragi-core, through the controller's cache).
 
   @override
   Widget build(BuildContext context) {
@@ -305,7 +376,7 @@ class _Bubble extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
                 child: Text(
-                  'attached: ${a.name} (${a.text.trimRight().split('\n').length} lines)',
+                  'attached: ${_attachmentLabel(a)}',
                   key: const Key('bubble-attachment'),
                   style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
                 ),
@@ -316,9 +387,143 @@ class _Bubble extends StatelessWidget {
                 key: const Key('bubble-meta'),
                 style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
               ),
-            Text(message.text.isEmpty ? '…' : message.text, style: const TextStyle(fontSize: 15, height: 1.4)),
+            if (!mine && message.reasoning.trim().isNotEmpty) _Thinking(message: message, streaming: streaming, controller: controller),
+            if (mine || message.text.isEmpty)
+              Text(
+                message.text.isEmpty
+                    // Nothing from the model yet: say so, until reasoning or text arrives.
+                    ? (streaming && message.reasoning.trim().isEmpty ? 'Waiting for a reply…' : '…')
+                    : message.text,
+                key: message.text.isEmpty && streaming ? const Key('bubble-waiting') : null,
+                style: const TextStyle(fontSize: 15, height: 1.4),
+              )
+            else
+              MarkdownView(key: const Key('bubble-markdown'), doc: controller.markdown(message.text, streaming || message.state == 'streaming')),
+            if (message.reactions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final e in message.reactions)
+                      InkWell(
+                        key: Key('pill-$e'),
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: streaming ? null : () => controller.react(message, e),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: BragiColors.selection,
+                            border: Border.all(color: BragiColors.border),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(e, style: const TextStyle(fontSize: 14)),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            if (!mine && !streaming && message.text.isNotEmpty)
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  key: const Key('copy-message'),
+                  tooltip: 'Copy as Markdown',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 16,
+                  color: BragiColors.textSecondary,
+                  onPressed: () => Clipboard.setData(ClipboardData(text: message.text)),
+                  icon: const Icon(Icons.copy),
+                ),
+              ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// The collapsible Thinking section above an answer: the model's reasoning as plain text,
+/// streaming live, with the time it took (the title comes from bragi-core, as on the desktop).
+/// Open while the model reasons, closed once the answer starts; a tap flips it.
+class _Thinking extends StatefulWidget {
+  const _Thinking({required this.message, required this.streaming, required this.controller});
+
+  final MessageView message;
+  final bool streaming;
+  final BragiController controller;
+
+  @override
+  State<_Thinking> createState() => _ThinkingState();
+}
+
+class _ThinkingState extends State<_Thinking> {
+  bool _flipped = false;
+  Timer? _tick;
+
+  bool get _reasoningNow => widget.streaming && widget.message.text.isEmpty && widget.message.thinkingMs == null;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker();
+  }
+
+  @override
+  void didUpdateWidget(_Thinking old) {
+    super.didUpdateWidget(old);
+    _ticker();
+  }
+
+  /// Redraws the elapsed time while the model reasons.
+  void _ticker() {
+    if (_reasoningNow) {
+      _tick ??= Timer.periodic(const Duration(milliseconds: 500), (_) => setState(() {}));
+    } else {
+      _tick?.cancel();
+      _tick = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = _reasoningNow;
+    final open = now != _flipped;
+    final since = widget.controller.thinkingSince;
+    final elapsed = now && since != null ? DateTime.now().difference(since).inMilliseconds : (widget.message.thinkingMs?.toInt() ?? 0);
+    final title = widget.controller.api.thinkingLabel(elapsed, !now);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2, bottom: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            key: const Key('thinking'),
+            onTap: () => setState(() => _flipped = !_flipped),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text('${open ? '▾' : '▸'} $title', style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+            ),
+          ),
+          if (open)
+            Container(
+              key: const Key('thinking-text'),
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.only(left: 10),
+              decoration: const BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 2))),
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: BragiColors.textSecondary),
+                child: MarkdownView(key: const Key('thinking-markdown'), doc: widget.controller.markdown(widget.message.reasoning.trim(), now)),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -352,21 +557,19 @@ class _History extends StatelessWidget {
               child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
             ),
             Expanded(
-              child: ListView(
-                children: [
-                  for (final s in c.conversations)
-                    ListTile(
-                      key: Key('conv-${s.id}'),
-                      dense: true,
-                      selected: c.current?.id == s.id,
-                      title: Text(s.title, overflow: TextOverflow.ellipsis),
-                      onTap: () {
-                        c.open(s.id);
-                        Navigator.of(context).pop();
-                      },
-                    ),
-                ],
-              ),
+              child: SessionsTree(controller: c),
+            ),
+            ListTile(
+              key: const Key('settings'),
+              dense: true,
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                c.reloadSettings();
+                nav.push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
+              },
             ),
             const Divider(),
             Padding(
@@ -395,13 +598,21 @@ class _History extends StatelessWidget {
                           key: const Key('link-code'),
                           controller: link,
                           decoration: const InputDecoration(
-                            hintText: 'weirdnet-bragi:// code',
+                            hintText: 'Link code or node address',
+                            hintMaxLines: 1,
+                            hintStyle: TextStyle(overflow: TextOverflow.ellipsis),
                             isDense: true,
                             border: OutlineInputBorder(),
                           ),
                         ),
                         const SizedBox(height: 6),
-                        OutlinedButton(key: const Key('link-go'), onPressed: () => c.linkDevice(link.text), child: const Text('Link')),
+                        OutlinedButton(
+                          key: const Key('link-go'),
+                          onPressed: () async {
+                            if (await c.linkDevice(link.text)) link.clear();
+                          },
+                          child: const Text('Link'),
+                        ),
                       ],
                     ),
             ),
@@ -411,3 +622,10 @@ class _History extends StatelessWidget {
     );
   }
 }
+
+/// A chip or bubble line for an attachment: a text file by its length, an image or sound by its kind.
+String _attachmentLabel(AttachmentView a) => switch (a.kind) {
+  'image' => '${a.name} (image)',
+  'audio' => '${a.name} (audio)',
+  _ => '${a.name} (${a.text.trimRight().split('\n').length} lines)',
+};

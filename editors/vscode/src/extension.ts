@@ -9,7 +9,7 @@ import { editorContext } from './context';
 import { InlineProvider } from './inline';
 import { PROPOSED_SCHEME, Rewrites } from './rewrite';
 import { defaultTokenPath, Secrets } from './tokens';
-import { BragiError, Scope } from './types';
+import { BragiError, BragiTarget, Scope } from './types';
 
 export interface BragiApi {
   router: Router;
@@ -55,8 +55,14 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
   status.command = 'bragi.pickModel';
   status.name = 'Bragi';
   const targetLabel = () => {
-    const model = router.modelFor(router.target() === 'direct' ? router.direct : router.bragi) ?? 'default model';
-    return router.target() === 'direct' ? `Direct · ${model}` : `Bragi · ${model}`;
+    if (router.target() === 'direct') {
+      return `Direct · ${router.modelFor(router.direct) ?? 'default model'}`;
+    }
+    const t = cfg().get<BragiTarget | null>('bragiTarget', null);
+    if (t?.kind === 'endpoint') {
+      return `Bragi · ${t.model || t.id}`;
+    }
+    return `Bragi · ${router.modelFor(router.bragi) ?? 'default model'}`;
   };
   const chat = new ChatView(context.extensionUri, router, targetLabel);
 
@@ -195,18 +201,25 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
 interface Pick extends vscode.QuickPickItem {
   target?: 'bragi' | 'direct';
   model?: string;
+  bragiTarget?: BragiTarget | null;
 }
 
 async function pickModel(router: Router): Promise<void> {
   const items: Pick[] = [{ label: 'Bragi (local app)', kind: vscode.QuickPickItemKind.Separator }];
   try {
-    const list = await router.bragi.models();
-    items.push({ label: '$(star) Default model', description: list.defaultModel ?? list.message, target: 'bragi', model: '' });
-    for (const m of list.models) {
-      items.push({ label: m.id, description: m.status, target: 'bragi', model: m.id });
+    const [list, targets] = await Promise.all([router.bragi.models(), router.bragi.targets()]);
+    items.push({ label: '$(star) Default target and model', description: list.defaultModel ?? list.message, target: 'bragi', model: '', bragiTarget: null });
+    for (const t of targets) {
+      if (t.target.kind === 'pool') {
+        for (const m of list.models) {
+          items.push({ label: m.id, description: `${t.label} · ${m.status ?? ''}`, target: 'bragi', model: m.id, bragiTarget: t.target });
+        }
+      } else {
+        items.push({ label: t.label, description: 'endpoint from Bragi Settings', target: 'bragi', model: '', bragiTarget: t.target });
+      }
     }
   } catch (e) {
-    items.push({ label: '$(warning) Not available', detail: describe(e), target: 'bragi', model: '' });
+    items.push({ label: '$(warning) Not available', detail: describe(e), target: 'bragi', model: '', bragiTarget: null });
   }
   const direct = vscode.workspace.getConfiguration('bragi').get<string>('direct.url', '');
   if (direct) {
@@ -224,9 +237,17 @@ async function pickModel(router: Router): Promise<void> {
   if (!pick?.target) {
     return;
   }
+  await applyPick(pick);
+}
+
+/** Saves a picked target and model to the settings. */
+export async function applyPick(pick: { target?: 'bragi' | 'direct'; model?: string; bragiTarget?: BragiTarget | null }): Promise<void> {
   const cfg = vscode.workspace.getConfiguration('bragi');
   await cfg.update('target', pick.target, vscode.ConfigurationTarget.Global);
   await cfg.update(pick.target === 'direct' ? 'direct.model' : 'model', pick.model ?? '', vscode.ConfigurationTarget.Global);
+  if (pick.target === 'bragi') {
+    await cfg.update('bragiTarget', pick.bragiTarget ?? null, vscode.ConfigurationTarget.Global);
+  }
 }
 
 export function deactivate(): void {}

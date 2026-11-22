@@ -11,7 +11,8 @@
 //! Routes:
 //! - `GET  /v1/health`: `{ok, version}`.
 //! - `GET  /v1/state`: linked or not, the models and their status, the default model.
-//! - `GET  /v1/targets`: where requests can go (the Weirdnet pool for now).
+//! - `GET  /v1/targets`: where requests can go: the Weirdnet pool and the endpoints Settings
+//!   offers alongside it. Code and chat requests take an optional `target`.
 //! - `GET  /v1/models`, `POST /v1/chat/completions`: OpenAI-compatible (streamed or not), kept
 //!   out of history, so any OpenAI client can use Bragi.
 //! - `POST /v1/code/suggest`, `/v1/code/rewrite`: [`bragi_core::code`] on an [`EditorContext`].
@@ -34,7 +35,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bragi_core::code::{self, EditorContext, PromptMessage, PromptRole, Scope};
-use bragi_core::{ChatEvent, ChatHandle, Core, CoreError, ErrorKind, PairState};
+use bragi_core::{ChatEvent, ChatHandle, Core, CoreError, ErrorKind, PairState, Target};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -203,10 +204,19 @@ async fn state(State(app): State<App>) -> Json<Value> {
 }
 
 async fn targets(State(app): State<App>) -> Json<Value> {
-    let s = app.core.state();
-    Json(
-        json!({ "targets": [{ "id": "weirdnet", "label": "Weirdnet pool", "kind": "weirdnet", "models": s.catalog.models.iter().map(|m| &m.id).collect::<Vec<_>>() }] }),
-    )
+    // The pool first, then each endpoint Settings offers alongside it (LF-11). A request names one
+    // with `target`; without it, Bragi's default target answers.
+    let models: Vec<String> = app.core.state().catalog.models.iter().map(|m| m.id.clone()).collect();
+    let targets: Vec<Value> = app
+        .core
+        .targets()
+        .into_iter()
+        .map(|t| {
+            let models = if t.target == Target::Pool { models.clone() } else { Vec::new() };
+            json!({ "label": t.label, "target": t.target, "models": models })
+        })
+        .collect();
+    Json(json!({ "targets": targets }))
 }
 
 async fn models(State(app): State<App>) -> Json<Value> {
@@ -289,10 +299,13 @@ struct SuggestBody {
     context: EditorContext,
     #[serde(default)]
     model: Option<String>,
+    /// Where it goes: the pool or an endpoint and model; Bragi's default target when absent.
+    #[serde(default)]
+    target: Option<Target>,
 }
 
 async fn suggest(State(app): State<App>, Json(b): Json<SuggestBody>) -> Response {
-    let h = match app.core.complete(code::suggest_prompt(&b.context), b.model) {
+    let h = match app.core.complete_to(code::suggest_prompt(&b.context), b.model, b.target) {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };
@@ -310,6 +323,9 @@ struct RewriteBody {
     scope: Scope,
     #[serde(default)]
     model: Option<String>,
+    /// Where it goes: the pool or an endpoint and model; Bragi's default target when absent.
+    #[serde(default)]
+    target: Option<Target>,
 }
 
 #[derive(Serialize)]
@@ -332,7 +348,7 @@ async fn rewrite(State(app): State<App>, Json(b): Json<RewriteBody>) -> Response
         Ok(p) => p,
         Err(e) => return core_error(e),
     };
-    let h = match app.core.complete(prompt, b.model) {
+    let h = match app.core.complete_to(prompt, b.model, b.target) {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };
@@ -359,6 +375,9 @@ struct CodeChatBody {
     conversation: Option<String>,
     #[serde(default)]
     model: Option<String>,
+    /// Where it goes: the pool or an endpoint and model; Bragi's default target when absent.
+    #[serde(default)]
+    target: Option<Target>,
 }
 
 fn sse_response(events: impl futures::Stream<Item = String> + Send + 'static) -> Response {
@@ -396,7 +415,7 @@ fn guarded_events(core: Core, h: ChatHandle) -> impl futures::Stream<Item = Chat
 
 async fn code_chat(State(app): State<App>, Json(b): Json<CodeChatBody>) -> Response {
     let attachments = b.context.as_ref().map(code::chat_attachments).unwrap_or_default();
-    let h = match app.core.send_with(b.conversation.as_deref(), &b.prompt, b.model, attachments) {
+    let h = match app.core.send_to(b.conversation.as_deref(), &b.prompt, b.model, attachments, b.target) {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };
@@ -430,6 +449,9 @@ struct OaiRequest {
     messages: Vec<OaiMessage>,
     #[serde(default)]
     stream: bool,
+    /// Where it goes: the pool or an endpoint and model; Bragi's default target when absent.
+    #[serde(default)]
+    target: Option<Target>,
 }
 
 /// Text of an OpenAI message's content: a string, or the text parts of a list.
@@ -453,7 +475,7 @@ async fn chat_completions(State(app): State<App>, Json(b): Json<OaiRequest>) -> 
         messages.push(PromptMessage { role, content: oai_text(&m.content) });
     }
     let model_name = b.model.clone().filter(|m| !m.is_empty() && m != "default");
-    let h = match app.core.complete(messages, model_name) {
+    let h = match app.core.complete_to(messages, model_name, b.target.clone()) {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };

@@ -6,6 +6,8 @@ import type { BragiApi } from '../../extension';
 import { editorContext } from '../../context';
 import { BragiError } from '../../types';
 import { MockServer, TOKEN } from './mockServer';
+import { applyPick } from '../../extension';
+import { shot } from './shots';
 
 const cfg = () => vscode.workspace.getConfiguration('bragi');
 const set = (key: string, value: unknown) => cfg().update(key, value, vscode.ConfigurationTarget.Global);
@@ -125,7 +127,10 @@ suite('Bragi extension', () => {
     const e = await editor('a\nb\nc\n', 'plaintext');
     e.selection = new vscode.Selection(1, 0, 1, 1);
     await vscode.commands.executeCommand('bragi.rewriteSelection', 'shout');
-    await e.edit((b) => b.insert(new vscode.Position(0, 0), 'top\n'));
+    // The diff now has focus, so edit the document the way another tool would.
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(e.document.uri, new vscode.Position(0, 0), 'top\n');
+    assert.ok(await vscode.workspace.applyEdit(edit));
     assert.strictEqual(await vscode.commands.executeCommand('bragi.acceptRewrite'), true);
     assert.strictEqual(e.document.getText(), 'top\na\nB\nc\n');
   });
@@ -137,7 +142,8 @@ suite('Bragi extension', () => {
     assert.strictEqual(api.chat.controller.conversationId, 'c-test');
     const first = mock.last('/v1/code/chat')!;
     assert.strictEqual(first.body.prompt, 'What does add do?');
-    assert.ok(first.body.context.before.includes('fn add'));
+    const ctx = first.body.context;
+    assert.strictEqual(ctx.before + ctx.selection + ctx.after, e.document.getText());
     assert.strictEqual(first.body.conversation, undefined);
     await api.chat.controller.send('And sub?');
     assert.strictEqual(mock.last('/v1/code/chat')!.body.conversation, 'c-test');
@@ -157,6 +163,49 @@ suite('Bragi extension', () => {
     } finally {
       await set('model', '');
     }
+  });
+
+  test('a target from Bragi Settings goes with code and chat requests', async () => {
+    const targets = await api.router.bragi.targets();
+    assert.deepStrictEqual(targets.map((t) => t.target.kind), ['pool', 'endpoint']);
+    await applyPick({ target: 'bragi', model: '', bragiTarget: targets[1].target });
+    try {
+      const e = await editor('x = ');
+      await api.inline.provideInlineCompletionItems(e.document, new vscode.Position(0, 4), inlineCtx, token());
+      assert.deepStrictEqual(mock.last('/v1/code/suggest')!.body.target, { kind: 'endpoint', id: 'e-1', model: 'qwen3.6-35b-a3b' });
+      await api.chat.controller.send('hi');
+      assert.deepStrictEqual(mock.last('/v1/code/chat')!.body.target, { kind: 'endpoint', id: 'e-1', model: 'qwen3.6-35b-a3b' });
+    } finally {
+      api.chat.controller.reset();
+      await applyPick({ target: 'bragi', model: '', bragiTarget: null });
+    }
+    assert.strictEqual(cfg().get('bragiTarget'), null);
+  });
+
+  test('screenshots of the suggestion, the diff and the chat (Xvfb only)', async function () {
+    if (!process.env.BRAGI_SHOTS) {
+      this.skip();
+    }
+    // A ghost-text suggestion in the editor.
+    await set('inline.enabled', true);
+    const e = await editor('fn add(a: i32, b: i32) -> i32 {\n    let total = \n    total\n}\n');
+    e.selection = new vscode.Selection(1, 16, 1, 16);
+    await vscode.commands.executeCommand('editor.action.inlineSuggest.trigger');
+    await new Promise((r) => setTimeout(r, 2500));
+    shot('01-inline-suggestion');
+    // A rewrite waiting in the diff.
+    e.selection = new vscode.Selection(2, 0, 3, 0);
+    await vscode.commands.executeCommand('bragi.rewriteSelection', 'shout');
+    await new Promise((r) => setTimeout(r, 2000));
+    shot('02-rewrite-diff');
+    await vscode.commands.executeCommand('bragi.rejectRewrite');
+    // The chat panel with an answer.
+    await vscode.commands.executeCommand('bragi.openChat');
+    await new Promise((r) => setTimeout(r, 2000));
+    await api.chat.controller.send('What does add do?', editorContext(e));
+    await new Promise((r) => setTimeout(r, 2000));
+    shot('03-chat-panel');
+    api.chat.controller.reset();
   });
 
   test('without a token it says how to get one, and a token file is imported', async () => {

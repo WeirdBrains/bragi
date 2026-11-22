@@ -6,7 +6,7 @@
 
 [project]
 name = "Bragi"
-updated = "2026-11-19"
+updated = "2026-11-21"
 intro = "Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc."
 design = "https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones"
 unpublished = ["weirdnet-push"]   # planned crates with no crates.io page yet
@@ -17,10 +17,6 @@ title = "Core and both shells"
 status = "done"
 summary = "Pair with your own devices, list the models your cloud offers, stream a chat, stop it and continue it, and keep local history. Works in the Linux desktop app (GPUI) and the Android app (Flutter), both on one shared Rust core."
 crates = ["weirdnet-agent", "weirdnet-device-link", "weirdnet-sync", "weirdnet-net", "weirdnet-relay"]
-gaps = [
-  "Tested against a simulated inference node, not yet a real Ymir node or across real machines.",
-  "Link codes are pasted, with no QR scanner yet. Not on a store yet.",
-]
 
 [[milestone]]
 id = "B2"
@@ -28,46 +24,31 @@ title = "Pool client"
 status = "done"
 summary = "Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells."
 crates = ["weirdnet-agent"]
-gaps = [
-  "Run against two simulated inference nodes only, not yet against real Ymir nodes or across machines.",
-  "Ymir M5 nodes now resume from text already shown, but that has only been tried against a mock engine on one computer.",
-  "Nodes are tried warm first. Speed and distance are not weighed, and you can't pick a node yourself.",
-]
 
 [[milestone]]
 id = "B3"
 title = "Platforms"
 status = "in-progress"
-summary = "iOS (TestFlight), macOS and Windows, and Android packaging for the apk, aab and F-Droid. Android release builds, F-Droid metadata and a Linux tarball are built; macOS, Windows and iOS build in CI (unsigned) but have not been run on a machine."
+summary = "iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight) and signing with a release key."
 crates = []
-gaps = [
-  "macOS, Windows and iOS build and test in GitHub Actions (unsigned), but were never run: no scenario on macOS or Windows, and the iOS app was never launched.",
-  "Nothing is signed with a real key or uploaded. Play, F-Droid and TestFlight need a keystore, a tagged release and Apple developer access from m3talsmith.",
-  "The F-Droid recipe is a draft that was never run through fdroid build.",
-]
 
 [[milestone]]
 id = "B4"
 title = "Sync and optional extras"
 status = "in-progress"
-summary = "Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells with test identities. Optional on-device model and push wake-ups are not built."
+summary = "Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. Next: push wake-ups and an optional on-device model."
 crates = ["weirdnet-sync", "weirdnet-push"]
-gaps = [
-  "History sync was only run between simulated devices (test identities, memory transport), not between two real devices or with Morph or Ymir as the other end.",
-  "Push wake-ups wait on the Weirdnet lead: `weirdnet-push` is planned and does not exist yet.",
-  "The on-device model is not started: it needs a llama.cpp build and packaging on both platforms.",
-  "Requests still send whole messages; Bragi does not yet hand a Ymir node a conversation id.",
-]
 
 [[milestone]]
 id = "B5"
 title = "Breadth"
 status = "in-progress"
-summary = "Text attachments and agent mode (tool calls with approval cards) are built and shown on both shells against the demo node. BSD support is blocked: the FreeBSD CI job ran and the desktop app does not build there (a GPUI bug)."
+summary = "Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there."
 crates = ["weirdnet-agent"]
-gaps = [
-  "BSDs: the desktop app does not build on FreeBSD. GPUI compiles gpui_linux for FreeBSD but gates `layer_shell` and the priority queue to linux/windows/wasm, at the pinned rev and on Zed main (a Zed bug, found by the `freebsd` CI job). bragi-core is tested there by the job; OpenBSD and DragonFly are not GPUI targets.",
-  "Ymir M9 now serves agent tasks (task/1), tested with a task client, but Bragi's agent mode was only run against the demo node, not a real `ymird`.",
-  "m3talsmith approved weirdnet-agent 0.4.3 and weirdnet-device-link 0.3.1 on 2026-11-20 and the Weirdnet lead is releasing them. Bragi moves to them (and net 0.8.1 with `android_context_init!`) once they are on crates.io.",
-  "Attachments are text files only (256 KiB); the Flutter file picker was only run in its scripted demo path.",
-]
+
+[[milestone]]
+id = "B6"
+title = "Your own endpoints"
+status = "in-progress"
+summary = "Any OpenAI-compatible server, with an optional API key, next to the Weirdnet pool or as a fallback when it is down. Settings add, edit, delete, test and reorder both Weirdnet links and endpoints; keys are sealed on the device and never synced. Each chat is bound to one target and keeps its own history, and chats nest in folders. Built in the core and the Flutter app (desktop and phone); the GPUI desktop shell is next."
+crates = ["weirdnet-agent"]

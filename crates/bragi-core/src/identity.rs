@@ -31,6 +31,11 @@ pub const SYNC_TYPE: &str = "bragi.app";
 /// key, so only the user's own devices can read it. See [`crate::context`].
 pub const CONTEXT_TYPE: &str = "ymir.context";
 
+/// What [`Identity::compact`] turns a dropped entry into: no record, no value, a type no app reads
+/// or pulls. The entry keeps its node, seq and clock, so cursors and merges (which go by seq) still
+/// line up and no sync pass brings the old value back.
+pub const COMPACTED_TYPE: &str = "bragi.compacted";
+
 /// What a link transfer carries besides the identity: the roster, in Morph's format, so a Morph
 /// device and a Bragi device can link each other.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -297,6 +302,80 @@ impl Identity {
                 _ => None,
             })
             .collect()
+    }
+
+    /// Rewrites the op log without the values of `typ` nobody can see any more: every entry that is
+    /// not its record's latest, the latest of the records `gone` names, and chunks of `typ` that no
+    /// kept entry points at. Their slots stay (see [`COMPACTED_TYPE`]); `log.json` is rewritten.
+    /// Returns how many entries were dropped. Only this device's copy: every Bragi device compacts
+    /// its own after a sync pass.
+    ///
+    /// Generic: belongs in `weirdnet-sync` next to tombstone GC (noted for the Weirdnet lead).
+    pub fn compact(&self, typ: &str, gone: &dyn Fn(&str) -> bool) -> Result<usize> {
+        use std::collections::HashSet;
+        let dropped = {
+            let mut st = self.lock();
+            let keep: HashSet<(String, u64)> =
+                st.latest_entries(typ).into_iter().filter(|e| !gone(&e.record_id)).map(|e| (e.node_id.0.clone(), e.seq)).collect();
+            let ctyp = weirdnet_sync::chunk_type(typ);
+            let chunks: HashSet<String> = st
+                .log
+                .iter()
+                .filter(|e| keep.contains(&(e.node_id.0.clone(), e.seq)))
+                .filter_map(|e| e.value.as_ref()?.blob.as_ref())
+                .flat_map(|b| b.chunk_hashes().map(|h| h.iter().map(|x| format!("{x:02x}")).collect::<String>()).collect::<Vec<_>>())
+                .collect();
+            let mut dropped = 0;
+            let entries: Vec<LogEntry> = st
+                .log
+                .iter()
+                .map(|e| {
+                    let stale = (e.typ == typ && !keep.contains(&(e.node_id.0.clone(), e.seq))) || (e.typ == ctyp && !chunks.contains(&e.record_id));
+                    if !stale {
+                        return e.clone();
+                    }
+                    dropped += 1;
+                    LogEntry {
+                        node_id: e.node_id.clone(),
+                        seq: e.seq,
+                        hlc: e.hlc.clone(),
+                        typ: COMPACTED_TYPE.into(),
+                        record_id: String::new(),
+                        op: Vec::new(),
+                        value: None,
+                    }
+                })
+                .collect();
+            if dropped == 0 {
+                return Ok(0);
+            }
+            let (cursors, type_cursors) = (st.log.cursors(), st.log.type_cursors());
+            let mut log = weirdnet_sync::OpLog::new();
+            let mut run: Vec<LogEntry> = Vec::new();
+            let fold = |log: &mut weirdnet_sync::OpLog, run: Vec<LogEntry>| {
+                if let (Some(first), Some(last)) = (run.first(), run.last()) {
+                    let (node_id, from_seq, to_seq) = (first.node_id.clone(), first.seq, last.seq);
+                    log.integrate(&LogPage { node_id, from_seq, to_seq, ops: run });
+                }
+            };
+            for e in entries {
+                if run.first().is_some_and(|f| f.node_id != e.node_id) {
+                    fold(&mut log, std::mem::take(&mut run));
+                }
+                run.push(e);
+            }
+            fold(&mut log, run);
+            for (node, seq) in cursors {
+                log.set_cursor(&node, seq);
+            }
+            for ((node, t), seq) in type_cursors {
+                log.set_cursor_for(&node, &t, seq);
+            }
+            st.log = log;
+            dropped
+        };
+        self.save()?;
+        Ok(dropped)
     }
 
     /// The directory this identity is stored in.

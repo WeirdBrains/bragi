@@ -4,7 +4,7 @@
 import * as vscode from 'vscode';
 import { chatContextText, cleanSuggestion, effectiveScope, PromptMessage, rewritePrompt, rewriteResult, suggestPrompt } from './prompts';
 import { Secrets } from './tokens';
-import { BragiError, ChatEvent, EditorContext, ModelList, RewriteResult, Scope } from './types';
+import { BragiError, BragiTarget, ChatEvent, EditorContext, ModelList, RewriteResult, Scope, TargetOption } from './types';
 
 export interface ChatTurn {
   prompt: string;
@@ -89,7 +89,14 @@ export class BragiBackend implements Backend {
   constructor(
     private readonly baseUrl: () => string,
     private readonly secrets: Secrets,
+    private readonly target: () => BragiTarget | undefined = () => undefined,
   ) {}
+
+  /** Where requests go: the pool and the endpoints Bragi's Settings offers alongside it. */
+  async targets(signal?: AbortSignal): Promise<TargetOption[]> {
+    const r = (await (await this.request('GET', '/v1/targets', undefined, signal)).json()) as { targets: TargetOption[] };
+    return r.targets;
+  }
 
   private url(path: string): string {
     const base = this.baseUrl().replace(/\/+$/, '');
@@ -149,12 +156,12 @@ export class BragiBackend implements Backend {
   }
 
   async suggest(ctx: EditorContext, model: string | undefined, signal?: AbortSignal): Promise<string> {
-    const r = (await (await this.request('POST', '/v1/code/suggest', { context: ctx, model: model || undefined }, signal)).json()) as { text: string };
+    const r = (await (await this.request('POST', '/v1/code/suggest', { context: ctx, model: model || undefined, target: this.target() }, signal)).json()) as { text: string };
     return r.text;
   }
 
   async rewrite(ctx: EditorContext, instruction: string, scope: Scope, model: string | undefined, signal?: AbortSignal): Promise<RewriteResult> {
-    const r = (await (await this.request('POST', '/v1/code/rewrite', { context: ctx, instruction, scope, model: model || undefined }, signal)).json()) as {
+    const r = (await (await this.request('POST', '/v1/code/rewrite', { context: ctx, instruction, scope, model: model || undefined, target: this.target() }, signal)).json()) as {
       code: string;
       scope: Scope;
       model?: string;
@@ -166,7 +173,7 @@ export class BragiBackend implements Backend {
     const res = await this.request(
       'POST',
       '/v1/code/chat',
-      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined },
+      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target() },
       signal,
     );
     let conversation: string | undefined;
@@ -288,7 +295,11 @@ export class Router {
 
   constructor(secrets: Secrets) {
     const cfg = () => vscode.workspace.getConfiguration('bragi');
-    this.bragi = new BragiBackend(() => cfg().get('serveUrl', 'http://127.0.0.1:4877'), secrets);
+    this.bragi = new BragiBackend(
+      () => cfg().get('serveUrl', 'http://127.0.0.1:4877'),
+      secrets,
+      () => cfg().get<BragiTarget | null>('bragiTarget', null) ?? undefined,
+    );
     this.direct = new DirectBackend(() => ({ url: cfg().get('direct.url', ''), model: cfg().get('direct.model', '') }), secrets);
   }
 

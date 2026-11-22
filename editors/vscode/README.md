@@ -15,8 +15,8 @@ that install from a VSIX or Open VSX.
 - **Chat panel** (the Bragi icon in the activity bar) that can include the current file, the
   selection, other open files and the file's problems. Code blocks in answers have Insert and Copy.
   On the Bragi target, chats are kept in Bragi's history like any other.
-- **Target and model picker** in the status bar: your Weirdnet pool through Bragi (any model it
-  lists, or its default), or a direct OpenAI-compatible server.
+- **Target and model picker** in the status bar: through Bragi, your Weirdnet pool (any model it
+  lists, or its default) or an endpoint from Bragi's Settings; or a direct OpenAI-compatible server.
 
 ## Set up
 
@@ -43,6 +43,7 @@ which models it can reach.
 | `bragi.target` | `bragi` | `bragi` (the local app) or `direct` (an OpenAI-compatible server). |
 | `bragi.serveUrl` | `http://127.0.0.1:4877` | The local API. Loopback addresses only. |
 | `bragi.model` | empty | The model on the Bragi target; empty is Bragi's default. |
+| `bragi.bragiTarget` | `null` | Where Bragi sends requests: `null` for Bragi's default, or a target picked with **Bragi: Choose Target and Model** (the Weirdnet pool, or an endpoint and model from Bragi's Settings). |
 | `bragi.direct.url` | empty | An OpenAI-compatible base URL, e.g. a Ymir bridge `http://127.0.0.1:8484/v1`. Its key: **Bragi: Set Direct Endpoint API Key** (secret storage). |
 | `bragi.direct.model` | empty | Empty uses the server's first model. |
 | `bragi.fallbackToDirect` | `false` | Use the direct server when the local API isn't running. |
@@ -61,7 +62,8 @@ to Weird Brains. Inline suggestions are off in untrusted workspaces.
 
 `bragi serve` speaks JSON over HTTP with `Authorization: Bearer <token>`:
 
-- `GET /v1/health`, `GET /v1/state`, `GET /v1/targets`
+- `GET /v1/health`, `GET /v1/state`, `GET /v1/targets` (the pool and Settings endpoints; requests
+  take an optional `target`)
 - `POST /v1/code/suggest`, `POST /v1/code/rewrite`, `POST /v1/code/chat` (server-sent events),
   `POST /v1/cancel`
 - `GET /v1/models` and `POST /v1/chat/completions`, OpenAI-compatible, so other local tools can

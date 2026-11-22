@@ -23,6 +23,7 @@ jobs:
           cache: npm
           cache-dependency-path: editors/vscode/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run compile
       - run: sudo apt-get update && sudo apt-get install -y xvfb libasound2t64 libgbm1 libgtk-3-0 libnss3 libxss1 libxkbfile1 libsecret-1-0
       - name: Tests (headless, clean environment, throwaway profile)

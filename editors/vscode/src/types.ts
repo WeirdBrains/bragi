@@ -67,3 +67,13 @@ export class BragiError extends Error {
     super(message);
   }
 }
+
+/** A Bragi target (bragi-core's `Target`): the pool, or an endpoint and model from Settings. */
+export type BragiTarget = { kind: 'pool' } | { kind: 'endpoint'; id: string; model: string };
+
+export interface TargetOption {
+  label: string;
+  target: BragiTarget;
+  /** The pool's models (endpoints carry theirs in the target). */
+  models: string[];
+}

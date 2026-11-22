@@ -42,7 +42,9 @@ export class InlineProvider implements vscode.InlineCompletionItemProvider {
     if (!cfg.get('inline.enabled', true) || !vscode.workspace.isTrusted || doc.uri.scheme === 'bragi-proposed') {
       return [];
     }
-    const key = `${doc.uri.toString()}@${doc.version}:${doc.offsetAt(position)}`;
+    // A suggestion is only reused for the same text, place, target and model.
+    const where = JSON.stringify([cfg.get('target'), cfg.get('model'), cfg.get('direct.model'), cfg.get('bragiTarget')]);
+    const key = `${doc.uri.toString()}@${doc.version}:${doc.offsetAt(position)}:${where}`;
     if (this.last?.key === key) {
       return this.items(this.last.text, position);
     }

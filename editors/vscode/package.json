@@ -7,78 +7,260 @@
   "license": "BSD-3-Clause",
   "icon": "media/icon.png",
   "homepage": "https://bragi.weirdbrains.com",
-  "repository": { "type": "git", "url": "https://github.com/WeirdBrains/bragi.git", "directory": "editors/vscode" },
-  "bugs": { "url": "https://github.com/WeirdBrains/bragi/issues" },
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["AI", "Programming Languages", "Other"],
-  "keywords": ["ai", "inline completion", "code suggestions", "weirdnet", "local llm", "cursor"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/WeirdBrains/bragi.git",
+    "directory": "editors/vscode"
+  },
+  "bugs": {
+    "url": "https://github.com/WeirdBrains/bragi/issues"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "inline completion",
+    "code suggestions",
+    "weirdnet",
+    "local llm",
+    "cursor"
+  ],
   "main": "./out/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "capabilities": {
-    "untrustedWorkspaces": { "supported": "limited", "description": "Inline suggestions are off in untrusted workspaces." },
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Inline suggestions are off in untrusted workspaces."
+    },
     "virtualWorkspaces": true
   },
   "contributes": {
     "commands": [
-      { "command": "bragi.rewriteSelection", "title": "Rewrite Selection…", "category": "Bragi" },
-      { "command": "bragi.rewriteFile", "title": "Rewrite File…", "category": "Bragi" },
-      { "command": "bragi.acceptRewrite", "title": "Accept Rewrite", "category": "Bragi", "icon": "$(check)" },
-      { "command": "bragi.rejectRewrite", "title": "Reject Rewrite", "category": "Bragi", "icon": "$(close)" },
-      { "command": "bragi.openChat", "title": "Open Chat", "category": "Bragi" },
-      { "command": "bragi.askAboutSelection", "title": "Ask About Selection", "category": "Bragi" },
-      { "command": "bragi.pickModel", "title": "Choose Target and Model", "category": "Bragi" },
-      { "command": "bragi.toggleInline", "title": "Toggle Inline Suggestions", "category": "Bragi" },
-      { "command": "bragi.setToken", "title": "Set Bragi API Token", "category": "Bragi" },
-      { "command": "bragi.importToken", "title": "Import Token from the Bragi App", "category": "Bragi" },
-      { "command": "bragi.clearToken", "title": "Forget Bragi API Token", "category": "Bragi" },
-      { "command": "bragi.setDirectKey", "title": "Set Direct Endpoint API Key", "category": "Bragi" },
-      { "command": "bragi.showStatus", "title": "Show Connection Status", "category": "Bragi" }
+      {
+        "command": "bragi.rewriteSelection",
+        "title": "Rewrite Selection…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.rewriteFile",
+        "title": "Rewrite File…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.acceptRewrite",
+        "title": "Accept Rewrite",
+        "category": "Bragi",
+        "icon": "$(check)"
+      },
+      {
+        "command": "bragi.rejectRewrite",
+        "title": "Reject Rewrite",
+        "category": "Bragi",
+        "icon": "$(close)"
+      },
+      {
+        "command": "bragi.openChat",
+        "title": "Open Chat",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.askAboutSelection",
+        "title": "Ask About Selection",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.pickModel",
+        "title": "Choose Target and Model",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.toggleInline",
+        "title": "Toggle Inline Suggestions",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.setToken",
+        "title": "Set Bragi API Token",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.importToken",
+        "title": "Import Token from the Bragi App",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.clearToken",
+        "title": "Forget Bragi API Token",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.setDirectKey",
+        "title": "Set Direct Endpoint API Key",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.showStatus",
+        "title": "Show Connection Status",
+        "category": "Bragi"
+      }
     ],
     "keybindings": [
-      { "command": "bragi.rewriteSelection", "key": "ctrl+alt+r", "mac": "cmd+alt+r", "when": "editorTextFocus && !editorReadonly" },
-      { "command": "bragi.acceptRewrite", "key": "ctrl+alt+enter", "mac": "cmd+alt+enter", "when": "bragi.rewritePending" },
-      { "command": "bragi.rejectRewrite", "key": "ctrl+alt+backspace", "mac": "cmd+alt+backspace", "when": "bragi.rewritePending" }
+      {
+        "command": "bragi.rewriteSelection",
+        "key": "ctrl+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorTextFocus && !editorReadonly"
+      },
+      {
+        "command": "bragi.acceptRewrite",
+        "key": "ctrl+alt+enter",
+        "mac": "cmd+alt+enter",
+        "when": "bragi.rewritePending"
+      },
+      {
+        "command": "bragi.rejectRewrite",
+        "key": "ctrl+alt+backspace",
+        "mac": "cmd+alt+backspace",
+        "when": "bragi.rewritePending"
+      }
     ],
     "menus": {
       "editor/context": [
-        { "command": "bragi.rewriteSelection", "group": "bragi@1", "when": "editorHasSelection && !editorReadonly" },
-        { "command": "bragi.askAboutSelection", "group": "bragi@2", "when": "editorHasSelection" }
+        {
+          "command": "bragi.rewriteSelection",
+          "group": "bragi@1",
+          "when": "editorHasSelection && !editorReadonly"
+        },
+        {
+          "command": "bragi.askAboutSelection",
+          "group": "bragi@2",
+          "when": "editorHasSelection"
+        }
       ],
       "editor/title": [
-        { "command": "bragi.acceptRewrite", "group": "navigation@1", "when": "resourceScheme == bragi-proposed" },
-        { "command": "bragi.rejectRewrite", "group": "navigation@2", "when": "resourceScheme == bragi-proposed" }
+        {
+          "command": "bragi.acceptRewrite",
+          "group": "navigation@1",
+          "when": "resourceScheme == bragi-proposed"
+        },
+        {
+          "command": "bragi.rejectRewrite",
+          "group": "navigation@2",
+          "when": "resourceScheme == bragi-proposed"
+        }
       ],
       "commandPalette": [
-        { "command": "bragi.acceptRewrite", "when": "bragi.rewritePending" },
-        { "command": "bragi.rejectRewrite", "when": "bragi.rewritePending" }
+        {
+          "command": "bragi.acceptRewrite",
+          "when": "bragi.rewritePending"
+        },
+        {
+          "command": "bragi.rejectRewrite",
+          "when": "bragi.rewritePending"
+        }
       ]
     },
     "viewsContainers": {
-      "activitybar": [{ "id": "bragi", "title": "Bragi", "icon": "media/bragi.svg" }]
+      "activitybar": [
+        {
+          "id": "bragi",
+          "title": "Bragi",
+          "icon": "media/bragi.svg"
+        }
+      ]
     },
     "views": {
-      "bragi": [{ "type": "webview", "id": "bragi.chat", "name": "Chat" }]
+      "bragi": [
+        {
+          "type": "webview",
+          "id": "bragi.chat",
+          "name": "Chat"
+        }
+      ]
     },
     "configuration": {
       "title": "Bragi",
       "properties": {
         "bragi.target": {
           "type": "string",
-          "enum": ["bragi", "direct"],
-          "enumDescriptions": ["The local Bragi app (bragi serve): your Weirdnet pool and Bragi's endpoints and sessions.", "An OpenAI-compatible server, called directly."],
+          "enum": [
+            "bragi",
+            "direct"
+          ],
+          "enumDescriptions": [
+            "The local Bragi app (bragi serve): your Weirdnet pool and Bragi's endpoints and sessions.",
+            "An OpenAI-compatible server, called directly."
+          ],
           "default": "bragi",
           "description": "Where suggestions, rewrites and chat go."
         },
-        "bragi.serveUrl": { "type": "string", "default": "http://127.0.0.1:4877", "description": "The local Bragi API (`bragi serve`, or the app started with --serve). Loopback only." },
-        "bragi.model": { "type": "string", "default": "", "description": "The model to use; empty means the target's default." },
-        "bragi.tokenFile": { "type": "string", "default": "", "description": "Where `bragi serve` keeps its token, if not in the default Bragi home (`bragi serve token-path` prints it)." },
-        "bragi.direct.url": { "type": "string", "default": "", "description": "Base URL of an OpenAI-compatible server for the direct target or the fallback, e.g. http://127.0.0.1:8484/v1. Its API key is kept in the editor's secret storage (Bragi: Set Direct Endpoint API Key)." },
-        "bragi.direct.model": { "type": "string", "default": "", "description": "The model to ask on the direct server; empty means its first model." },
-        "bragi.fallbackToDirect": { "type": "boolean", "default": false, "description": "When the local Bragi API can't be reached, use the direct server instead." },
-        "bragi.inline.enabled": { "type": "boolean", "default": true, "description": "Show inline code suggestions as you type." },
-        "bragi.inline.debounceMs": { "type": "number", "default": 350, "minimum": 0, "description": "How long typing must pause before a suggestion is asked for." },
-        "bragi.context.openFiles": { "type": "boolean", "default": true, "description": "Send other open files along with rewrites and chat." },
-        "bragi.context.diagnostics": { "type": "boolean", "default": true, "description": "Send the editor's problems for the file along." }
+        "bragi.serveUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:4877",
+          "description": "The local Bragi API (`bragi serve`, or the app started with --serve). Loopback only."
+        },
+        "bragi.model": {
+          "type": "string",
+          "default": "",
+          "description": "The model to use; empty means the target's default."
+        },
+        "bragi.bragiTarget": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "default": null,
+          "description": "Where Bragi sends code requests: null for Bragi's default (the Weirdnet pool), or a target from \"Bragi: Choose Target and Model\" (the pool, or an endpoint and model from Bragi's Settings)."
+        },
+        "bragi.tokenFile": {
+          "type": "string",
+          "default": "",
+          "description": "Where `bragi serve` keeps its token, if not in the default Bragi home (`bragi serve token-path` prints it)."
+        },
+        "bragi.direct.url": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of an OpenAI-compatible server for the direct target or the fallback, e.g. http://127.0.0.1:8484/v1. Its API key is kept in the editor's secret storage (Bragi: Set Direct Endpoint API Key)."
+        },
+        "bragi.direct.model": {
+          "type": "string",
+          "default": "",
+          "description": "The model to ask on the direct server; empty means its first model."
+        },
+        "bragi.fallbackToDirect": {
+          "type": "boolean",
+          "default": false,
+          "description": "When the local Bragi API can't be reached, use the direct server instead."
+        },
+        "bragi.inline.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline code suggestions as you type."
+        },
+        "bragi.inline.debounceMs": {
+          "type": "number",
+          "default": 350,
+          "minimum": 0,
+          "description": "How long typing must pause before a suggestion is asked for."
+        },
+        "bragi.context.openFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send other open files along with rewrites and chat."
+        },
+        "bragi.context.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Send the editor's problems for the file along."
+        }
       }
     }
   },
@@ -88,7 +270,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package --no-dependencies"
+    "package": "vsce package --no-dependencies",
+    "lint": "tsc --noEmit -p ./ && node --check media/chat.js"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

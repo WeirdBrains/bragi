@@ -8,6 +8,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 // Copied whole from Morph and kept in step until they move to a shared weirdnet-* UI crate.
+mod markdown;
 #[allow(dead_code)]
 mod text_input;
 mod theme;

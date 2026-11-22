@@ -14,6 +14,10 @@ use http_body_util::BodyExt;
 use serde_json::{Value, json};
 use tower::ServiceExt;
 
+// The core's mock OpenAI-compatible server (loopback, no real network).
+#[path = "../../bragi-core/tests/common/mod.rs"]
+mod common;
+
 const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const PORT: u16 = 4877;
 
@@ -119,7 +123,10 @@ async fn suggestions_and_rewrites_come_from_the_pool_and_stay_out_of_history() {
     assert!(st["models"].as_array().unwrap().len() >= 2, "{st}");
     let model = st["default_model"].as_str().unwrap().to_string();
     let (_, b) = call(&app, "GET", "/v1/targets", None).await;
-    assert_eq!(json_of(&b)["targets"][0]["id"], "weirdnet");
+    let t = json_of(&b);
+    assert_eq!(t["targets"][0]["target"]["kind"], "pool", "{t}");
+    assert_eq!(t["targets"][0]["label"], "Weirdnet pool");
+    assert!(!t["targets"][0]["models"].as_array().unwrap().is_empty());
 
     let (s, b) = call(&app, "POST", "/v1/code/suggest", Some(json!({ "context": context() }))).await;
     assert_eq!(s, StatusCode::OK, "{b}");
@@ -231,4 +238,39 @@ async fn it_listens_on_loopback_over_a_real_socket() {
     assert!(out.contains("\"linked\":false"), "{out}");
     stop.send(()).unwrap();
     server.await.unwrap().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn code_requests_go_to_the_target_they_name() {
+    let d = tempfile::tempdir().unwrap();
+    let (_demo, core) = linked(d.path()).await;
+    let mock = common::mock_openai(None, vec!["mock-1"], common::Chat::Words(vec!["```rust\n", "    a + b\n", "```"])).await;
+    let ep = core
+        .add_endpoint(
+            bragi_core::EndpointInput {
+                name: "Mock".into(),
+                base_url: mock.url.clone(),
+                model: Some("mock-1".into()),
+                mode: bragi_core::EndpointMode::Alongside,
+                enabled: true,
+            },
+            None,
+        )
+        .unwrap();
+    let app = bragi_serve::router(core.clone(), TOKEN.into(), PORT);
+
+    let (_, b) = call(&app, "GET", "/v1/targets", None).await;
+    let t = json_of(&b);
+    let target = t["targets"][1]["target"].clone();
+    assert_eq!(target, json!({ "kind": "endpoint", "id": ep.id, "model": "mock-1" }), "{t}");
+    assert_eq!(t["targets"][1]["label"], "Mock · mock-1");
+
+    let (s, b) = call(&app, "POST", "/v1/code/rewrite", Some(json!({ "context": context(), "instruction": "fix the bug", "target": target }))).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let rw = json_of(&b);
+    assert_eq!(rw["code"], "    a + b\n");
+    assert_eq!(rw["model"], "mock-1");
+    let asked = mock.requests().into_iter().filter(|r| r.path.ends_with("/chat/completions")).count();
+    assert_eq!(asked, 1, "the endpoint answered, not the pool");
+    assert!(core.conversations(0, 10).unwrap().is_empty());
 }

@@ -27,6 +27,7 @@ tracing.workspace = true
 [dev-dependencies]
 http-body-util = "0.1"
 tempfile.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
 tower = { version = "0.5", features = ["util"] }
 
 [lints]

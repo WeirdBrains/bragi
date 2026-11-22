@@ -11,9 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B5 in progress (B1 and B2 done, B3 and B4 in progress)** (see "Bragi milestones" in Ymir's `docs/DESIGN.md`). Pairing, the catalog from one
-inference node, streaming chat with stop and continue, and history that syncs between your devices, on Linux (GPUI) and
-Android (Flutter). Released: v0.1.0 for Linux, macOS, Windows, Android and iOS ([downloads](https://bragi.weirdbrains.com/download/)).
+Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) in Ymir's design doc). Pairing, the catalog from your inference nodes, streaming chat with stop and continue, and history that syncs between your devices, on Linux, macOS and Windows (GPUI) and on Android and iOS (Flutter). Released: [v0.1.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.1.0) for all five platforms ([downloads](https://bragi.weirdbrains.com/download/)).
 
 ## Layout
 
@@ -22,9 +20,9 @@ Android (Flutter). Released: v0.1.0 for Linux, macOS, Windows, Android and iOS (
 | `crates/bragi-core` | Everything Bragi does: identity and pairing (`weirdnet-device-link`), the `weirdnet-agent` pool client, chat events, history on the shared context store. Also `demo`, an in-process inference node with a test identity for tests and demos. |
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
-| `app/` | The Flutter app (Android in B1). |
-| `brand/`, `BRAND.md` | Logo, icons, palette and usage rules. |
-| `site/`, `roadmap.toml`, `ROADMAP.md` | The website (Jaspr) and the roadmap it is generated from. |
+| `app/` | The Flutter app (Android and iOS). |
+| `brand/`, [BRAND.md](https://github.com/WeirdBrains/bragi/blob/main/BRAND.md) | Logo, icons, palette and usage rules. |
+| `site/`, `roadmap.toml`, [ROADMAP.md](https://github.com/WeirdBrains/bragi/blob/main/ROADMAP.md) | The website (Jaspr) and the roadmap it is generated from. |
 | `scripts/desktop-scenario.sh` | Plays the end-to-end scenario in the desktop shell inside Xvfb and takes screenshots. |
 | `third_party/` | Patched copies of published crates (see its README). |
 
@@ -48,8 +46,8 @@ needed.
 
 Packaging: `scripts/dist-linux.sh`, `dist-macos.sh`, `dist-windows.ps1`, `dist-android.sh` and
 `dist-ios.sh` build each platform's release files into `dist/`, and `.github/workflows/release.yml` runs
-them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see `docs/RELEASES.md`.
+them all on a release tag. Releases go through `scripts/weirdnet_release.py`; see [docs/RELEASES.md](https://github.com/WeirdBrains/bragi/blob/main/docs/RELEASES.md).
 
 ## License
 
-BSD-3-Clause; see `LICENSE`. `third_party/libp2p-swarm` is MIT, from libp2p.
+BSD-3-Clause; see [LICENSE](https://github.com/WeirdBrains/bragi/blob/main/LICENSE). `third_party/libp2p-swarm` is MIT, from libp2p.
