@@ -110,7 +110,9 @@ fn link_chat_models_status_help_and_code() {
     h.typed("Show me some Markdown");
     h.key(KeyCode::Enter);
     let screen = h.until("What Bragi renders", |a| !a.streaming());
-    assert!(!screen.contains("## What Bragi renders") && screen.contains("• ") && screen.contains("┌─"), "{screen}");
+    assert!(!screen.contains("## What Bragi renders") && screen.contains("• ") && screen.contains(" rust "), "{screen}");
+    // The reply is labelled, and the status bar shows the connection.
+    assert!(screen.contains("◆ Bragi") && screen.contains("● online"), "{screen}");
 
     // Reasoning: a folded Thinking line; Ctrl-K shows the reasoning.
     h.typed(&format!("{} which node?", bragi_core::demo::THINK_PROMPT));
@@ -138,12 +140,14 @@ fn link_chat_models_status_help_and_code() {
     h.typed("/move projects");
     h.key(KeyCode::Enter);
     let screen = h.until("Moved to projects", |a| a.sessions.iter().any(|s| s.folder.is_some()));
-    assert!(screen.contains("▾ Projects 1"), "{screen}");
+    // The folder row: chevron, name, and its count on the right.
+    let row = screen.lines().find(|l| l.contains("▾ Projects")).unwrap_or_default();
+    assert!(row.split('│').nth(1).unwrap_or(row).trim_end().ends_with('1'), "{screen}");
     h.key(KeyCode::Tab);
     assert_eq!(h.app.focus, bragi_tui::app::Focus::Chats);
     h.app.chat_sel = h.app.rows.iter().position(|r| r.folder_id().is_some()).unwrap();
     h.key(KeyCode::Enter);
-    h.until("▸ Projects 1", |a| a.closed.len() == 1);
+    h.until("▸ Projects", |a| a.closed.len() == 1);
     h.key(KeyCode::Enter);
     h.key(KeyCode::Tab);
 
@@ -177,7 +181,7 @@ fn link_chat_models_status_help_and_code() {
     h.key(KeyCode::Down);
     h.key(KeyCode::Enter);
     assert_eq!(h.app.model.as_deref(), Some(second.as_str()));
-    h.until(&format!("model {second}"), |a| a.view == View::Chat);
+    h.until(&format!("│ {second} │"), |a| a.view == View::Chat);
     h.key(KeyCode::Char('?'));
     h.app.model = None;
 

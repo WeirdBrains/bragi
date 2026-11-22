@@ -3,7 +3,7 @@
 
 use std::io::Write;
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine;
 use bragi_tui::app::App;
@@ -22,6 +22,13 @@ fn main() -> ExitCode {
     };
     if args.command != Cmd::Tui {
         return ExitCode::from(cli::run(args) as u8);
+    }
+    match bragi_tui::theme::resolve(&args.theme) {
+        Ok(t) => bragi_tui::theme::init(t),
+        Err(e) => {
+            eprintln!("bragi-tui: {e}");
+            return ExitCode::from(2);
+        }
     }
     let session = match Session::open(&args.launch) {
         Ok(s) => s,
@@ -52,9 +59,20 @@ fn run(session: &Session, root: std::path::PathBuf) -> Result<(), String> {
     let _ = execute!(std::io::stdout(), EnableBracketedPaste);
     let mut app = App::new(session.core.clone(), &session.home, root);
     let result = (|| -> std::io::Result<()> {
+        // Draws only when something changed: input, a job or stream event, a toast coming or
+        // going, a resize, or a frame of the spinner or countdown (every 100 ms while one runs).
+        let mut dirty = true;
+        let mut last = Instant::now();
         loop {
-            app.tick();
-            terminal.draw(|f| bragi_tui::ui::draw(f, &mut app))?;
+            dirty |= app.tick();
+            if app.animating() && last.elapsed() >= Duration::from_millis(100) {
+                dirty = true;
+            }
+            if dirty {
+                terminal.draw(|f| bragi_tui::ui::draw(f, &mut app))?;
+                last = Instant::now();
+                dirty = false;
+            }
             for text in std::mem::take(&mut app.clipboard) {
                 osc52(&mut std::io::stdout(), &text)?;
             }
@@ -66,6 +84,7 @@ fn run(session: &Session, root: std::path::PathBuf) -> Result<(), String> {
                 while event::poll(Duration::ZERO)? {
                     app.on_event(event::read()?);
                 }
+                dirty = true;
             }
         }
     })();
