@@ -47,6 +47,41 @@ that install from a VSIX or Open VSX.
 The Bragi app has to be linked to your Weirdnet already; **Bragi: Show Connection Status** says
 which models it can reach.
 
+## Setting Bragi up from the editor
+
+Everything the Bragi apps set up, the extension can too. Run the commands from the palette, or use
+the **Connections** view in the Bragi activity bar (inline buttons on each row).
+
+| What | Commands |
+| --- | --- |
+| Links to inference nodes | **Link to an Inference Node…** (paste the link code, compare the short code on both screens, confirm), **Add an Inference Node by Address…**, **Remove Link…** |
+| OpenAI-compatible connections | **Add / Edit / Test / Remove OpenAI Connection…**. The key goes to Bragi once, which keeps it in its own secret store; the editor never keeps it and it is never shown again. These are the same connections the Bragi apps list. The older single *direct* server (`bragi.direct.*`) keeps its key in the editor's secret storage. |
+| Chats | **Delete Chats…**; the chat panel's chats are in Bragi's history. |
+| Local server | **Start/Restart Server**, **Stop Server** (only one this editor started), **Show Server Status** |
+| Bragi as an MCP server | **Start MCP Server** (runs `bragi mcp` in a terminal), **Stop MCP Server**, **Copy MCP Client Config…** (Cursor, VS Code, Claude Desktop) |
+| Outside MCP servers | **Add MCP Server…**, **Turn MCP Server On or Off…**, **Test MCP Server**, **Remove MCP Server…**, **Apply MCP Servers from Settings**. Needs a Bragi with the MCP client; with an older one the commands say so. |
+
+### Settings, user and workspace
+
+Settings are in the Settings UI under **Bragi: Connection, Models, Chat, MCP and Advanced**
+(`Preferences: Open Settings`, search `@ext:weirdbrains.bragi`), and in `settings.json` as `bragi.*`
+with completion and descriptions. **Bragi: Open Settings (JSON)…** opens the user or the workspace file.
+The value used is the first of: workspace folder, workspace, user (global), Bragi's default.
+**Bragi: Show Settings and Where They Come From…** lists every key, its value and which of those it came from.
+Keys that start a program or point at a server (`bragi.path`, `bragi.serveUrl`, `bragi.autoStartServer`,
+`bragi.tokenFile`, `bragi.direct.url`, `bragi.mcp.*`) are machine scope: only your user settings count, so an
+untrusted repository can't redirect Bragi. Changes apply at once, without reloading.
+Secrets (the API token, keys) are never settings: they are in the editor's secret storage or Bragi's own.
+
+`bragi.mcp.clientServers` lists outside MCP servers to add to Bragi (no secrets; add env values and tokens
+with **Add MCP Server…**):
+
+```json
+"bragi.mcp.clientServers": [
+  { "name": "Files", "transport": "stdio", "command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "."] }
+]
+```
+
 ## Settings
 
 | Setting | Default | |
@@ -64,6 +99,9 @@ which models it can reach.
 | `bragi.inline.debounceMs` | `350` | How long typing must pause before a suggestion is asked for. |
 | `bragi.context.openFiles` | `true` | Send other open files with rewrites and chat. |
 | `bragi.context.diagnostics` | `true` | Send the file's problems. |
+| `bragi.mcp.server.allowWrites`, `bragi.mcp.server.allowDeletes` | `false` | Add `--allow-writes` / `--allow-deletes` to `bragi mcp`. |
+| `bragi.mcp.server.args` | `[]` | Extra arguments for `bragi mcp`. |
+| `bragi.mcp.clientServers` | `[]` | Outside MCP servers to add to Bragi (see above). |
 
 ## Privacy and security
 
@@ -81,6 +119,10 @@ to Weird Brains. Inline suggestions are off in untrusted workspaces.
   `POST /v1/cancel`
 - `POST /v1/code/hunks` (the hunks between two texts) and `POST /v1/code/apply` (a text with only
   the accepted hunks), for reviewing a rewrite hunk by hunk
+- Management routes behind the same token: `GET /v1/links`, `POST /v1/links/node`, `POST /v1/links/remove`,
+  `POST /v1/link/accept` and `/v1/link/confirm`; `GET|POST /v1/endpoints`, `PUT|DELETE /v1/endpoints/{id}`,
+  `POST /v1/endpoints/{id}/test`, `GET /v1/endpoints/{id}/models`, `POST /v1/endpoints/test`;
+  `GET /v1/sessions`, `DELETE /v1/sessions/{id}`. Keys are accepted and never returned.
 - `GET /v1/models` and `POST /v1/chat/completions`, OpenAI-compatible, so other local tools can
   use Bragi too.
 

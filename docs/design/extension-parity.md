@@ -64,13 +64,15 @@ description, `order`, `scope` and a default. Existing keys keep their names; onl
 | Key | Category | Scope |
 |---|---|---|
 | `bragi.target` | Models | window |
-| `bragi.model`, `bragi.bragiTarget` | Models | resource |
-| `bragi.direct.url`, `bragi.direct.model`, `bragi.fallbackToDirect` | Connection | machine |
+| `bragi.model`, `bragi.bragiTarget`, `bragi.direct.model` | Models | window |
+| `bragi.direct.url` | Connection | machine |
+| `bragi.fallbackToDirect` | Connection | window |
 | `bragi.serveUrl`, `bragi.tokenFile` | Connection | machine |
-| `bragi.path`, `bragi.serve.autoStart` (LF-36), `bragi.serve.idleMinutes` | Advanced | machine |
+| `bragi.path` | Advanced | machine |
+| `bragi.autoStartServer` (LF-36) | Connection | machine |
 | `bragi.inline.enabled`, `bragi.inline.debounceMs` | Chat | window |
 | `bragi.context.openFiles`, `bragi.context.diagnostics` | Chat | resource |
-| `bragi.mcp.server.args`, `bragi.mcp.server.allowWrites`, `bragi.mcp.server.allowDeletes` | MCP | machine |
+| `bragi.mcp.server.args`, `.allowWrites`, `.allowDeletes` | MCP | machine |
 | `bragi.mcp.clientServers` (JSON list, no secrets; schema) | MCP | machine |
 
 Changing a setting takes effect without a reload (`onDidChangeConfiguration`).
@@ -86,6 +88,24 @@ apps already use; no new logic in core.
   `GET /v1/endpoints/{id}/models`. Responses are `EndpointView` (never a key).
 - `GET /v1/sessions?offset&limit`, `DELETE /v1/sessions/{id}`.
 - Later, with LF-37: `/v1/mcp-servers` (list, add, edit, remove, enable, test) and the approval stream.
+
+## Status (2026-11-22)
+
+Done on `feature/extension-parity`: the settings sections and scopes, the serve management routes
+(links, endpoints, sessions), the commands and the Connections view for links, OpenAI connections,
+chats, server stop and status, `bragi mcp` start, stop and copy config, and the MCP client server
+commands with `bragi.mcp.clientServers`.
+
+Depends on LF-37 (`feature/mcp-client`): the `/v1/mcp-servers` routes. The extension calls
+`GET|POST /v1/mcp-servers`, `DELETE /v1/mcp-servers/{id}`, `POST /v1/mcp-servers/{id}/enabled`
+(`{enabled}`) and `POST /v1/mcp-servers/{id}/test`, with `McpServerView` as in `mcp_servers.rs`
+(no secrets; `secrets {env, headers, bearer}` accepted on add). Those routes are a thin layer on
+`bragi-core::mcp_servers` and are the first thing to add after that branch merges; until then the
+extension reports that this Bragi has no MCP client. The tool approval card and "always allow" need
+the same branch's approval stream and are not in the extension yet.
+
+Left: link offer (show a code for another device), chat images and audio, reactions, per-message
+delete, session open and folders, attaching files in the chat panel.
 
 ## Tests
 
