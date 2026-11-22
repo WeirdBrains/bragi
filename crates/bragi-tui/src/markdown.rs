@@ -447,7 +447,10 @@ mod tests {
         assert!(p.iter().any(|l| l == "☑ done"));
         assert!(p.iter().any(|l| l == "1. first"));
         assert!(p.iter().any(|l| l == "▎ quoted"));
-        assert!(p.iter().any(|l| l == " rust"), "the language tag heads the block");
+        assert!(
+            p.iter().any(|l| (l.starts_with(" rust") || l.starts_with("┌─ rust")) && l.contains("copy")),
+            "the language tag heads the block and a copy button sits on the right: {p:#?}"
+        );
         assert!(p.iter().any(|l| l == " fn main() {}"));
         // The block's lines are filled to the width with the code background.
         let code = out.iter().find(|l| l.spans.iter().any(|s| s.content == "fn")).unwrap();
