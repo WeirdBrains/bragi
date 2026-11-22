@@ -3,7 +3,7 @@
 //! `Core` method the apps use. Keys arrive once in a request body, go to Bragi's secret store and
 //! never come back: responses are `EndpointView`s (only "a key is set").
 
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -176,20 +176,22 @@ async fn endpoint_models(State(app): State<App>, Path(id): Path<String>) -> Resp
 
 // ---- sessions ----------------------------------------------------------------------------------
 
-#[derive(Deserialize)]
-struct Page {
-    #[serde(default)]
-    offset: usize,
-    #[serde(default = "page_size")]
-    limit: usize,
+/// `?offset=N&limit=N` (the `query` feature of axum isn't on, so it is read by hand).
+fn page(q: Option<String>) -> (usize, usize) {
+    let (mut offset, mut limit) = (0, 50);
+    for pair in q.unwrap_or_default().split('&') {
+        match pair.split_once('=') {
+            Some(("offset", v)) => offset = v.parse().unwrap_or(0),
+            Some(("limit", v)) => limit = v.parse().unwrap_or(50),
+            _ => {}
+        }
+    }
+    (offset, limit.min(200))
 }
 
-fn page_size() -> usize {
-    50
-}
-
-async fn sessions(State(app): State<App>, Query(p): Query<Page>) -> Response {
-    match app.core.sessions(p.offset, p.limit.min(200)) {
+async fn sessions(State(app): State<App>, RawQuery(q): RawQuery) -> Response {
+    let (offset, limit) = page(q);
+    match app.core.sessions(offset, limit) {
         Ok(s) => Json(json!({ "sessions": s })).into_response(),
         Err(e) => core_error(e),
     }
