@@ -22,7 +22,7 @@ use crate::attach::Attachment;
 use crate::catalog::CatalogView;
 use crate::chat::{ChatEvent, coalesce};
 use crate::error::{CoreError, ErrorKind, Result};
-use crate::history::{ChatMessage, Conversation, ConversationSummary, History, MessageState, Role, now_ms, title_for};
+use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, History, MessageState, Role, now_ms, title_for};
 use crate::identity::{Identity, LinkSettings, SYNC_TYPE, SyncNode};
 
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
@@ -225,7 +225,12 @@ async fn sync_pass(
         let before = h.fingerprint();
         identity.tick(&node, &|c| hints.iter().find(|(p, _)| p.to_string() == c.peer_id).map(|(_, a)| a.clone()).unwrap_or_default());
         h.flush();
-        h.fingerprint() != before
+        let changed = h.fingerprint() != before;
+        if changed {
+            // A delete from another device: drop what it removed from this device's log too.
+            h.compact();
+        }
+        changed
     })
     .await
     .unwrap_or(false);
@@ -673,7 +678,9 @@ impl Core {
 
     fn finish(&self, conversation: &str, text: String, state: MessageState, node: Option<String>, model: Option<String>, flags: Flags) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
-        if let Some(m) = c.messages.last_mut().filter(|m| m.role == Role::Assistant) {
+        // The answer was deleted while it streamed: nothing to write (and not over another one).
+        let Some(m) = c.messages.last_mut().filter(|m| m.role == Role::Assistant && m.state == MessageState::Streaming) else { return };
+        {
             m.text = text;
             m.state = state;
             if node.is_some() {
@@ -714,7 +721,58 @@ impl Core {
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<()> {
-        self.inner.history.delete(id)
+        self.delete_conversations(&[id.to_string()]).map(|_| ())
+    }
+
+    /// Deletes conversations (see [`History::delete_conversations`]): gone on every linked device
+    /// after the next sync pass, and from this device's store now. [`Core::undo_delete`] takes it
+    /// back for [`UNDO_MS`](crate::history::UNDO_MS).
+    pub fn delete_conversations(&self, ids: &[String]) -> Result<Deleted> {
+        let d = self.inner.history.delete_conversations(ids)?;
+        self.after_delete(&d);
+        Ok(d)
+    }
+
+    /// Deletes message `id` of `conversation`, and with `with_reply` the answer that followed it
+    /// (see [`Conversation::reply_to`]). An answer still streaming is stopped first by the shell;
+    /// here it is refused.
+    pub fn delete_message(&self, conversation: &str, id: &str, with_reply: bool) -> Result<Deleted> {
+        let c = self.inner.history.load(conversation)?;
+        let mut ids = vec![id.to_string()];
+        if with_reply && let Some(r) = c.reply_to(id) {
+            ids.push(r.id.clone());
+        }
+        let busy = !lock(&self.inner.requests).is_empty();
+        if busy && c.messages.iter().any(|m| ids.contains(&m.id) && m.state == MessageState::Streaming) {
+            return Err(CoreError::new(ErrorKind::BadRequest, "stop the answer before deleting it"));
+        }
+        let d = self.inner.history.delete_messages(conversation, &ids)?;
+        self.after_delete(&d);
+        Ok(d)
+    }
+
+    /// Puts back the last delete, within [`UNDO_MS`](crate::history::UNDO_MS) of it.
+    pub fn undo_delete(&self, undo: &str) -> Result<()> {
+        self.inner.history.undo(undo)?;
+        self.inner.state.send_modify(|_| {});
+        Ok(())
+    }
+
+    /// Deletes all history, on every linked device, with no undo. Returns how many conversations.
+    pub fn clear_history(&self) -> Result<usize> {
+        let n = self.inner.history.clear()?;
+        self.inner.state.send_modify(|_| {});
+        Ok(n)
+    }
+
+    /// Redraws, and drops the undo copy when its time is up.
+    fn after_delete(&self, d: &Deleted) {
+        self.inner.state.send_modify(|_| {});
+        let (h, token) = (self.inner.history.clone(), d.undo.clone());
+        self.inner.handle.spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(crate::history::UNDO_MS)).await;
+            h.forget_undo(&token);
+        });
     }
 
     // ---- lifecycle -------------------------------------------------------------------------

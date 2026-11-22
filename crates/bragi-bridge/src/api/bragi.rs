@@ -128,6 +128,10 @@ pub struct ChatStarted {
 
 #[derive(Debug, Clone)]
 pub struct MessageView {
+    /// The message's id in the store (what `delete_message` takes).
+    pub id: String,
+    /// A user message followed by its answer: deleting it offers to delete the answer too.
+    pub has_reply: bool,
     /// `user` or `assistant`.
     pub role: String,
     pub text: String,
@@ -162,6 +166,15 @@ pub struct SummaryView {
     pub id: String,
     pub title: String,
     pub updated_ms: i64,
+}
+
+/// What a delete removed; `undo` undoes it within `undo_ms`.
+#[derive(Debug, Clone)]
+pub struct DeletedView {
+    pub undo: String,
+    pub conversations: u32,
+    pub messages: u32,
+    pub undo_ms: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -351,6 +364,8 @@ fn conversation_view(c: &Conversation) -> ConversationView {
             .messages
             .iter()
             .map(|m| MessageView {
+                id: m.id.clone(),
+                has_reply: c.reply_to(&m.id).is_some(),
                 role: if m.role == Role::User { "user" } else { "assistant" }.into(),
                 text: m.text.clone(),
                 state: message_state_name(m.state),
@@ -633,4 +648,27 @@ pub fn conversation(id: String) -> Result<ConversationView, String> {
 
 pub fn delete_conversation(id: String) -> Result<(), String> {
     core()?.delete_conversation(&id).map_err(err)
+}
+
+fn deleted_view(d: bragi_core::Deleted) -> DeletedView {
+    DeletedView { undo: d.undo, conversations: d.conversations as u32, messages: d.messages as u32, undo_ms: bragi_core::UNDO_MS as u32 }
+}
+
+/// Deletes conversations (on every linked device, and from this one's store).
+pub fn delete_conversations(ids: Vec<String>) -> Result<DeletedView, String> {
+    core()?.delete_conversations(&ids).map(deleted_view).map_err(err)
+}
+
+/// Deletes one message, and with `with_reply` the answer that followed it.
+pub fn delete_message(conversation: String, id: String, with_reply: bool) -> Result<DeletedView, String> {
+    core()?.delete_message(&conversation, &id, with_reply).map(deleted_view).map_err(err)
+}
+
+pub fn undo_delete(undo: String) -> Result<(), String> {
+    core()?.undo_delete(&undo).map_err(err)
+}
+
+/// Deletes all history, with no undo. Returns how many conversations.
+pub fn clear_history() -> Result<u32, String> {
+    core()?.clear_history().map(|n| n as u32).map_err(err)
 }

@@ -62,6 +62,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConversationView dco_decode_conversation_view(dynamic raw);
 
   @protected
+  DeletedView dco_decode_deleted_view(dynamic raw);
+
+  @protected
   double dco_decode_f_64(dynamic raw);
 
   @protected
@@ -169,6 +172,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ConversationView sse_decode_conversation_view(SseDeserializer deserializer);
+
+  @protected
+  DeletedView sse_decode_deleted_view(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -297,6 +303,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ConversationView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_deleted_view(DeletedView self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);

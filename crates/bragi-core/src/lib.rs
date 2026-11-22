@@ -26,4 +26,4 @@ pub use crate::core::{
     AppState, ChatHandle, Config, Core, LinkCheck, NODE_ADDED, PEERS_FILE, PairState, SCHEME, Transport, is_node_address, node_config, normalize_link,
 };
 pub use crate::error::{CoreError, ErrorKind, Result};
-pub use crate::history::{ChatMessage, Conversation, ConversationSummary, MessageState, Role};
+pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};

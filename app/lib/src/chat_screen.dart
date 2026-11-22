@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
 import 'controller.dart';
+import 'delete_ui.dart';
 import 'theme.dart';
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -83,7 +84,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _scroll,
                       padding: const EdgeInsets.all(12),
                       itemCount: c.messages.length,
-                      itemBuilder: (_, i) => _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
+                      itemBuilder: (context, i) => GestureDetector(
+                        key: Key('bubble-$i'),
+                        // Long-press (or right-click) a message for its menu; not while an answer streams.
+                        onLongPress: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                        onSecondaryTap: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                        child: _Bubble(message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1),
+                      ),
                     ),
             ),
             if (c.notice != null)
@@ -360,6 +367,14 @@ class _History extends StatelessWidget {
                       dense: true,
                       selected: c.current?.id == s.id,
                       title: Text(s.title, overflow: TextOverflow.ellipsis),
+                      trailing: IconButton(
+                        key: Key('delete-conv-${s.id}'),
+                        tooltip: 'Delete conversation',
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        onPressed: () => confirmDeleteConversation(context, c, s),
+                      ),
+                      onLongPress: () => confirmDeleteConversation(context, c, s),
                       onTap: () {
                         c.open(s.id);
                         Navigator.of(context).pop();
@@ -367,6 +382,17 @@ class _History extends StatelessWidget {
                     ),
                 ],
               ),
+            ),
+            ListTile(
+              key: const Key('settings'),
+              dense: true,
+              leading: const Icon(Icons.settings_outlined),
+              title: const Text('Settings'),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
+              },
             ),
             const Divider(),
             Padding(

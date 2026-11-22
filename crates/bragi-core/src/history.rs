@@ -11,6 +11,9 @@ use crate::context::{ContextStore, Stored, StoredConversation, updated_ms};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::identity::Identity;
 
+mod forget;
+pub use forget::{Deleted, UNDO_MS};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -93,6 +96,14 @@ impl Conversation {
         ConversationSummary { id: self.id.clone(), title: self.title.clone(), updated_ms: self.updated_ms, messages: self.messages.len() }
     }
 
+    /// The answer that followed user message `id`, if the next message is one: deleting a
+    /// question offers to delete it too.
+    pub fn reply_to(&self, id: &str) -> Option<&ChatMessage> {
+        let i = self.messages.iter().position(|m| m.id == id)?;
+        let next = self.messages.get(i + 1)?;
+        (self.messages[i].role == Role::User && next.role == Role::Assistant).then_some(next)
+    }
+
     /// The last message, if it is an assistant answer that was cut off.
     pub fn continuable(&self) -> bool {
         self.messages.last().is_some_and(|m| m.role == Role::Assistant && matches!(m.state, MessageState::Stopped | MessageState::Failed))
@@ -120,6 +131,8 @@ pub struct History {
     store: RwLock<Option<Arc<ContextStore>>>,
     /// Ids handed to messages this `History` saved; none is reused.
     seq: Mutex<u16>,
+    /// What the last delete removed, for [`History::undo`] (see [`forget`]).
+    undo: Mutex<Option<forget::Undo>>,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -202,7 +215,7 @@ fn from_conversation(c: &StoredConversation) -> Conversation {
 impl History {
     /// `dir` is the app's data directory: B1's files, if any, are in `<dir>/history/`.
     pub fn open(dir: &Path) -> Result<Self> {
-        Ok(Self { dir: dir.join("history"), store: RwLock::new(None), seq: Mutex::new(0) })
+        Ok(Self { dir: dir.join("history"), store: RwLock::new(None), seq: Mutex::new(0), undo: Mutex::new(None) })
     }
 
     /// Puts history on `identity`'s context store (the device is linked), importing B1's local
@@ -210,7 +223,10 @@ impl History {
     pub fn attach(&self, identity: Arc<Identity>) -> usize {
         let store = Arc::new(ContextStore::new(identity));
         *self.store.write().unwrap_or_else(|e| e.into_inner()) = Some(store);
-        self.import_local()
+        let n = self.import_local();
+        // Deletes made before deleting compacted (or on another device) leave nothing behind.
+        self.compact();
+        n
     }
 
     fn store(&self) -> Result<Arc<ContextStore>> {
@@ -290,15 +306,9 @@ impl History {
         format!("{at_ms:013}-{index:04}-{:04x}{:04x}", u16::from_le_bytes(b), *seq)
     }
 
+    /// Deletes one conversation (see [`History::delete_conversations`]).
     pub fn delete(&self, id: &str) -> Result<()> {
-        if !valid_id(id) {
-            return Err(not_found(id));
-        }
-        let store = self.store()?;
-        if store.load(id).is_none() {
-            return Err(not_found(id));
-        }
-        store.delete(id).map_err(storage)
+        self.delete_conversations(&[id.to_string()]).map(|_| ())
     }
 
     /// Newest first: `offset` and `limit` page through them.
@@ -321,14 +331,14 @@ impl History {
 mod tests {
     use super::*;
 
-    fn linked(dir: &Path) -> (Arc<Identity>, History) {
+    pub(super) fn linked(dir: &Path) -> (Arc<Identity>, History) {
         let id = Arc::new(Identity::create(&dir.join("identity"), "t").unwrap());
         let h = History::open(dir).unwrap();
         h.attach(id.clone());
         (id, h)
     }
 
-    fn conv(id: &str, texts: &[&str]) -> Conversation {
+    pub(super) fn conv(id: &str, texts: &[&str]) -> Conversation {
         let messages = texts
             .iter()
             .enumerate()

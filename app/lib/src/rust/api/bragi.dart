@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -168,6 +168,27 @@ Future<ConversationView> conversation({required String id}) =>
 
 Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
+
+/// Deletes conversations (on every linked device, and from this one's store).
+Future<DeletedView> deleteConversations({required List<String> ids}) =>
+    RustLib.instance.api.crateApiBragiDeleteConversations(ids: ids);
+
+/// Deletes one message, and with `with_reply` the answer that followed it.
+Future<DeletedView> deleteMessage({
+  required String conversation,
+  required String id,
+  required bool withReply,
+}) => RustLib.instance.api.crateApiBragiDeleteMessage(
+  conversation: conversation,
+  id: id,
+  withReply: withReply,
+);
+
+Future<void> undoDelete({required String undo}) =>
+    RustLib.instance.api.crateApiBragiUndoDelete(undo: undo);
+
+/// Deletes all history, with no undo. Returns how many conversations.
+Future<int> clearHistory() => RustLib.instance.api.crateApiBragiClearHistory();
 
 /// A text file attached to a message.
 class AttachmentView {
@@ -357,6 +378,38 @@ class ConversationView {
           continuable == other.continuable;
 }
 
+/// What a delete removed; `undo` undoes it within `undo_ms`.
+class DeletedView {
+  final String undo;
+  final int conversations;
+  final int messages;
+  final int undoMs;
+
+  const DeletedView({
+    required this.undo,
+    required this.conversations,
+    required this.messages,
+    required this.undoMs,
+  });
+
+  @override
+  int get hashCode =>
+      undo.hashCode ^
+      conversations.hashCode ^
+      messages.hashCode ^
+      undoMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DeletedView &&
+          runtimeType == other.runtimeType &&
+          undo == other.undo &&
+          conversations == other.conversations &&
+          messages == other.messages &&
+          undoMs == other.undoMs;
+}
+
 class LinkCheckView {
   final String sas;
   final String device;
@@ -376,6 +429,12 @@ class LinkCheckView {
 }
 
 class MessageView {
+  /// The message's id in the store (what `delete_message` takes).
+  final String id;
+
+  /// A user message followed by its answer: deleting it offers to delete the answer too.
+  final bool hasReply;
+
   /// `user` or `assistant`.
   final String role;
   final String text;
@@ -399,6 +458,8 @@ class MessageView {
   final PlatformInt64 atMs;
 
   const MessageView({
+    required this.id,
+    required this.hasReply,
     required this.role,
     required this.text,
     required this.state,
@@ -415,6 +476,8 @@ class MessageView {
 
   @override
   int get hashCode =>
+      id.hashCode ^
+      hasReply.hashCode ^
       role.hashCode ^
       text.hashCode ^
       state.hashCode ^
@@ -433,6 +496,8 @@ class MessageView {
       identical(this, other) ||
       other is MessageView &&
           runtimeType == other.runtimeType &&
+          id == other.id &&
+          hasReply == other.hasReply &&
           role == other.role &&
           text == other.text &&
           state == other.state &&
