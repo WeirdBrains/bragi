@@ -20,6 +20,9 @@ usage:
                                                    opened in its git repository (or its folder).
                                                    `bragi-tui .` works here; use ./link for a path
                                                    named like a command, or --path PATH
+      [--no-mouse]                                 leave the mouse to the terminal, so text can be
+                                                   selected (or BRAGI_TUI_MOUSE=0; F7 toggles it in
+                                                   the app; Shift-drag selects while it is on)
       [--theme NAME|FILE.toml] [--mode dark|light|system]
                                                    its look (weirdnet-themes: bragi, the default,
                                                    tokyo-night, catppuccin, gruvbox, dracula, nord,
@@ -48,6 +51,19 @@ pub struct Args {
     pub open: Option<String>,
     pub command: Cmd,
     pub theme: crate::theme::Choice,
+    /// `--mouse` / `--no-mouse`: whether the terminal's mouse reporting is on (`None`: the
+    /// `BRAGI_TUI_MOUSE` variable, else on).
+    pub mouse: Option<bool>,
+}
+
+/// Whether `BRAGI_TUI_MOUSE` (`0`, `off`, `false`, `no` turn the mouse off; `1`, `on`, `true`,
+/// `yes` on) says so; `None` when unset or unrecognised.
+pub fn mouse_from_env(value: Option<&str>) -> Option<bool> {
+    match value?.trim().to_ascii_lowercase().as_str() {
+        "0" | "off" | "false" | "no" => Some(false),
+        "1" | "on" | "true" | "yes" => Some(true),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -98,6 +114,8 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 out.open = Some(value("--path")?);
             }
             "--demo" => out.launch.demo = true,
+            "--mouse" => out.mouse = Some(true),
+            "--no-mouse" => out.mouse = Some(false),
             "--theme" => out.theme.theme = Some(value("--theme")?),
             "--mode" => out.theme.mode = Some(value("--mode")?),
             "--rewrite" => {

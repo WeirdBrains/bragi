@@ -7,6 +7,7 @@ pub mod app;
 pub mod cli;
 pub mod code;
 pub mod editor;
+pub mod hit;
 pub mod markdown;
 pub mod session;
 pub mod settings;

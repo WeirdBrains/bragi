@@ -8,6 +8,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
+use crate::hit::{Action, Mark};
 use crate::theme::{self, Theme};
 
 fn th() -> &'static Theme {
@@ -25,10 +26,90 @@ pub fn render_streaming(text: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 pub fn lines(doc: &Document, width: usize) -> Vec<Line<'static>> {
+    lines_marked(doc, width).0
+}
+
+thread_local! {
+    /// The copy buttons of the code blocks drawn by the render in progress.
+    static COPIES: std::cell::RefCell<Vec<Mark>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Like [`render`] (or [`render_streaming`]), with what a click can do in it: its links and its
+/// code blocks' copy buttons. Columns are within the lines; `line` is the line's index.
+pub fn render_marked(text: &str, width: usize, streaming: bool) -> (Vec<Line<'static>>, Vec<Mark>) {
+    let doc = if streaming { bragi_core::markdown::parse_streaming(text) } else { bragi_core::markdown::parse(text) };
+    lines_marked(&doc, width)
+}
+
+pub fn lines_marked(doc: &Document, width: usize) -> (Vec<Line<'static>>, Vec<Mark>) {
+    COPIES.with(|c| c.borrow_mut().clear());
     let mut out = Vec::new();
     blocks(&doc.blocks, width.max(8), "", &mut out);
     while out.last().is_some_and(|l: &Line| l.width() == 0) {
         out.pop();
+    }
+    let mut marks = COPIES.with(|c| std::mem::take(&mut *c.borrow_mut()));
+    marks.retain(|m| m.line < out.len());
+    marks.extend(link_marks(&out, width.max(8)));
+    (out, marks)
+}
+
+/// Addresses in drawn lines (a link is drawn as its text and its address in brackets): the
+/// address, and the link text before it, open it. An address wrapped at the full width goes on
+/// at the start of the next line.
+fn link_marks(lines: &[Line<'static>], width: usize) -> Vec<Mark> {
+    let mut out = Vec::new();
+    // The address a line ended inside of, to be continued on the next line.
+    let mut open: Option<(String, Vec<usize>)> = None;
+    for (i, line) in lines.iter().enumerate() {
+        let plain: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+        if let Some((url, mut chain)) = open.take() {
+            let rest: String = plain.chars().take_while(|c| !c.is_whitespace() && !")>\"".contains(*c)).collect();
+            if !rest.is_empty() && !plain.starts_with(' ') {
+                let full = format!("{url}{rest}");
+                let w = UnicodeWidthStr::width(rest.as_str()) as u16;
+                // Every part of it opens the whole address.
+                for &k in &chain {
+                    out[k].action = Action::Url(full.clone());
+                }
+                chain.push(out.len());
+                out.push(Mark { line: i, col: 0, w, action: Action::Url(full.clone()) });
+                if rest.len() == plain.len() && UnicodeWidthStr::width(plain.as_str()) >= width {
+                    open = Some((full, chain));
+                }
+                continue;
+            }
+        }
+        let mut from = 0;
+        while let Some(at) = ["https://", "http://"].iter().filter_map(|p| plain[from..].find(p).map(|x| x + from)).min() {
+            let tail = &plain[at..];
+            let mut end = tail.find(|c: char| c.is_whitespace() || ")>\"".contains(c)).unwrap_or(tail.len());
+            let reached_end = at + end == plain.len();
+            while end > 0 && ".,;:!?".contains(&tail[end - 1..end]) {
+                end -= 1;
+            }
+            let url = tail[..end].to_string();
+            let col = UnicodeWidthStr::width(&plain[..at]) as u16;
+            let w = UnicodeWidthStr::width(url.as_str()) as u16;
+            if url.len() > "https://".len() {
+                // The link's own text, drawn just before " (address)".
+                if plain[..at].ends_with(" (") {
+                    let mut c = 0u16;
+                    for s in &line.spans {
+                        let sw = UnicodeWidthStr::width(s.content.as_ref()) as u16;
+                        if s.style.add_modifier.contains(Modifier::UNDERLINED) && c + sw + 2 == col {
+                            out.push(Mark { line: i, col: c, w: sw, action: Action::Url(url.clone()) });
+                        }
+                        c += sw;
+                    }
+                }
+                if reached_end && col as usize + w as usize >= width {
+                    open = Some((url.clone(), vec![out.len()]));
+                }
+                out.push(Mark { line: i, col, w, action: Action::Url(url.clone()) });
+            }
+            from = at + end.max(1);
+        }
     }
     out
 }
@@ -116,11 +197,22 @@ fn block(b: &Block, width: usize, prefix: &str, out: &mut Vec<Line<'static>>) {
             let bg = Style::new().bg(t.code_bg);
             // Without colour there is no background to hold the block together: a frame does.
             let framed = !t.color();
+            // The copy button at the right end of the header.
+            let copy_label = if t.color() { " copy " } else { "[copy]" };
+            let cw = UnicodeWidthStr::width(copy_label);
+            let copy_at = UnicodeWidthStr::width(prefix) + room.saturating_sub(cw);
+            COPIES.with(|c| {
+                c.borrow_mut().push(Mark { line: out.len(), col: copy_at as u16, w: cw as u16, action: Action::Copy(code.clone()) });
+            });
             if framed {
-                out.push(prefixed(prefix, vec![Span::styled(format!("┌─ {label}"), t.dim())]));
+                let head = format!("┌─ {label}");
+                let gap = room.saturating_sub(UnicodeWidthStr::width(head.as_str()) + cw);
+                out.push(prefixed(prefix, vec![Span::styled(head, t.dim()), Span::raw(" ".repeat(gap)), Span::styled(copy_label, t.dim())]));
             } else {
                 let tag = Span::styled(format!(" {label} "), t.pill(t.accent, t.raised));
-                out.push(prefixed(prefix, fill(vec![tag], room, bg)));
+                let used = UnicodeWidthStr::width(tag.content.as_ref());
+                let gap = room.saturating_sub(used + cw);
+                out.push(prefixed(prefix, vec![tag, Span::styled(" ".repeat(gap), bg), Span::styled(copy_label, t.pill(t.fg, t.raised))]));
             }
             let toks: Vec<Token> = if tokens.is_empty() { vec![Token { text: code.clone(), kind: TokenKind::Plain }] } else { tokens.clone() };
             let mut line: Vec<Span<'static>> = Vec::new();
@@ -373,5 +465,34 @@ mod tests {
         assert_eq!(out, vec!["aaa bbb", "ccc ddd"]);
         let out = plain(&render_streaming("```py\nprint(1)", 40));
         assert_eq!(out.last().unwrap(), " …");
+    }
+
+    #[test]
+    fn marks_links_and_copy_buttons() {
+        let text = "See [the docs](https://example.com/docs) or https://rust-lang.org.\n\n```rust\nfn main() {}\n```\n";
+        let (lines, marks) = render_marked(text, 80, false);
+        let plain: Vec<String> = lines.iter().map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect()).collect();
+        let urls: Vec<(usize, u16, u16, &str)> =
+            marks.iter().filter_map(|m| if let Action::Url(u) = &m.action { Some((m.line, m.col, m.w, u.as_str())) } else { None }).collect();
+        // The link text and its address both open the address, and a bare one loses its full stop.
+        let docs = urls.iter().filter(|u| u.3 == "https://example.com/docs").count();
+        assert_eq!(docs, 2, "{urls:?} in {plain:?}");
+        let text_mark = urls.iter().find(|u| u.3 == "https://example.com/docs").unwrap();
+        assert_eq!(&plain[0][text_mark.1 as usize..(text_mark.1 + text_mark.2) as usize], "the docs");
+        let bare = urls.iter().find(|u| u.3 == "https://rust-lang.org").expect("the bare address");
+        assert_eq!(&plain[0][bare.1 as usize..(bare.1 + bare.2) as usize], "https://rust-lang.org");
+        // The code block's copy button sits at the right end of its header line.
+        let copy = marks.iter().find(|m| matches!(&m.action, Action::Copy(c) if c.contains("fn main"))).expect("a copy button");
+        assert!(plain[copy.line].contains("rust") && plain[copy.line].trim_end().ends_with(if th().color() { "copy" } else { "[copy]" }));
+        assert_eq!(plain[copy.line].chars().count(), 80);
+    }
+
+    #[test]
+    fn a_long_address_wrapped_at_the_width_is_one_link() {
+        let url = format!("https://example.com/{}", "a".repeat(40));
+        let (lines, marks) = render_marked(&url, 20, false);
+        assert!(lines.len() >= 3);
+        let parts: Vec<&Mark> = marks.iter().filter(|m| m.action == Action::Url(url.clone())).collect();
+        assert_eq!(parts.len(), lines.len(), "each line of it opens it: {marks:?}");
     }
 }

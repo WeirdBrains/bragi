@@ -56,3 +56,17 @@ fn usage_errors_and_version() {
     let out = cmd().arg("frob").output().unwrap();
     assert_eq!(out.status.code(), Some(2));
 }
+
+#[test]
+fn the_mouse_can_be_switched_off() {
+    use bragi_tui::cli::{mouse_from_env, parse};
+    let p = |s: &str| parse(s.split_whitespace().map(String::from)).unwrap();
+    assert_eq!(p("").mouse, None);
+    assert_eq!(p("--no-mouse").mouse, Some(false));
+    assert_eq!(p("--no-mouse --mouse").mouse, Some(true));
+    assert_eq!(mouse_from_env(Some("0")), Some(false));
+    assert_eq!(mouse_from_env(Some("Off")), Some(false));
+    assert_eq!(mouse_from_env(Some("yes")), Some(true));
+    assert_eq!(mouse_from_env(Some("maybe")), None);
+    assert_eq!(mouse_from_env(None), None);
+}
