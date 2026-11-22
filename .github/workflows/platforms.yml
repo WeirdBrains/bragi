@@ -88,5 +88,7 @@ jobs:
             # not compile for FreeBSD at the pinned rev or on Zed's main (gpui gates layer_shell and the priority
             # queue to linux/windows/wasm while gpui_linux uses them), so it may not fail the job yet.
             cargo test -p bragi-core
-            cargo build -p bragi-desktop || echo "::warning::bragi-desktop does not build on FreeBSD (GPUI)"
+            # Without the window `bragi` is the terminal app, and that must build.
+            cargo build -p bragi-desktop --no-default-features
+            cargo build -p bragi-desktop || echo "::warning::bragi-desktop's window does not build on FreeBSD (GPUI)"
 

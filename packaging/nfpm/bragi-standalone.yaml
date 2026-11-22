@@ -27,8 +27,8 @@ contents:
   - src: "${BRAGI_BUNDLE}/bin/bragi"
     dst: /usr/bin/bragi
     file_info: {mode: 0755}
-  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
+  - src: bragi
     dst: /usr/bin/bragi-tui
-    file_info: {mode: 0755}
+    type: symlink
   - src: "${BRAGI_BUNDLE}/LICENSE"
     dst: /usr/share/licenses/bragi-standalone/LICENSE

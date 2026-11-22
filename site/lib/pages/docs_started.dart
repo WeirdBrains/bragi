@@ -17,8 +17,9 @@ tarball on Linux, the dmg on macOS, the installer on Windows (for your user only
 and the ipa on iOS (sideload it with AltStore, SideStore or Sideloadly). Or build from source (see the
 <a href="${repo}#building">README</a>):</p>
 <pre><code>git clone https://github.com/WeirdBrains/bragi &amp;&amp; cd bragi
-cargo run --release -p bragi-desktop             # the desktop app (GPUI)
-cargo run -p bragi-desktop -- --demo             # try it against a built-in demo node, no Ymir needed</code></pre>
+cargo run --release -p bragi-desktop -- desktop  # the desktop app (GPUI)
+cargo run -p bragi-desktop -- desktop --demo     # try it against a built-in demo node, no Ymir needed
+cargo run -p bragi-desktop                       # `bragi` alone is the terminal app</code></pre>
 <p>The desktop app keeps its identity and history in a folder you can move with <code>--home DIR</code> or the
 <code>BRAGI_HOME</code> environment variable.</p>
 

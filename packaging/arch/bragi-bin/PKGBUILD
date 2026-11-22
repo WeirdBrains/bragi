@@ -26,8 +26,8 @@ package() {
   local bundle="$srcdir/bragi-$_ver-$CARCH-unknown-linux-gnu"
   test -x "$bundle/bin/bragi"
   install -Dm755 "$bundle/bin/bragi" "$pkgdir/usr/bin/bragi"
-  # The terminal app, from 1.0.0.
-  if [ -x "$bundle/bin/bragi-tui" ]; then install -Dm755 "$bundle/bin/bragi-tui" "$pkgdir/usr/bin/bragi-tui"; fi
+  # The terminal app is `bragi` itself; bragi-tui is its old name.
+  ln -s bragi "$pkgdir/usr/bin/bragi-tui"
   cp -a "$bundle/share" "$pkgdir/usr/"
   install -Dm644 "$bundle/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "$bundle/README.md" "$pkgdir/usr/share/doc/$pkgname/README.md"

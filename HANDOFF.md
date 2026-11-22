@@ -2,6 +2,18 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-39, one `bragi` command: the terminal app is in it (branch `feature/bragi-single-binary`)
+
+**What changed**
+- [`entry.rs`](crates/bragi-tui/src/entry.rs): the terminal app's start-up moved out of `bragi-tui`'s `main` into `bragi_tui::entry::run(prog, args)`. [`main.rs`](crates/bragi-tui/src/main.rs) of `bragi-tui` is now a thin call to it (the compatibility binary).
+- [`main.rs`](crates/bragi-desktop/src/main.rs) of `bragi`: `dispatch` reads the first word: `mcp`, `serve` (with `ensure` and `status`), `desktop`, `--help`/`-h`, else the terminal app, run in-process with the whole command line (none, a path, `status`, `link`, `--demo`, `--no-serve`…). A path named like a subcommand is `./serve` or `--path serve`. The old `terminal.rs` hand-off is gone.
+- The window is the `gui` feature of `bragi-desktop` (default on): GPUI, cpal, qrcode and the rest are optional. `cargo build -p bragi-desktop --no-default-features` makes a `bragi` with no GUI libraries, and `bragi desktop` there says so. On Windows the exe is a console program now (the terminal app needs it) and `desktop` detaches the console.
+- `find_spawn` (bragi-serve) still finds the right program: `bragi` spawns itself with `serve`; the `bragi-tui` alias, a symlink, resolves to `bragi`.
+- Packaging: the desktop entry is `Exec=bragi desktop`; the macOS app starts a `bragi-app` script that runs `bragi desktop`; the Windows Start menu shortcut passes `desktop`. The Linux archives and nfpm, Arch and Nix packages link `bragi-tui` to `bragi`; the terminal-only archive and package are built with `--no-default-features`. Windows keeps a `bragi-tui.exe`. [README](README.md), the [Getting started guide](site/lib/pages/docs_started.dart) and the [CHANGELOG](CHANGELOG.md) say so; the FreeBSD job builds the no-window `bragi`.
+- Tests: `dispatch` for none, path, a path named like a subcommand, `desktop`, `mcp`, `serve`, `--help`.
+
+**Not tested**: the packaging changes (no nfpm, macOS or Windows here); the Windows console behaviour; the FreeBSD build.
+
 ## 2026-11-22: LF-35, the file picker in the terminal app's code mode (branch `feature/tui-file-picker`)
 
 **What changed**

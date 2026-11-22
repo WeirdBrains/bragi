@@ -1,5 +1,6 @@
 # nfpm config for the `bragi` package: the desktop shell with its desktop entry and icons, and the
-# terminal app (bragi-tui).
+# terminal app: `bragi` runs it, with no arguments or a path (`bragi desktop` opens the window), and
+# bragi-tui is a symlink to bragi, kept for one release.
 # Used by scripts/dist-linux.sh, which sets BRAGI_VERSION, BRAGI_ARCH and BRAGI_BUNDLE.
 name: bragi
 arch: "${BRAGI_ARCH}"
@@ -27,9 +28,9 @@ contents:
   - src: "${BRAGI_BUNDLE}/bin/bragi"
     dst: /usr/bin/bragi
     file_info: {mode: 0755}
-  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
+  - src: bragi
     dst: /usr/bin/bragi-tui
-    file_info: {mode: 0755}
+    type: symlink
   - src: "${BRAGI_BUNDLE}/share/applications/bragi.desktop"
     dst: /usr/share/applications/bragi.desktop
   - src: "${BRAGI_BUNDLE}/share/icons/hicolor"

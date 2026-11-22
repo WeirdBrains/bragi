@@ -19,7 +19,7 @@ set -uo pipefail
 out=$1 bin=$2
 [ -z "${WAYLAND_DISPLAY:-}" ] || { echo "refusing: WAYLAND_DISPLAY is set" >&2; exit 3; }
 case "${DISPLAY:-}" in :0|:1|"") echo "refusing: DISPLAY=${DISPLAY:-unset} is not a virtual server" >&2; exit 3;; esac
-coproc APP { exec "$bin" --scenario 2>&1; }
+coproc APP { exec "$bin" desktop --scenario 2>&1; }
 pid=$APP_PID
 sleep 0.3
 if tr '\0' '\n' < "/proc/$pid/environ" | grep -q '^WAYLAND_DISPLAY='; then

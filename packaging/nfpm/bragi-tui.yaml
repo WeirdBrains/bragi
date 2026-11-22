@@ -1,4 +1,5 @@
-# nfpm config for `bragi-tui`: the terminal app only (no GUI libraries), for servers and SSH sessions.
+# nfpm config for `bragi-tui`: `bragi` built without the `gui` feature (the terminal app, MCP server and
+# `bragi serve`; no GUI libraries) for servers and SSH sessions, with bragi-tui as a symlink to it.
 # Used by scripts/dist-linux.sh, which sets BRAGI_VERSION, BRAGI_ARCH and BRAGI_BUNDLE. `bragi` and
 # `bragi-standalone` ship bragi-tui too, so it conflicts with them.
 name: bragi-tui
@@ -23,9 +24,12 @@ overrides:
   archlinux:
     depends: [glibc, gcc-libs]
 contents:
-  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
-    dst: /usr/bin/bragi-tui
+  - src: "${BRAGI_BUNDLE}/bin/bragi"
+    dst: /usr/bin/bragi
     file_info: {mode: 0755}
+  - src: bragi
+    dst: /usr/bin/bragi-tui
+    type: symlink
   - src: "${BRAGI_BUNDLE}/LICENSE"
     dst: /usr/share/licenses/bragi-tui/LICENSE
   - src: "${BRAGI_BUNDLE}/README.md"

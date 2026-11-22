@@ -32,7 +32,8 @@ Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](ht
 
 ```sh
 cargo test --workspace                       # bragi-core's scenario over the memory transport
-cargo run -p bragi-desktop -- --demo         # the desktop shell against the demo node
+cargo run -p bragi-desktop -- desktop --demo # the desktop window against the demo node
+cargo run -p bragi-desktop -- --demo         # `bragi` alone is the terminal app (also `cargo run -p bragi-tui`)
 cargo run -p bragi-tui -- --demo             # the terminal shell against the demo node (F1 lists the keys)
 scripts/desktop-scenario.sh /tmp/shots       # the scenario, headless, with screenshots
 
