@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-36, `bragi serve` starts by itself with the terminal app and the editor extension (branch `feature/serve-autostart`)
+
+**What changed**
+- [`ensure.rs`](crates/bragi-serve/src/ensure.rs) in `bragi-serve`: `ensure()` checks the port (`/v1/health`, then the token with `/v1/state`), reuses a healthy server, or starts `bragi serve` detached (its own process group on Unix, `DETACHED_PROCESS` without a window on Windows; output to `<home>/serve/server.log`) and waits up to 25 s. One starter at a time through `<home>/serve/start.lock` (taken over once 60 s old); the running server writes `<home>/serve/server.pid` and removes it on exit, and a pid file with nothing on the port is stale and replaced. A port held by something else, or by a server that refuses this home's token, is reported and left alone. Nothing is ever killed. The program is `$BRAGI_BIN`, the running `bragi`, one beside the running program, then `bragi` or `bragi-serve` on the PATH.
+- [`lib.rs`](crates/bragi-serve/src/lib.rs) and [`cli.rs`](crates/bragi-serve/src/cli.rs): `bragi serve --idle-timeout MINUTES` stops the server after that long with no client (requests other than `/v1/health` count, and a running request counts as activity); started by `ensure` it is 30. New `bragi serve ensure` and `bragi serve status`.
+- [`serve.rs`](crates/bragi-tui/src/serve.rs) in the terminal app: it ensures a server in a background thread at start (so the app never waits for it), shows `serve`, `serve starting`, `serve idle`, `serve failed` or `serve off` in the status bar, and a failure is a toast. `--no-serve` and `BRAGI_TUI_SERVE=off` turn it off; `--demo` doesn't start one. It looks every 20 s but never restarts a server that stopped idle.
+- [`serve.ts`](editors/vscode/src/serve.ts) in the extension: on activation, when the target is Bragi and nothing answers, it spawns `bragi serve` (`bragi.path`, else the PATH), reads the token file into secret storage, shows a second status-bar item and adds **Bragi: Start/Restart Server** (restarts only a server whose pid it recorded when it started it). A request that finds no server starts one and retries once. Settings: `bragi.autoStartServer` (default true), `bragi.path` (machine scope). Not in untrusted workspaces. A missing program is an error message with a shortcut to the setting.
+- [`extension.ts`](editors/vscode/src/extension.ts) `ensureToken`: choosing a target and model with no token reads the Bragi home's token silently (after the server had a chance to make it), else asks in a password field with an import button, then goes on to the model list. Tested in [`serve.test.ts`](editors/vscode/src/test/suite/serve.test.ts).
+- Docs: [extension README](editors/vscode/README.md), [README](README.md), the extension's changelog.
+
+**Checks**: see the report in the merge commit. Rust: `cargo fmt`, `clippy -D warnings`, `cargo test --workspace`; extension: 33 tests in headless VS Code (Xvfb, `env -i`, a throwaway HOME), including seven for the autostart against a stand-in `bragi`; `flutter analyze` and `flutter test`.
+
+**Not tested**: Windows and macOS (the code paths are there; spawn flags and the PATH search are unit-checked on Linux only); a real Cursor; the real `bragi serve` linked to a real node (tests use the demo node and a stand-in).
+
+**Left**: the idle stop is by whole minutes; the desktop app's `--serve` isn't tracked by the pid file; a `.cmd` shim for `bragi.path` on Windows isn't run through a shell.
 ## 2026-11-22: LF-38 follow-up, video design corrected (branch `feature/video-design`)
 
 **What changed** in [`docs/design/video.md`](docs/design/video.md), after m3talsmith's review:

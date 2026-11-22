@@ -44,7 +44,8 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    match run(&session, root, opened) {
+    let serve = bragi_tui::serve::start(args.no_serve || args.launch.demo);
+    match run(&session, root, opened, serve) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("bragi-tui: {e}");
@@ -61,10 +62,11 @@ fn osc52(out: &mut impl Write, text: &str) -> std::io::Result<()> {
     out.flush()
 }
 
-fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>) -> Result<(), String> {
+fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, serve: bragi_tui::serve::Shared) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let _ = execute!(std::io::stdout(), EnableBracketedPaste);
     let mut app = App::new(session.core.clone(), &session.home, root);
+    app.serve = Some(serve);
     if let Some(o) = opened {
         app.open_code(&o);
     }
