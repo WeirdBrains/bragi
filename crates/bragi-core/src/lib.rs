@@ -11,6 +11,7 @@
 
 pub mod agent;
 pub mod attach;
+pub mod audio;
 pub mod catalog;
 pub mod chat;
 pub mod code;
