@@ -226,10 +226,10 @@ impl Picker {
             self.open.remove(&n.path);
             return;
         }
-        if let Some((parent, _)) = n.path.rsplit_once('/') {
-            if let Some(i) = self.rows().iter().position(|r| r.is_dir && r.path == parent) {
-                self.sel = i;
-            }
+        if let Some((parent, _)) = n.path.rsplit_once('/')
+            && let Some(i) = self.rows().iter().position(|r| r.is_dir && r.path == parent)
+        {
+            self.sel = i;
         }
     }
 

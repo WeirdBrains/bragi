@@ -62,7 +62,7 @@ pub fn run(prog: &str, args: Vec<String>) -> ExitCode {
         }
     };
     let serve = crate::serve::start(args.no_serve || args.launch.demo);
-    match run(&session, root, opened, serve) {
+    match run_app(&session, root, opened, serve) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{prog}: {e}");
@@ -79,7 +79,7 @@ fn osc52(out: &mut impl Write, text: &str) -> std::io::Result<()> {
     out.flush()
 }
 
-fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, serve: crate::serve::Shared) -> Result<(), String> {
+fn run_app(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, serve: crate::serve::Shared) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     let _ = execute!(std::io::stdout(), EnableBracketedPaste);
     let mut app = App::new(session.core.clone(), &session.home, root);
