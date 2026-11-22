@@ -16,6 +16,9 @@
 //! - `GET  /v1/models`, `POST /v1/chat/completions`: OpenAI-compatible (streamed or not), kept
 //!   out of history, so any OpenAI client can use Bragi.
 //! - `POST /v1/code/suggest`, `/v1/code/rewrite`: [`bragi_core::code`] on an [`EditorContext`].
+//! - `POST /v1/code/hunks`: the hunks between two texts ([`FileDiff`], the same review the
+//!   terminal app shows), and `POST /v1/code/apply`: the text with only the accepted hunks
+//!   ([`FileDiff::apply`]). Editors use these to accept or reject a rewrite hunk by hunk.
 //! - `POST /v1/code/chat`: a chat turn with editor context, kept in history, streamed as
 //!   server-sent [`ChatEvent`]s.
 //! - `POST /v1/cancel`: stops a streaming request.
@@ -34,7 +37,7 @@ use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bragi_core::code::{self, EditorContext, PromptMessage, PromptRole, Scope};
+use bragi_core::code::{self, EditorContext, FileDiff, Hunk, PromptMessage, PromptRole, Scope};
 use bragi_core::{ChatEvent, ChatHandle, Core, CoreError, ErrorKind, PairState, Target};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -119,6 +122,8 @@ pub fn router(core: Core, token: String, port: u16) -> Router {
         .route("/v1/chat/completions", post(chat_completions))
         .route("/v1/code/suggest", post(suggest))
         .route("/v1/code/rewrite", post(rewrite))
+        .route("/v1/code/hunks", post(hunks))
+        .route("/v1/code/apply", post(apply_hunks))
         .route("/v1/code/chat", post(code_chat))
         .route("/v1/cancel", post(cancel))
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
@@ -339,6 +344,8 @@ struct RewriteOut {
     /// A unified diff of the file.
     diff: String,
     stats: code::DiffStats,
+    /// The file's hunks, for accepting or rejecting them one at a time with `/v1/code/apply`.
+    hunks: Vec<Hunk>,
     model: Option<String>,
     node: Option<String>,
 }
@@ -362,7 +369,56 @@ async fn rewrite(State(app): State<App>, Json(b): Json<RewriteBody>) -> Response
     let (old, file) = (ctx.file(), ctx.apply(scope, &code));
     let path = if ctx.path.is_empty() { "untitled" } else { &ctx.path };
     let stats = code::diff_stats(&code::diff_lines(&old, &file));
-    Json(RewriteOut { diff: code::unified_diff(&old, &file, path, 3), code, scope, file, stats, model: f.model, node: f.node }).into_response()
+    let hunks = FileDiff::compute(path, old.as_str(), file.as_str()).hunks;
+    Json(RewriteOut { diff: code::unified_diff(&old, &file, path, 3), code, scope, file, stats, hunks, model: f.model, node: f.node }).into_response()
+}
+
+#[derive(Deserialize)]
+struct HunksBody {
+    /// The text as it is now (the editor's document).
+    old: String,
+    /// The text proposed for it.
+    new: String,
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Serialize)]
+struct HunksOut {
+    hunks: Vec<Hunk>,
+    added: usize,
+    removed: usize,
+}
+
+fn hunks_out(d: &FileDiff) -> HunksOut {
+    let (added, removed) = d.stats();
+    HunksOut { hunks: d.hunks.clone(), added, removed }
+}
+
+async fn hunks(Json(b): Json<HunksBody>) -> Json<HunksOut> {
+    Json(hunks_out(&FileDiff::compute(b.path.unwrap_or_default(), b.old, b.new)))
+}
+
+#[derive(Deserialize)]
+struct ApplyBody {
+    old: String,
+    new: String,
+    /// One entry per hunk of `old` → `new`, in order; missing entries count as rejected.
+    accepted: Vec<bool>,
+}
+
+#[derive(Serialize)]
+struct ApplyOut {
+    /// `old` with only the accepted hunks.
+    file: String,
+    /// What is left to review: the hunks from `file` to `new`.
+    remaining: HunksOut,
+}
+
+async fn apply_hunks(Json(b): Json<ApplyBody>) -> Json<ApplyOut> {
+    let file = FileDiff::compute("", b.old, b.new.as_str()).apply(&b.accepted);
+    let remaining = hunks_out(&FileDiff::compute("", file.as_str(), b.new));
+    Json(ApplyOut { file, remaining })
 }
 
 #[derive(Deserialize)]
