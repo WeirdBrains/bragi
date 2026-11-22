@@ -88,6 +88,8 @@ impl Harness {
     }
 
     fn double_click(&mut self, action: Action) {
+        // A click just before this is a separate gesture; wait out the double-click window.
+        std::thread::sleep(Duration::from_millis(410));
         let (x, y) = self.spot(&action);
         for _ in 0..2 {
             self.mouse(MouseEventKind::Down(MouseButton::Left), x, y);
@@ -140,6 +142,7 @@ fn tabs_hints_windows_and_the_close_button() {
     assert_eq!(h.app.view, View::Status);
     h.mouse(MouseEventKind::Down(MouseButton::Left), 1, 5);
     assert_eq!(h.app.view, View::Chat);
+    h.draw();
 
     // A hint in the status bar is its key.
     h.click(Action::code(KeyCode::F(1)));
@@ -292,7 +295,11 @@ fn code_review_buttons() {
     h.key(KeyCode::Enter);
     h.typed("/rewrite src/lib.rs:1-3 make add saturating");
     h.key(KeyCode::Enter);
-    let screen = h.until("Review the proposed change", |a| a.code.phase == bragi_tui::code::Phase::Review);
+    h.until("Review the proposed change", |a| a.code.phase == bragi_tui::code::Phase::Review);
+    if h.app.hits.hits().iter().any(|x| matches!(x.action, Action::DismissToast)) {
+        h.click(Action::DismissToast);
+    }
+    let screen = h.draw();
     assert!(screen.contains("y Accept") && screen.contains("w Write"), "{screen}");
     h.click(Action::key('n'));
     assert_eq!(h.app.code.counts().0, 0, "the Reject button rejected it");
