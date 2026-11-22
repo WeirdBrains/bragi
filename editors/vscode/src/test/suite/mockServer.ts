@@ -19,6 +19,14 @@ export class MockServer {
   port = 0;
   suggestion = 'a + b';
   rewrite = (code: string) => code.toUpperCase();
+  // The management routes' state (what `bragi serve` keeps in Bragi's home).
+  links: { address: string; peer: string; online: boolean }[] = [];
+  endpoints: any[] = [];
+  mcpServers: any[] = [];
+  /** False: /v1/mcp-servers answers 404, like a Bragi without the MCP client. */
+  mcpClient = true;
+  linked: boolean | undefined;
+  private nextId = 1;
 
   get url(): string {
     return `http://127.0.0.1:${this.port}`;
@@ -74,6 +82,35 @@ export class MockServer {
     if (req.headers.authorization !== `Bearer ${TOKEN}`) {
       return this.json(res, 401, { error: { kind: 'unauthorized', message: 'a valid Bragi token is needed (bragi serve token)' } });
     }
+    const ep = /^\/v1\/endpoints\/([^/]+)(\/test)?$/.exec(path);
+    if (ep) {
+      const e = this.endpoints.find((x) => x.id === ep[1]);
+      if (!e) {
+        return this.json(res, 404, { error: { kind: 'not_found', message: 'no such endpoint' } });
+      }
+      if (ep[2]) {
+        return this.json(res, 200, { ok: true, models: ['m1', 'm2'], latency_ms: 4, message: 'ok' });
+      }
+      if (req.method === 'DELETE') {
+        this.endpoints = this.endpoints.filter((x) => x !== e);
+        return this.json(res, 200, { rebound: 0, unbound: 0 });
+      }
+      Object.assign(e, { name: body.name, base_url: body.base_url, model: body.model ?? null, mode: body.mode, enabled: body.enabled, has_key: body.clear_key ? false : body.api_key ? true : e.has_key });
+      return this.json(res, 200, e);
+    }
+    const ms = /^\/v1\/mcp-servers\/([^/]+)(\/enabled)?$/.exec(path);
+    if (ms && this.mcpClient) {
+      const s = this.mcpServers.find((x) => x.id === ms[1]);
+      if (!s) {
+        return this.json(res, 404, { error: { kind: 'not_found', message: 'no such server' } });
+      }
+      if (ms[2]) {
+        s.enabled = body.enabled;
+        return this.json(res, 200, s);
+      }
+      this.mcpServers = this.mcpServers.filter((x) => x !== s);
+      return this.json(res, 200, { ok: true });
+    }
     switch (path) {
       case '/v1/state':
         return this.json(res, 200, { linked: true, models: [{ id: 'gemma-4-e4b', status: 'warm' }, { id: 'qwen3-32b', status: 'loadable' }], default_model: 'gemma-4-e4b' });
@@ -113,6 +150,42 @@ export class MockServer {
         res.end();
         return;
       }
+      case '/v1/links':
+        return this.json(res, 200, { links: this.links });
+      case '/v1/links/node':
+        this.links.push({ address: body.address, peer: 'peer-' + this.nextId++, online: true });
+        return this.json(res, 200, { message: 'added ' + body.address });
+      case '/v1/links/remove': {
+        const n = this.links.length;
+        this.links = this.links.filter((l) => l.address !== body.address);
+        return n === this.links.length ? this.json(res, 404, { error: { kind: 'not_found', message: "that link isn't in the list" } }) : this.json(res, 200, { ok: true });
+      }
+      case '/v1/link/accept':
+        return this.json(res, 200, { sas: '123-456', device: 'Test node' });
+      case '/v1/link/confirm':
+        this.linked = body.matches;
+        return this.json(res, 200, { ok: true, linked: body.matches });
+      case '/v1/endpoints':
+        if (req.method === 'POST') {
+          const e = { id: 'e-' + this.nextId++, name: body.name, base_url: body.base_url, model: body.model ?? null, mode: body.mode, enabled: body.enabled, has_key: !!body.api_key, insecure: false };
+          this.endpoints.push(e);
+          return this.json(res, 201, e);
+        }
+        return this.json(res, 200, { endpoints: this.endpoints });
+      case '/v1/endpoints/test':
+        return this.json(res, 200, { ok: true, models: ['m'], latency_ms: 3, message: 'ok' });
+      case '/v1/sessions':
+        return this.json(res, 200, { sessions: [{ id: 's-1', title: 'First chat', updated_ms: 1, messages: 2, target_label: 'Weirdnet pool' }] });
+      case '/v1/mcp-servers':
+        if (!this.mcpClient) {
+          return this.json(res, 404, { error: { kind: 'not_found', message: path } });
+        }
+        if (req.method === 'POST') {
+          const s = { id: 'm-' + this.nextId++, name: body.name, transport: body.transport, enabled: body.enabled ?? true, command: body.command, args: body.args, url: body.url, has_bearer: !!body.secrets?.bearer };
+          this.mcpServers.push(s);
+          return this.json(res, 201, s);
+        }
+        return this.json(res, 200, { servers: this.mcpServers });
       case '/v1/cancel':
         return this.json(res, 200, { cancelled: true });
       default:

@@ -317,6 +317,30 @@ export class ServeManager implements vscode.Disposable {
     });
   }
 
+  /** "Bragi: Stop Server": stops one this extension started; leaves another's alone. */
+  async stop(): Promise<ServeState> {
+    const now = await this.check();
+    if (now.kind !== 'running') {
+      return now;
+    }
+    const pid = this.serverPid();
+    if (!now.started || pid === undefined) {
+      void vscode.window.showInformationMessage("Bragi's server wasn't started by this editor, so it is left running.");
+      return now;
+    }
+    try {
+      process.kill(pid);
+    } catch (e) {
+      void vscode.window.showWarningMessage(`Bragi: couldn't stop the server: ${e instanceof Error ? e.message : String(e)}`);
+      return now;
+    }
+    const until = Date.now() + 8000;
+    while ((await this.healthy()) && Date.now() < until) {
+      await sleep(100);
+    }
+    return this.set({ kind: 'stopped' });
+  }
+
   /** "Bragi: Start/Restart Server": starts one; restarts one this extension started; leaves another's alone. */
   async restart(): Promise<ServeState> {
     this.warned = false;

@@ -100,6 +100,11 @@ export class BragiBackend implements Backend {
     private readonly target: () => BragiTarget | undefined = () => undefined,
   ) {}
 
+  /** A JSON call to `bragi serve` (the management routes: links, endpoints, sessions, MCP servers). */
+  async api<T = unknown>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+    return (await (await this.request(method, path, body, signal)).json()) as T;
+  }
+
   /** Where requests go: the pool and the endpoints Bragi's Settings offers alongside it. */
   async targets(signal?: AbortSignal): Promise<TargetOption[]> {
     const r = (await (await this.request('GET', '/v1/targets', undefined, signal)).json()) as { targets: TargetOption[] };
