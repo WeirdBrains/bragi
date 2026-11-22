@@ -5,7 +5,7 @@ import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { BragiApi } from '../../extension';
+import { ensureToken, type BragiApi } from '../../extension';
 import { describeServe, findBragi, homeOfToken, portOf, serveArgs, ServeManager } from '../../serve';
 import { Secrets } from '../../tokens';
 
@@ -252,5 +252,51 @@ suite('Bragi server autostart', function () {
     assert.ok(Array.isArray(list.models));
     assert.strictEqual(api.serve.state.kind, 'running');
     assert.ok((await vscode.commands.getCommands(true)).includes('bragi.restartServer'));
+  });
+});
+
+suite('Bragi token prompt', () => {
+  const mkSecrets = () => new Secrets(new MemorySecrets());
+  let scratch: string;
+
+  setup(async () => {
+    scratch = fs.mkdtempSync(path.join(process.env.BRAGI_TEST_TMP || os.tmpdir(), 'bragi-token-'));
+    await set('tokenFile', path.join(scratch, 'serve', 'token'));
+  });
+  teardown(async () => {
+    await set('tokenFile', undefined);
+    fs.rmSync(scratch, { recursive: true, force: true });
+  });
+
+  test('a token in the Bragi home is read silently, with no prompt', async () => {
+    fs.mkdirSync(path.join(scratch, 'serve'), { recursive: true });
+    fs.writeFileSync(path.join(scratch, 'serve', 'token'), 'b'.repeat(64));
+    const s = mkSecrets();
+    let asked = 0;
+    assert.strictEqual(await ensureToken(s, undefined, async () => (asked++, undefined)), true);
+    assert.strictEqual(asked, 0);
+    assert.strictEqual(await s.serveToken(), 'b'.repeat(64));
+  });
+
+  test('with no token anywhere it asks, and keeps what is typed', async () => {
+    const s = mkSecrets();
+    let asked = 0;
+    assert.strictEqual(await ensureToken(s, undefined, async () => (asked++, '  typed-token  ')), true);
+    assert.strictEqual(asked, 1);
+    assert.strictEqual(await s.serveToken(), 'typed-token');
+    // Next time there is one: no prompt.
+    assert.strictEqual(await ensureToken(s, undefined, async () => assert.fail('asked again')), true);
+  });
+
+  test('dismissing the prompt, or importing from a missing file, gives up quietly', async () => {
+    const s = mkSecrets();
+    assert.strictEqual(await ensureToken(s, undefined, async () => undefined), false);
+    assert.strictEqual(await ensureToken(s, undefined, async () => ({ import: true as const })), false);
+    assert.strictEqual(await s.serveToken(), undefined);
+    // The import button works once the file is there.
+    fs.mkdirSync(path.join(scratch, 'serve'), { recursive: true });
+    fs.writeFileSync(path.join(scratch, 'serve', 'token'), 'c'.repeat(64));
+    const t = mkSecrets();
+    assert.strictEqual(await ensureToken(t, undefined, async () => ({ import: true as const })), true);
   });
 });

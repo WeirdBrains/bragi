@@ -213,7 +213,7 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
         }
       }),
     ),
-    vscode.commands.registerCommand('bragi.pickModel', run(() => pickModel(router))),
+    vscode.commands.registerCommand('bragi.pickModel', run(() => pickModel(router, secrets, serve))),
     vscode.commands.registerCommand(
       'bragi.showStatus',
       run(async () => {
@@ -245,7 +245,66 @@ interface Pick extends vscode.QuickPickItem {
   bragiTarget?: BragiTarget | null;
 }
 
-async function pickModel(router: Router): Promise<void> {
+/** How the token is asked for: the typed token, 'import' for the Bragi app's file, or undefined if dismissed. */
+export type AskToken = () => Promise<string | { import: true } | undefined>;
+
+const askTokenInBox: AskToken = () =>
+  new Promise((resolve) => {
+    const box = vscode.window.createInputBox();
+    const importBtn: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('cloud-download'), tooltip: 'Import the token from the Bragi app' };
+    box.title = 'Bragi: no API token yet';
+    box.prompt = "There's no Bragi API token yet. Paste it here (`bragi serve token` prints it), or use the button to import it from the Bragi app.";
+    box.placeholder = 'Bragi API token';
+    box.password = true;
+    box.ignoreFocusOut = true;
+    box.buttons = [importBtn];
+    let done = false;
+    const end = (v: string | { import: true } | undefined) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+        box.dispose();
+      }
+    };
+    box.onDidAccept(() => (box.value.trim() ? end(box.value.trim()) : end({ import: true })));
+    box.onDidTriggerButton(() => end({ import: true }));
+    box.onDidHide(() => end(undefined));
+    box.show();
+  });
+
+/**
+ * Makes sure there is a token: the stored one, else the one in the Bragi home (read silently, after
+ * the server had its chance to make it), else a prompt. True when there is one. Never shows it.
+ */
+export async function ensureToken(secrets: Secrets, serve?: ServeManager, ask: AskToken = askTokenInBox): Promise<boolean> {
+  if (await secrets.serveToken()) {
+    return true;
+  }
+  if (serve) {
+    await serve.ensure();
+  }
+  if (await secrets.importServeToken()) {
+    return true;
+  }
+  const answer = await ask();
+  if (!answer) {
+    return false;
+  }
+  if (typeof answer === 'string') {
+    await secrets.setServeToken(answer);
+    return true;
+  }
+  if (await secrets.importServeToken()) {
+    return true;
+  }
+  void vscode.window.showWarningMessage(`Bragi: no token found at ${defaultTokenPath()}. Start Bragi once, or paste the token from \`bragi serve token\`.`);
+  return false;
+}
+
+async function pickModel(router: Router, secrets: Secrets, serve: ServeManager): Promise<void> {
+  if (router.target() === 'bragi' && !(await ensureToken(secrets, serve))) {
+    return;
+  }
   const items: Pick[] = [{ label: 'Bragi (local app)', kind: vscode.QuickPickItemKind.Separator }];
   try {
     const [list, targets] = await Promise.all([router.bragi.models(), router.bragi.targets()]);

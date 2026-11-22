@@ -2,6 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
+- No API token yet no longer shows a warning in the target picker: the token in the Bragi home is read silently, and otherwise a field asks for it (kept in secret storage, never shown), with a button to import it from the Bragi app.
 - Bragi's server starts by itself: when nothing answers, the extension runs `bragi serve` in the
   background (`bragi.autoStartServer`, `bragi.path`), shows its state in the status bar and has a
   **Bragi: Start/Restart Server** command. It never stops a server it didn't start, and one it
