@@ -2,6 +2,26 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-38 follow-up, video design corrected (branch `feature/video-design`)
+
+**What changed** in [`docs/design/video.md`](docs/design/video.md), after m3talsmith's review:
+- Added the platform table, checked against `scripts/dist-*`, the README and packaging: Linux, macOS and Windows ship GPUI (`bragi-desktop`) plus the terminal app; Android and iOS ship Flutter; the BSDs have only the terminal app. The Flutter-on-desktop plugin question is removed; Flutter is scoped to the phones.
+- Decided 2026-11-22: the desktop gets an inline player, falling back to the system player when it can't handle the clip.
+- Decided 2026-11-22: no default frame count or size. A new section, "Fitting the clip to the model", derives frames from the model's reported limits (context, image cost, `max_images`, audio and native video limits, request size). With no metadata, Bragi refuses with a clear message and offers an explicit per-model override; probing and guessing are rejected, with reasons. Wish list updated.
+- Docs only; no code.
+
+
+## 2026-11-22: LF-38, post-v1 video design (branch `feature/video-design`)
+
+**What changed**
+- New [`docs/design/video.md`](docs/design/video.md): video after v1 in two phases. Phase 1: Bragi samples frames on the device (uniform, scene or hybrid; fps, max frames and size are settings), sends them as timestamped image parts plus the soundtrack as an audio part (or a transcript if the model lacks audio). It works with any vision model and needs no protocol change. Phase 2: native video once Ymir has a capability flag. Covers the player in all front ends, the ffmpeg dependency and packaging per platform, limits, privacy, MCP tools, testing, milestones and a Weirdnet wish list (`weirdnet-media` first).
+- Docs only: no code, no tests changed.
+
+**Checks:** none needed (docs only); the doc was scanned for host names, addresses and home paths.
+
+**Next:** Ymir's side is in `ymir/docs/design/video.md`. The wish list goes to the Weirdnet Lead.
+
+
 ## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
 
 **What changed**
