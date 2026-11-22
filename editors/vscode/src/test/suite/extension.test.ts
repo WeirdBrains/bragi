@@ -54,7 +54,7 @@ suite('Bragi extension', () => {
 
   test('its commands are there', async () => {
     const all = await vscode.commands.getCommands(true);
-    for (const c of ['bragi.rewriteSelection', 'bragi.rewriteFile', 'bragi.acceptRewrite', 'bragi.rejectRewrite', 'bragi.openChat', 'bragi.pickModel', 'bragi.setToken', 'bragi.importToken']) {
+    for (const c of ['bragi.rewriteSelection', 'bragi.rewriteFile', 'bragi.acceptRewrite', 'bragi.rejectRewrite', 'bragi.acceptHunk', 'bragi.rejectHunk', 'bragi.showRewriteDiff', 'bragi.openChat', 'bragi.pickModel', 'bragi.setToken', 'bragi.importToken']) {
       assert.ok(all.includes(c), c);
     }
   });
@@ -133,6 +133,94 @@ suite('Bragi extension', () => {
     assert.ok(await vscode.workspace.applyEdit(edit));
     assert.strictEqual(await vscode.commands.executeCommand('bragi.acceptRewrite'), true);
     assert.strictEqual(e.document.getText(), 'top\na\nB\nc\n');
+  });
+
+  const twelve = Array.from({ length: 12 }, (_, i) => `line ${i + 1}\n`).join('');
+  const twoChanges = (t: string) => t.replace('line 2\n', 'LINE 2\n').replace('line 11\n', 'line 11\nadded\n');
+  const withSecond = twelve.replace('line 11\n', 'line 11\nadded\n');
+  const lensesOf = async (uri: vscode.Uri) => (await vscode.commands.executeCommand<vscode.CodeLens[]>('vscode.executeCodeLensProvider', uri)) ?? [];
+
+  test('a rewrite is reviewed hunk by hunk, and undo brings an accepted hunk back', async () => {
+    mock.rewrite = twoChanges;
+    try {
+      const e = await editor(twelve, 'plaintext');
+      const uri = e.document.uri;
+      await vscode.commands.executeCommand('bragi.rewriteFile', 'two changes');
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 2);
+      assert.strictEqual(mock.last('/v1/code/hunks')!.body.new, twoChanges(twelve), 'the hunks come from bragi serve');
+      const lenses = await lensesOf(uri);
+      const accepts = lenses.filter((l) => l.command?.command === 'bragi.acceptHunk');
+      assert.deepStrictEqual(accepts.map((l) => l.range.start.line), [1, 11], 'an Accept above each hunk');
+      assert.strictEqual(lenses.filter((l) => l.command?.command === 'bragi.rejectHunk').length, 2);
+      assert.ok(lenses.some((l) => l.command?.command === 'bragi.acceptRewrite') && lenses.some((l) => l.command?.command === 'bragi.rejectRewrite'));
+
+      // Accept the second hunk from its lens.
+      const c = accepts[1].command!;
+      assert.strictEqual(await vscode.commands.executeCommand(c.command, ...c.arguments!), true);
+      assert.strictEqual(e.document.getText(), withSecond);
+      assert.deepStrictEqual(mock.last('/v1/code/apply')!.body.accepted, [false, true]);
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 1);
+      // The same lens again is out of date and does nothing.
+      assert.strictEqual(await vscode.commands.executeCommand(c.command, ...c.arguments!), false);
+
+      // The editor's own undo takes it back, and the hunk is there to review again.
+      await vscode.window.showTextDocument(e.document);
+      await vscode.commands.executeCommand('undo');
+      await api.rewrites.settled(uri);
+      assert.strictEqual(e.document.getText(), twelve);
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 2);
+      await vscode.commands.executeCommand('redo');
+      await api.rewrites.settled(uri);
+      assert.strictEqual(e.document.getText(), withSecond);
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 1, 'redo is the accept again, not an edit of yours');
+      await vscode.commands.executeCommand('undo');
+      await api.rewrites.settled(uri);
+
+      // Reject the first: the document stays, the proposal drops it.
+      assert.strictEqual(await vscode.commands.executeCommand('bragi.rejectHunk', uri, 0), true);
+      assert.strictEqual(e.document.getText(), twelve);
+      assert.strictEqual(api.rewrites.list()[0].file, withSecond);
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 1);
+
+      // Accept All takes the rest in one edit; one undo reopens the review.
+      assert.strictEqual(await vscode.commands.executeCommand('bragi.acceptRewrite'), true);
+      assert.strictEqual(e.document.getText(), withSecond);
+      assert.strictEqual(api.rewrites.list().length, 0);
+      assert.strictEqual((await lensesOf(uri)).length, 0, 'no lenses once it is all in');
+      await vscode.window.showTextDocument(e.document);
+      await vscode.commands.executeCommand('undo');
+      await api.rewrites.settled(uri);
+      assert.strictEqual(e.document.getText(), twelve);
+      assert.strictEqual(api.rewrites.list().length, 1, 'undoing Accept All reopens the review');
+      assert.strictEqual(await vscode.commands.executeCommand('bragi.rejectRewrite'), true);
+      assert.strictEqual(api.rewrites.list().length, 0);
+      assert.strictEqual(e.document.getText(), twelve);
+    } finally {
+      mock.rewrite = (code: string) => code.toUpperCase();
+    }
+  });
+
+  test('your own edits during a review are not hunks to undo', async () => {
+    mock.rewrite = twoChanges;
+    try {
+      const e = await editor(twelve, 'plaintext');
+      const uri = e.document.uri;
+      await vscode.commands.executeCommand('bragi.rewriteFile', 'two changes');
+      const edit = new vscode.WorkspaceEdit();
+      edit.insert(uri, new vscode.Position(5, 0), 'mine\n');
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      await api.rewrites.settled(uri);
+      const p = api.rewrites.list()[0];
+      assert.strictEqual(p.hunks.length, 2, 'the edit is in the proposal too');
+      assert.ok(p.file.includes('line 5\nmine\nline 6\n'), p.file);
+      // Without arguments, the hunk at the cursor.
+      await vscode.window.showTextDocument(e.document, { selection: new vscode.Range(1, 0, 1, 0) });
+      assert.strictEqual(await vscode.commands.executeCommand('bragi.acceptHunk'), true);
+      assert.strictEqual(e.document.getText(), twelve.replace('line 2\n', 'LINE 2\n').replace('line 6\n', 'mine\nline 6\n'));
+      assert.strictEqual(api.rewrites.list()[0].hunks.length, 1);
+    } finally {
+      mock.rewrite = (code: string) => code.toUpperCase();
+    }
   });
 
   test('chat streams the answer and continues its conversation', async () => {
