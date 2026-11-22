@@ -3,6 +3,7 @@
 
 import * as vscode from 'vscode';
 import { chatContextText, cleanSuggestion, effectiveScope, PromptMessage, rewritePrompt, rewriteResult, suggestPrompt } from './prompts';
+import { Applied, applyHunks, computeHunks, HunkList } from './hunks';
 import { Secrets } from './tokens';
 import { BragiError, BragiTarget, ChatEvent, EditorContext, ModelList, RewriteResult, Scope, TargetOption } from './types';
 
@@ -19,6 +20,10 @@ export interface Backend {
   models(signal?: AbortSignal): Promise<ModelList>;
   suggest(ctx: EditorContext, model: string | undefined, signal?: AbortSignal): Promise<string>;
   rewrite(ctx: EditorContext, instruction: string, scope: Scope, model: string | undefined, signal?: AbortSignal): Promise<RewriteResult>;
+  /** The hunks from `oldText` (the document) to `newText` (a rewrite), to review one at a time. */
+  hunks(oldText: string, newText: string, signal?: AbortSignal): Promise<HunkList>;
+  /** `oldText` with only the accepted hunks of `oldText` → `newText`. */
+  applyHunks(oldText: string, newText: string, accepted: boolean[], signal?: AbortSignal): Promise<Applied>;
   /** Streams a chat turn; returns the conversation it is in. */
   chat(turn: ChatTurn, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<string | undefined>;
 }
@@ -169,6 +174,15 @@ export class BragiBackend implements Backend {
     return { code: r.code, scope: r.scope, model: r.model };
   }
 
+  /** bragi-core's hunks (`code::FileDiff`), the same the terminal app reviews. */
+  async hunks(oldText: string, newText: string, signal?: AbortSignal): Promise<HunkList> {
+    return (await (await this.request('POST', '/v1/code/hunks', { old: oldText, new: newText }, signal)).json()) as HunkList;
+  }
+
+  async applyHunks(oldText: string, newText: string, accepted: boolean[], signal?: AbortSignal): Promise<Applied> {
+    return (await (await this.request('POST', '/v1/code/apply', { old: oldText, new: newText, accepted }, signal)).json()) as Applied;
+  }
+
   async chat(turn: ChatTurn, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<string | undefined> {
     const res = await this.request(
       'POST',
@@ -256,6 +270,15 @@ export class DirectBackend implements Backend {
     const answer = await this.complete(rewritePrompt(ctx, instruction, s), model, signal);
     const original = s === 'selection' ? ctx.selection : ctx.before + ctx.selection + ctx.after;
     return { code: rewriteResult(answer, original), scope: s };
+  }
+
+  // No Bragi behind the direct target: the same hunks, worked out here.
+  async hunks(oldText: string, newText: string): Promise<HunkList> {
+    return computeHunks(oldText, newText);
+  }
+
+  async applyHunks(oldText: string, newText: string, accepted: boolean[]): Promise<Applied> {
+    return applyHunks(oldText, newText, accepted);
   }
 
   async chat(turn: ChatTurn, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<string | undefined> {
