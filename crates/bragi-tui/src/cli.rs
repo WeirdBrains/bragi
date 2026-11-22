@@ -21,7 +21,7 @@ usage:
                                                    `bragi-tui .` works here; use ./link for a path
                                                    named like a command, or --path PATH
       [--no-mouse]                                 leave the mouse to the terminal, so text can be
-                                                   selected (or BRAGI_TUI_MOUSE=0; F7 toggles it in
+                                                   selected (or BRAGI_TUI_MOUSE=0; F8 toggles it in
                                                    the app; Shift-drag selects while it is on)
       [--theme NAME|FILE.toml] [--mode dark|light|system]
                                                    --no-serve (or BRAGI_TUI_SERVE=off) doesn't start

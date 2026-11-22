@@ -130,7 +130,7 @@ pub struct App {
     pub hits: HitMap,
     /// The cell the pointer is over, when the terminal reports motion.
     pub hover: Option<(u16, u16)>,
-    /// Whether the app wants the terminal's mouse reporting (F7 turns it off so text can be
+    /// Whether the app wants the terminal's mouse reporting (F8 turns it off so text can be
     /// selected); the main loop makes the terminal match.
     pub mouse: bool,
     last_click: Option<(Instant, crate::hit::Action)>,
@@ -615,13 +615,13 @@ impl App {
                 return;
             }
             KeyCode::Char('y') if ctrl => return self.copy(),
-            KeyCode::F(7) => {
+            KeyCode::F(8) => {
                 self.mouse = !self.mouse;
                 self.hover = None;
                 return self.say(if self.mouse {
-                    "Mouse on: click and scroll. F7 turns it off so text can be selected."
+                    "Mouse on: click and scroll. F8 turns it off so text can be selected."
                 } else {
-                    "Mouse off: select text as usual. F7 turns it back on."
+                    "Mouse off: select text as usual. F8 turns it back on."
                 });
             }
             _ => {}

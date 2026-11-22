@@ -270,13 +270,13 @@ fn hover_tints_and_the_mouse_can_be_left_to_the_terminal() {
     h.draw();
     assert!(!h.term.backend().buffer()[(x, y)].modifier.contains(Modifier::UNDERLINED));
 
-    // F7 leaves the mouse to the terminal (the loop turns reporting off); clicks do nothing then.
-    h.key(KeyCode::F(7));
+    // F8 leaves the mouse to the terminal (the loop turns reporting off); clicks do nothing then.
+    h.key(KeyCode::F(8));
     assert!(!h.app.mouse);
     let (cx, cy) = h.spot(&Action::Goto(View::Settings));
     assert!(!h.mouse(MouseEventKind::Down(MouseButton::Left), cx, cy));
     assert_eq!(h.app.view, View::Chat);
-    h.key(KeyCode::F(7));
+    h.key(KeyCode::F(8));
     assert!(h.app.mouse);
     h.click(Action::Goto(View::Settings));
     assert_eq!(h.app.view, View::Settings);
