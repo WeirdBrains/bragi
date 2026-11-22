@@ -65,8 +65,8 @@ fn dispatch(args: &[String]) -> Action {
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match dispatch(&args) {
-        Action::Mcp(rest) => bragi_mcp::cli::main(rest.into_iter()),
-        Action::Serve(rest) => bragi_serve::cli::run(rest.into_iter()),
+        Action::Mcp(rest) => bragi_mcp::cli::main(rest),
+        Action::Serve(rest) => bragi_serve::cli::run(rest),
         Action::Desktop(rest) => desktop(rest),
         Action::Help => {
             print!("{USAGE}\n{}\n", bragi_tui::entry::usage("bragi"));
