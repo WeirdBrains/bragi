@@ -105,6 +105,8 @@ pub async fn serve(
     Ok(())
 }
 
+mod manage;
+
 #[derive(Clone)]
 struct App {
     core: Core,
@@ -126,6 +128,7 @@ pub fn router(core: Core, token: String, port: u16) -> Router {
         .route("/v1/code/apply", post(apply_hunks))
         .route("/v1/code/chat", post(code_chat))
         .route("/v1/cancel", post(cancel))
+        .merge(manage::routes())
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
     Router::new()
         .route("/v1/health", get(|| async { Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") })) }))
