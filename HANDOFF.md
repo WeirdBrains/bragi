@@ -2,6 +2,25 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-15 follow-up, MCP prompts on weirdnet-mcp 0.6.1 (branch `feature/mcp-prompts`)
+
+**What changed**
+- `weirdnet-mcp` 0.6.1 in [`bragi-mcp`](crates/bragi-mcp/Cargo.toml), for its prompts support. The prompts capability is advertised now that the server has prompts.
+- [`prompts.rs`](crates/bragi-mcp/src/prompts.rs), served from `Tools::prompts` and `Tools::get_prompt` in [`tools.rs`](crates/bragi-mcp/src/tools.rs):
+  - `bragi_review_file` (`path`, optional `focus`): a review request for a file or a line range (`src/lib.rs:10-40`).
+  - `bragi_rewrite` (`path`, `instruction`): the messages of `bragi_core::code::prompt::build`, the request Bragi's own rewrite sends, answered as `bragi-edit` blocks. MCP prompts have no system role, so the system text leads the first user message.
+  - `bragi_explain` (`path` or `selection`, optional `language`).
+  - `bragi_session_summary` (`session`): the session's transcript with a summary request.
+  - `bragi_continue_session` (`session`, optional `prompt`): the last 40 messages as user and assistant turns (attachments named, cut-off answers marked), then the next message.
+- Files go through the same rules as the code tools: inside `--root` (`resolve`), read with `code::gather`, so secrets, binaries, non-UTF-8 and oversize files are refused, and a line range past the end is refused. Bad arguments (missing, both `path` and `selection`, an unknown session, a refused file) are `-32602` with a message saying why.
+- Docs: a Prompts section in the site guide [`docs_mcp.dart`](site/lib/pages/docs_mcp.dart) and a line in the [README](README.md).
+
+**Checks**: see the merge commit's entry below once merged; `tests/protocol.rs` `prompts_list_and_get` covers the capability, `prompts/list` (names, titles, required arguments), every prompt, and the refusals (missing arguments, outside the root, a missing file, `.env`, a binary, a range past the end, `path` and `selection` together or neither, an unknown prompt, an unknown session).
+
+**Not tested**: real MCP clients' prompt pickers.
+
+**What's next**: none planned for the MCP server.
+
 ## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
 
 **What changed**
@@ -153,7 +172,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **Not tested**: real MCP clients (Cursor, Claude Desktop, VS Code); a real Weirdnet pool or endpoint; the server and the desktop app running on the same home at once; Windows and macOS.
 
 **What's left**:
-- Prompts: `weirdnet-mcp` 0.6 has none, so the server has none (a `continue_session` or `review_file` prompt would help). Raised for the Weirdnet Lead rather than added here.
+- Prompts: added on 2026-11-22 with `weirdnet-mcp` 0.6.1 (see the entry above).
 - Streaming answers as progress notifications; MCP cancellation by request id (a dropped call already stops the answer).
 - Agent mode (tools and approvals on the node) is not offered.
 

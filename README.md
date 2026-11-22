@@ -101,7 +101,8 @@ file) are offered only with `--allow-writes`, and the tools that delete only wit
 { "mcpServers": { "bragi": { "command": "bragi", "args": ["mcp", "--root", "${workspaceFolder}"] } } }
 ```
 
-Claude Desktop and VS Code setups, the tools and the resources: [MCP server guide](https://bragi.weirdbrains.com/docs/guides/mcp/).
+Prompts (`bragi_review_file`, `bragi_rewrite`, `bragi_explain`, `bragi_session_summary`,
+`bragi_continue_session`) fill in requests for the client's own model. Claude Desktop and VS Code setups, the tools, the prompts and the resources: [MCP server guide](https://bragi.weirdbrains.com/docs/guides/mcp/).
 `cargo run -p bragi-mcp -- --demo` tries it against the demo node.
 
 ## License
