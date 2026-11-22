@@ -25,7 +25,7 @@ async function main(): Promise<void> {
         `--user-data-dir=${path.join(scratch, 'user')}`,
         `--extensions-dir=${path.join(scratch, 'extensions')}`,
       ],
-      extensionTestsEnv: { BRAGI_TEST_TMP: scratch, BRAGI_SHOTS: process.env.BRAGI_SHOTS },
+      extensionTestsEnv: { BRAGI_TEST_TMP: scratch, BRAGI_SHOTS: process.env.BRAGI_SHOTS, BRAGI_TEST_NODE: process.execPath },
     });
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true });
