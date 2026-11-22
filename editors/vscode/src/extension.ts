@@ -1,4 +1,4 @@
-// Bragi for VS Code and Cursor: inline suggestions, rewrites with a diff preview, and a chat
+// Bragi for VS Code and Cursor: inline suggestions, rewrites reviewed hunk by hunk, and a chat
 // panel with editor context, answered through the local Bragi app (`bragi serve`) or, if set up,
 // an OpenAI-compatible server directly.
 
@@ -114,12 +114,21 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
   context.subscriptions.push(
     status,
     vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, inline),
-    vscode.workspace.registerTextDocumentContentProvider(PROPOSED_SCHEME, rewrites),
+    rewrites.register(),
     vscode.window.registerWebviewViewProvider(ChatView.id, chat, { webviewOptions: { retainContextWhenHidden: true } }),
     vscode.commands.registerCommand('bragi.rewriteSelection', rewrite('selection')),
     vscode.commands.registerCommand('bragi.rewriteFile', rewrite('file')),
     vscode.commands.registerCommand('bragi.acceptRewrite', run((uri?: vscode.Uri) => rewrites.accept(uri instanceof vscode.Uri ? uri : undefined))),
     vscode.commands.registerCommand('bragi.rejectRewrite', run((uri?: vscode.Uri) => rewrites.reject(uri instanceof vscode.Uri ? uri : undefined))),
+    vscode.commands.registerCommand(
+      'bragi.acceptHunk',
+      run((uri?: vscode.Uri, index?: number, generation?: number) => rewrites.acceptHunk(uri instanceof vscode.Uri ? uri : undefined, typeof index === 'number' ? index : undefined, generation)),
+    ),
+    vscode.commands.registerCommand(
+      'bragi.rejectHunk',
+      run((uri?: vscode.Uri, index?: number, generation?: number) => rewrites.rejectHunk(uri instanceof vscode.Uri ? uri : undefined, typeof index === 'number' ? index : undefined, generation)),
+    ),
+    vscode.commands.registerCommand('bragi.showRewriteDiff', run((uri?: vscode.Uri) => rewrites.showDiff(uri instanceof vscode.Uri ? uri : undefined))),
     vscode.commands.registerCommand('bragi.openChat', () => vscode.commands.executeCommand(`${ChatView.id}.focus`)),
     vscode.commands.registerCommand(
       'bragi.askAboutSelection',

@@ -21,7 +21,7 @@ use std::process::ExitCode;
 
 fn usage() -> ExitCode {
     eprintln!(
-        "usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi PATH            the terminal app, in code mode on PATH (a folder or a file; `bragi .`)\n       bragi serve --help"
+        "usage: bragi [--home DIR] [--demo] [--scenario] [--serve [--serve-port PORT]]\n       bragi PATH            the terminal app, in code mode on PATH (a folder or a file; `bragi .`)\n       bragi serve --help\n       bragi mcp --help     Bragi as an MCP server for Cursor, Claude Desktop, VS Code"
     );
     ExitCode::from(2)
 }
@@ -44,7 +44,17 @@ fn wants_terminal(args: &[String]) -> bool {
     false
 }
 
+/// `bragi mcp …`: the MCP server. Checked before [`wants_terminal`], which would otherwise take
+/// the lone word `mcp` for a path.
+fn wants_mcp(args: &[String]) -> bool {
+    args.first().map(String::as_str) == Some("mcp")
+}
+
 fn main() -> ExitCode {
+    // `bragi mcp …`: the MCP server, without opening a window.
+    if wants_mcp(&std::env::args().skip(1).collect::<Vec<_>>()) {
+        return bragi_mcp::cli::main(std::env::args().skip(2));
+    }
     let mut home: Option<PathBuf> = std::env::var_os("BRAGI_HOME").map(PathBuf::from);
     let (mut demo, mut scenario, mut serve) = (false, false, None::<u16>);
     let mut args = std::env::args().skip(1).peekable();
@@ -84,7 +94,7 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::wants_terminal;
+    use super::{wants_mcp, wants_terminal};
 
     fn v(s: &str) -> Vec<String> {
         s.split_whitespace().map(str::to_string).collect()
@@ -101,5 +111,16 @@ mod tests {
         assert!(!wants_terminal(&[]));
         assert!(!wants_terminal(&v("--demo")));
         assert!(!wants_terminal(&v("--home /tmp/h --serve --serve-port 9")));
+    }
+
+    #[test]
+    fn mcp_is_claimed_before_the_terminal_hand_off() {
+        // `mcp` alone looks like a path to `wants_terminal`; `main` asks `wants_mcp` first.
+        assert!(wants_terminal(&v("mcp")));
+        assert!(wants_mcp(&v("mcp")));
+        assert!(wants_mcp(&v("mcp --http --root .")));
+        assert!(!wants_mcp(&v("--demo mcp")));
+        assert!(!wants_mcp(&v("./mcp")));
+        assert!(!wants_mcp(&[]));
     }
 }

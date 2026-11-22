@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/bragi-core", "crates/bragi-desktop", "crates/bragi-bridge", "crates/bragi-tui", "crates/bragi-serve"]
+members = ["crates/bragi-core", "crates/bragi-desktop", "crates/bragi-bridge", "crates/bragi-tui", "crates/bragi-serve", "crates/bragi-mcp"]
 
 [workspace.package]
 version = "0.1.1"
@@ -14,6 +14,7 @@ homepage = "https://github.com/WeirdBrains/bragi"
 [workspace.dependencies]
 bragi-core = { path = "crates/bragi-core", version = "0.1.0" }
 bragi-serve = { path = "crates/bragi-serve", version = "0.1.0" }
+bragi-mcp = { path = "crates/bragi-mcp" }
 
 # Published Weirdnet crates, used as they are.
 weirdnet-agent = { version = "0.5.0", features = ["pool", "serve"] }

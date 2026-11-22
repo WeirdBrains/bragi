@@ -20,6 +20,7 @@ Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](ht
 | `crates/bragi-core` | Everything Bragi does: identity and pairing (`weirdnet-device-link`), the `weirdnet-agent` pool client, chat events, history on the shared context store. Also `demo`, an in-process inference node with a test identity for tests and demos. |
 | `crates/bragi-desktop` | The desktop shell (GPUI), binary `bragi`. |
 | `crates/bragi-tui` | The terminal shell (ratatui), binary `bragi-tui`: the desktop's features in a terminal, locally or over SSH, plus code suggestions and rewrites. |
+| `crates/bragi-mcp` | `bragi mcp`: Bragi as an MCP server (stdio, or loopback HTTP with a token) on `weirdnet-mcp`. |
 | `crates/bragi-bridge` | `flutter_rust_bridge` API over `bragi-core`. |
 | `app/` | The Flutter app (Android and iOS). |
 | `brand/`, [BRAND.md](https://github.com/WeirdBrains/bragi/blob/main/BRAND.md) | Logo, icons, palette and usage rules. |
@@ -84,6 +85,24 @@ error. A lone word that is a command (`link`, `status`, `undo`, `code`, `tui`) s
 the same way. Suggestions, rewrites and hunk review never leave the root.
 
 The prompts, the diffs and the undo journal are `bragi_core::code`, shared with the editor extension.
+
+## MCP server
+
+`bragi mcp` serves Bragi over the [Model Context Protocol](https://modelcontextprotocol.io) so Cursor,
+Claude Desktop, VS Code and other clients can chat through Bragi, read and file sessions, get code
+suggestions and rewrites as unified diffs (`bragi_core::code`, as in the terminal app), and list
+endpoints and models. It uses the app's Bragi folder, so its chats land in the same history. Stdio by
+default; `--http` serves `http://127.0.0.1:4878/mcp` (loopback only) with the bearer token from
+`bragi mcp token`. The tools that write into the project (apply or undo a code change, save a chat's
+file) are offered only with `--allow-writes`, and the tools that delete only with `--allow-deletes`. For Cursor
+(`.cursor/mcp.json`):
+
+```json
+{ "mcpServers": { "bragi": { "command": "bragi", "args": ["mcp", "--root", "${workspaceFolder}"] } } }
+```
+
+Claude Desktop and VS Code setups, the tools and the resources: [MCP server guide](https://bragi.weirdbrains.com/docs/guides/mcp/).
+`cargo run -p bragi-mcp -- --demo` tries it against the demo node.
 
 ## License
 

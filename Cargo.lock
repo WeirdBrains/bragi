@@ -1131,6 +1131,7 @@ name = "bragi-desktop"
 version = "0.1.1"
 dependencies = [
  "bragi-core",
+ "bragi-mcp",
  "bragi-serve",
  "cpal",
  "gpui",
@@ -1141,6 +1142,23 @@ dependencies = [
  "unicode-segmentation",
  "weirdnet-text",
  "weirdnet-themes",
+]
+
+[[package]]
+name = "bragi-mcp"
+version = "0.1.1"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64 0.21.7",
+ "bragi-core",
+ "bragi-serve",
+ "getrandom 0.3.4",
+ "reqwest 0.12.28",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "weirdnet-mcp",
 ]
 
 [[package]]
@@ -9961,6 +9979,19 @@ dependencies = [
  "vsss-rs",
  "x25519-dalek 2.0.1",
  "zeroize",
+]
+
+[[package]]
+name = "weirdnet-mcp"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5680956396892c615245e4404f276b266ef217e8484da7ab9d8537dcd99d19f2"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "http",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
