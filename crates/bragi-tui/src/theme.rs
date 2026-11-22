@@ -127,6 +127,8 @@ pub struct Theme {
     pub fg: Color,
     pub muted: Color,
     pub dim: Color,
+    /// Text behind a window: between `dim` and the background.
+    pub faint: Color,
     pub border: Color,
     pub border_focus: Color,
     pub selection_bg: Color,
@@ -181,6 +183,7 @@ impl Theme {
             fg: ground(fg),
             muted: paint(muted),
             dim: paint(extra("dim").unwrap_or_else(|| mix(muted, bg, 0.35))),
+            faint: paint(mix(extra("dim").unwrap_or_else(|| mix(muted, bg, 0.35)), bg, 0.45)),
             border: paint(role("border")),
             border_focus: paint(role("border_focus")),
             selection_bg: paint(role("selection_bg")),

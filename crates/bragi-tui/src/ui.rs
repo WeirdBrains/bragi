@@ -138,16 +138,12 @@ fn too_small(f: &mut Frame, area: Rect) {
     let t = th();
     let lines = vec![
         Line::styled(format!("{} Bragi", t.icons.brand), t.bold_accent()),
-        Line::raw(""),
-        Line::styled("Make the terminal a little bigger:", t.text()),
+        Line::styled("Make the terminal bigger:", t.text()),
         Line::styled(format!("{}×{} now, {}×{} at least.", area.width, area.height, MIN_SIZE.0, MIN_SIZE.1), t.muted()),
     ];
-    let h = lines.len() as u16;
+    let h = (lines.len() as u16).min(area.height);
     let y = area.y + area.height.saturating_sub(h) / 2;
-    f.render_widget(
-        Paragraph::new(lines).alignment(Alignment::Center).wrap(ratatui::widgets::Wrap { trim: true }),
-        Rect { y, height: h.min(area.height), ..area },
-    );
+    f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), Rect { y, height: h, ..area });
 }
 
 /// Borders in the theme's glyphs: rounded, or `+-|` without Unicode.
@@ -186,7 +182,7 @@ fn backdrop(f: &mut Frame, area: Rect) {
         for x in area.left()..area.right() {
             let cell = &mut buf[(x, y)];
             if t.color() {
-                cell.set_fg(t.dim);
+                cell.set_fg(t.faint);
                 cell.set_bg(t.shadow);
             } else {
                 cell.modifier.insert(Modifier::DIM);
@@ -805,16 +801,20 @@ fn user_bubble(lines: &mut Vec<Line<'static>>, m: &bragi_core::ChatMessage, when
     }
 }
 
+/// The link code as a QR code in half-block characters: low error correction and a two-module
+/// margin (instead of four) keep it small enough for a 40-row terminal; screens scan it fine.
 fn qr_lines(text: &str) -> Option<Vec<String>> {
-    let code = qrcode::QrCode::new(text.as_bytes()).ok()?;
+    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::L).ok()?;
     let s = code
         .render::<qrcode::render::unicode::Dense1x2>()
-        .quiet_zone(true)
+        .quiet_zone(false)
         // Drawn black (the text colour) on white (the background): see `qr_style`.
         .dark_color(qrcode::render::unicode::Dense1x2::Dark)
         .light_color(qrcode::render::unicode::Dense1x2::Light)
         .build();
-    Some(s.lines().map(str::to_string).collect())
+    let rows: Vec<String> = s.lines().map(|l| format!("  {l}  ")).collect();
+    let blank = " ".repeat(rows.first().map(|l| l.chars().count()).unwrap_or(0));
+    Some(std::iter::once(blank.clone()).chain(rows).chain(std::iter::once(blank)).collect())
 }
 
 fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
