@@ -11,7 +11,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use weirdnet_themes::{OPTIONAL_ROLES, ROLES, ThemeFile, UserDir, Variant, detect::Probe};
+pub use weirdnet_themes::Variant;
+use weirdnet_themes::{OPTIONAL_ROLES, ROLES, ThemeFile, UserDir, detect::Probe};
 
 use crate::error::{CoreError, ErrorKind, Result};
 
@@ -89,6 +90,9 @@ pub struct Palette {
     pub theme: String,
     pub variant: Variant,
     pub roles: Vec<(String, String)>,
+    /// A step above `surface` (raised cards, key caps): the theme's `raised` palette entry when
+    /// it has one, else `bg` mixed 11% toward `fg`.
+    pub raised: String,
 }
 
 impl Palette {
@@ -104,7 +108,12 @@ impl Palette {
             .unwrap_or(0x80_80_80)
     }
 
-    /// The `[dark]`/`[light]` name.
+    /// `raised` as `0xRRGGBB`.
+    pub fn raised_rgb(&self) -> u32 {
+        weirdnet_themes::parse_hex(&self.raised).map(|(r, g, b)| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)).unwrap_or(0x80_80_80)
+    }
+
+    /// Whether this is the dark variant.
     pub fn is_dark(&self) -> bool {
         self.variant == Variant::Dark
     }
@@ -234,12 +243,31 @@ impl Appearance {
     pub fn palette_of(file: &ThemeFile, variant: Variant) -> Palette {
         let v = file.variant(variant);
         let roles = roles().into_iter().filter_map(|r| v.color(r).map(|c| (r.to_string(), weirdnet_themes::to_hex(c)))).collect();
-        Palette { theme: file.meta.name.clone(), variant, roles }
+        let raised = v
+            .palette
+            .get("raised")
+            .and_then(|h| weirdnet_themes::parse_hex(h))
+            .or_else(|| Some(weirdnet_themes::mix(v.color("bg")?, v.color("fg")?, 0.11)))
+            .map(weirdnet_themes::to_hex)
+            .unwrap_or_else(|| "#808080".into());
+        Palette { theme: file.meta.name.clone(), variant, roles, raised }
     }
 
     /// The palette to draw with now.
     pub fn palette(&self) -> Palette {
         let (file, variant) = self.current();
+        Self::palette_of(&file, variant)
+    }
+
+    /// The palette to draw with now when the shell already knows whether the system is dark (a
+    /// phone's platform brightness): `system_dark` stands in for the probe in system mode.
+    pub fn palette_with_system(&self, system_dark: Option<bool>) -> Palette {
+        let (file, variant) = self.current();
+        let variant = match (self.preference().mode, system_dark) {
+            (ModePref::System, Some(true)) => Variant::Dark,
+            (ModePref::System, Some(false)) => Variant::Light,
+            _ => variant,
+        };
         Self::palette_of(&file, variant)
     }
 

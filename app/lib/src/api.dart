@@ -18,8 +18,14 @@ export 'rust/api/bragi.dart'
         FolderView,
         HubHitView,
         LinkView,
+        PaletteView,
+        RoleColorView,
+        RoleEdit,
+        RoleInfoView,
         SessionView,
         TargetView,
+        ThemePrefView,
+        ThemeRowView,
         TestResultView,
         LinkCheckView,
         MessageView,
@@ -75,6 +81,23 @@ abstract class BragiApi {
   Future<rust.EndpointView> editEndpoint(String id, rust.EndpointForm form);
   Future<rust.DeleteReportView> deleteEndpoint(String id, rust.TargetView? rebindTo);
   Future<void> moveEndpoint(String id, int index);
+
+  // The look (LF-33): bragi-core's themes, shared with the desktop and terminal apps.
+  Future<List<rust.ThemeRowView>> themes();
+  List<rust.RoleInfoView> themeRoles();
+  rust.ThemePrefView themePreference();
+  Future<rust.ThemePrefView> setThemePreference(String theme, String mode);
+  rust.PaletteView currentPalette(bool? systemDark);
+  rust.PaletteView themePalette(String name, bool dark);
+  Future<String> themeEditable(String name);
+  Future<rust.PaletteView> themeApply(String name, bool dark, List<rust.RoleEdit> edits);
+  Future<String> themeDuplicate(String name, String? asName);
+  Future<void> themeRename(String from, String to);
+  Future<void> themeDelete(String name);
+  Future<void> themeReset(String name);
+  Future<String> themeExportText(String name);
+  Future<String> themeImportText(String text, String? asName);
+  Future<List<String>> themeWarnings(String name, bool dark);
   Future<rust.TestResultView> testEndpoint(String id);
   Future<rust.TestResultView> testEndpointAddress(String baseUrl, String? apiKey);
   Future<List<String>> endpointModels(String id);
@@ -186,6 +209,37 @@ class RustBragiApi implements BragiApi {
   Future<rust.DeleteReportView> deleteEndpoint(String id, rust.TargetView? rebindTo) => rust.deleteEndpoint(id: id, rebindTo: rebindTo);
   @override
   Future<void> moveEndpoint(String id, int index) => rust.moveEndpoint(id: id, index: index);
+
+  @override
+  Future<List<rust.ThemeRowView>> themes() => rust.themes();
+  @override
+  List<rust.RoleInfoView> themeRoles() => rust.themeRoles();
+  @override
+  rust.ThemePrefView themePreference() => rust.themePreference();
+  @override
+  Future<rust.ThemePrefView> setThemePreference(String theme, String mode) => rust.setThemePreference(theme: theme, mode: mode);
+  @override
+  rust.PaletteView currentPalette(bool? systemDark) => rust.currentPalette(systemDark: systemDark);
+  @override
+  rust.PaletteView themePalette(String name, bool dark) => rust.themePalette(name: name, dark: dark);
+  @override
+  Future<String> themeEditable(String name) => rust.themeEditable(name: name);
+  @override
+  Future<rust.PaletteView> themeApply(String name, bool dark, List<rust.RoleEdit> edits) => rust.themeApply(name: name, dark: dark, edits: edits);
+  @override
+  Future<String> themeDuplicate(String name, String? asName) => rust.themeDuplicate(name: name, asName: asName);
+  @override
+  Future<void> themeRename(String from, String to) => rust.themeRename(from: from, to: to);
+  @override
+  Future<void> themeDelete(String name) => rust.themeDelete(name: name);
+  @override
+  Future<void> themeReset(String name) => rust.themeReset(name: name);
+  @override
+  Future<String> themeExportText(String name) => rust.themeExportText(name: name);
+  @override
+  Future<String> themeImportText(String text, String? asName) => rust.themeImportText(text: text, asName: asName);
+  @override
+  Future<List<String>> themeWarnings(String name, bool dark) => rust.themeWarnings(name: name, dark: dark);
   @override
   Future<rust.TestResultView> testEndpoint(String id) => rust.testEndpoint(id: id);
   @override

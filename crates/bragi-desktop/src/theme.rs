@@ -37,3 +37,36 @@ impl Default for Theme {
         }
     }
 }
+
+impl Theme {
+    /// The colours of a `bragi_core` palette (a weirdnet-themes theme): the same twelve roles the
+    /// shell paints with, so any theme restyles the whole window.
+    pub fn from_palette(p: &bragi_core::Palette) -> Self {
+        Self {
+            background: p.rgb("bg"),
+            surface: p.rgb("surface"),
+            surface_variant: p.raised_rgb(),
+            text_primary: p.rgb("fg"),
+            text_secondary: p.rgb("muted"),
+            accent: p.rgb("accent"),
+            border: p.rgb("border"),
+            selection: p.rgb("selection_bg"),
+            error: p.rgb("error"),
+            link: p.rgb("link"),
+            success: p.rgb("success"),
+            warning: p.rgb("warning"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_bragi_theme_is_the_default_look() {
+        let a = bragi_core::Appearance::open(std::path::Path::new("/nonexistent-bragi-test"));
+        let p = a.palette_for("bragi", weirdnet_themes::Variant::Dark).unwrap();
+        assert_eq!(Theme::from_palette(&p), Theme::default());
+    }
+}

@@ -220,7 +220,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
           TextButton(
             key: const Key('remove-confirm'),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Remove', style: TextStyle(color: BragiColors.error)),
+            child: Text('Remove', style: TextStyle(color: BragiColors.error)),
           ),
         ],
       ),
@@ -244,13 +244,13 @@ class _ModelsScreenState extends State<ModelsScreen> {
         key: const Key('models-list'),
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: const TextStyle(color: BragiColors.error))),
+          if (_error != null) Padding(padding: const EdgeInsets.all(16), child: Text(_error!, style: TextStyle(color: BragiColors.error))),
           if (_ownerBlocked) _ownerBanner(),
           _heading('YOUR NODES'),
           if (nodes == null)
-            const Padding(padding: EdgeInsets.all(16), child: Text('Asking your devices…', style: TextStyle(color: BragiColors.textSecondary)))
+            Padding(padding: EdgeInsets.all(16), child: Text('Asking your devices…', style: TextStyle(color: BragiColors.textSecondary)))
           else if (nodes.isEmpty)
-            const ListTile(
+            ListTile(
               key: Key('models-no-nodes'),
               dense: true,
               title: Text('No other devices on your roster yet. Link a Ymir node first.', style: TextStyle(color: BragiColors.textSecondary)),
@@ -261,7 +261,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
           if (_searchError != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: Text(_searchError!, key: const Key('models-notice'), style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+              child: Text(_searchError!, key: const Key('models-notice'), style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
             ),
           if (_searching) const Padding(padding: EdgeInsets.all(16), child: LinearProgressIndicator(key: Key('models-searching'))),
           if (_pull != null) _pullCard(_pull!),
@@ -273,7 +273,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
 
   Widget _heading(String text) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-    child: Text(text, style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+    child: Text(text, style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
   );
 
   Widget _ownerBanner() => Container(
@@ -304,8 +304,8 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 Text(statusLabel(n.status), key: Key('status-${n.node.peer}'), style: TextStyle(fontSize: 12, color: statusColor(n.status))),
               ],
             ),
-            if (n.detail != null && !ready) Text(n.detail!, style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
-            if (ready && n.models.isEmpty) const Text('No models downloaded.', style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+            if (n.detail != null && !ready) Text(n.detail!, style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+            if (ready && n.models.isEmpty) Text('No models downloaded.', style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
             for (final m in n.models)
               Row(
                 children: [
@@ -393,7 +393,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
             Text(h.repo, style: const TextStyle(fontSize: 15)),
             Text(
               '${_count(h.downloads.toInt())} downloads · ${_count(h.likes.toInt())} likes${h.gated ? ' · gated (needs a Hub token on the node)' : ''}',
-              style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+              style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
             ),
             const SizedBox(height: 6),
             Wrap(spacing: 6, runSpacing: 4, children: [for (final n in _nodes ?? const <NodeModelsView>[]) _badge(h.repo, n, fits[n.node.peer])]),
@@ -467,7 +467,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 if (p.finished) IconButton(key: const Key('pull-dismiss'), tooltip: 'Dismiss', icon: const Icon(Icons.close, size: 18), onPressed: () => setState(() => _pull = null)),
               ],
             ),
-            if (p.chosen != null) Text('Auto picked ${p.chosen}', key: const Key('pull-chosen'), style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+            if (p.chosen != null) Text('Auto picked ${p.chosen}', key: const Key('pull-chosen'), style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
             for (final e in p.progress.entries)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -484,9 +484,9 @@ class _ModelsScreenState extends State<ModelsScreen> {
                 ),
               ),
             for (final r in p.results.values) Padding(padding: const EdgeInsets.only(top: 4), child: Text(r, style: const TextStyle(fontSize: 12))),
-            if (p.ended != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(p.ended!, key: const Key('pull-ended'), style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary))),
+            if (p.ended != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(p.ended!, key: const Key('pull-ended'), style: TextStyle(fontSize: 12, color: BragiColors.textSecondary))),
             if (p.finished && p.results.isNotEmpty && p.results.values.any((r) => r.contains('serving')))
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(top: 4),
                 child: Text('Serving lasts until the node restarts. To keep it, add it to that node’s node.toml.', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
               ),

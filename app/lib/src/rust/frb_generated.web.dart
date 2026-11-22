@@ -49,6 +49,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_bool(dynamic raw);
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw);
+
+  @protected
   EndpointForm dco_decode_box_autoadd_endpoint_form(dynamic raw);
 
   @protected
@@ -154,6 +157,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<QuantFitView> dco_decode_list_quant_fit_view(dynamic raw);
 
   @protected
+  List<RoleColorView> dco_decode_list_role_color_view(dynamic raw);
+
+  @protected
+  List<RoleEdit> dco_decode_list_role_edit(dynamic raw);
+
+  @protected
+  List<RoleInfoView> dco_decode_list_role_info_view(dynamic raw);
+
+  @protected
   List<SessionView> dco_decode_list_session_view(dynamic raw);
 
   @protected
@@ -164,6 +176,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TargetView> dco_decode_list_target_view(dynamic raw);
+
+  @protected
+  List<ThemeRowView> dco_decode_list_theme_row_view(dynamic raw);
 
   @protected
   MessageView dco_decode_message_view(dynamic raw);
@@ -185,6 +200,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
+
+  @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
@@ -211,7 +229,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PairView dco_decode_pair_view(dynamic raw);
 
   @protected
+  PaletteView dco_decode_palette_view(dynamic raw);
+
+  @protected
   QuantFitView dco_decode_quant_fit_view(dynamic raw);
+
+  @protected
+  RoleColorView dco_decode_role_color_view(dynamic raw);
+
+  @protected
+  RoleEdit dco_decode_role_edit(dynamic raw);
+
+  @protected
+  RoleInfoView dco_decode_role_info_view(dynamic raw);
 
   @protected
   SessionView dco_decode_session_view(dynamic raw);
@@ -230,6 +260,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TestResultView dco_decode_test_result_view(dynamic raw);
+
+  @protected
+  ThemePrefView dco_decode_theme_pref_view(dynamic raw);
+
+  @protected
+  ThemeRowView dco_decode_theme_row_view(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -269,6 +305,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   EndpointForm sse_decode_box_autoadd_endpoint_form(
@@ -390,6 +429,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<RoleColorView> sse_decode_list_role_color_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<RoleEdit> sse_decode_list_role_edit(SseDeserializer deserializer);
+
+  @protected
+  List<RoleInfoView> sse_decode_list_role_info_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<SessionView> sse_decode_list_session_view(SseDeserializer deserializer);
 
   @protected
@@ -402,6 +454,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<TargetView> sse_decode_list_target_view(SseDeserializer deserializer);
+
+  @protected
+  List<ThemeRowView> sse_decode_list_theme_row_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   MessageView sse_decode_message_view(SseDeserializer deserializer);
@@ -423,6 +480,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
+
+  @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
@@ -455,7 +515,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PairView sse_decode_pair_view(SseDeserializer deserializer);
 
   @protected
+  PaletteView sse_decode_palette_view(SseDeserializer deserializer);
+
+  @protected
   QuantFitView sse_decode_quant_fit_view(SseDeserializer deserializer);
+
+  @protected
+  RoleColorView sse_decode_role_color_view(SseDeserializer deserializer);
+
+  @protected
+  RoleEdit sse_decode_role_edit(SseDeserializer deserializer);
+
+  @protected
+  RoleInfoView sse_decode_role_info_view(SseDeserializer deserializer);
 
   @protected
   SessionView sse_decode_session_view(SseDeserializer deserializer);
@@ -474,6 +546,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   TestResultView sse_decode_test_result_view(SseDeserializer deserializer);
+
+  @protected
+  ThemePrefView sse_decode_theme_pref_view(SseDeserializer deserializer);
+
+  @protected
+  ThemeRowView sse_decode_theme_row_view(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -525,6 +603,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_endpoint_form(
@@ -680,6 +761,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_role_color_view(
+    List<RoleColorView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_role_edit(List<RoleEdit> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_role_info_view(
+    List<RoleInfoView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_session_view(
     List<SessionView> self,
     SseSerializer serializer,
@@ -700,6 +796,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_target_view(
     List<TargetView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_theme_row_view(
+    List<ThemeRowView> self,
     SseSerializer serializer,
   );
 
@@ -729,6 +831,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
@@ -767,7 +872,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_pair_view(PairView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_palette_view(PaletteView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_quant_fit_view(QuantFitView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_role_color_view(RoleColorView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_role_edit(RoleEdit self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_role_info_view(RoleInfoView self, SseSerializer serializer);
 
   @protected
   void sse_encode_session_view(SessionView self, SseSerializer serializer);
@@ -792,6 +909,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     TestResultView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_theme_pref_view(ThemePrefView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_theme_row_view(ThemeRowView self, SseSerializer serializer);
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

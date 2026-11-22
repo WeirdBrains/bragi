@@ -65,7 +65,7 @@ Future<void> messageMenu(BuildContext context, BragiController c, MessageView m)
           ),
           ListTile(
             key: const Key('menu-delete'),
-            leading: const Icon(Icons.delete_outline, color: BragiColors.error),
+            leading: Icon(Icons.delete_outline, color: BragiColors.error),
             title: const Text('Delete'),
             onTap: () => Navigator.of(sheet).pop(''),
           ),
@@ -143,7 +143,7 @@ class ClearHistoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       key: const Key('clear-history'),
-      leading: const Icon(Icons.delete_forever_outlined, color: BragiColors.error),
+      leading: Icon(Icons.delete_forever_outlined, color: BragiColors.error),
       title: const Text('Clear all history'),
       subtitle: const Text('Every conversation, on all your linked devices. This can’t be undone.'),
       onTap: () async {

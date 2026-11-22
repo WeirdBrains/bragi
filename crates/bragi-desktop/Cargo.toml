@@ -22,6 +22,7 @@ qrcode = { version = "0.14", default-features = false }
 tempfile.workspace = true
 tokio.workspace = true
 weirdnet-text.workspace = true
+weirdnet-themes.workspace = true
 unicode-segmentation.workspace = true
 
 [lints]

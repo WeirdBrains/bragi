@@ -187,7 +187,7 @@ Future<void> showFolderDialog(BuildContext context, BragiController c, {String? 
             mainAxisSize: MainAxisSize.min,
             children: [
               _FolderNameField(initial: text, onChanged: (v) => text = v),
-              if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, key: const Key('folder-error'), style: const TextStyle(color: BragiColors.error))),
+              if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, key: const Key('folder-error'), style: TextStyle(color: BragiColors.error))),
             ],
           ),
           actions: [

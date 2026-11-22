@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `pending_models`, `pending`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pref_view`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `variant_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -399,6 +399,79 @@ Future<BigInt> modelsRemove({
   id: id,
   confirmed: confirmed,
 );
+
+Future<List<ThemeRowView>> themes() =>
+    RustLib.instance.api.crateApiBragiThemes();
+
+/// The roles an editor lists, in order.
+List<RoleInfoView> themeRoles() =>
+    RustLib.instance.api.crateApiBragiThemeRoles();
+
+ThemePrefView themePreference() =>
+    RustLib.instance.api.crateApiBragiThemePreference();
+
+Future<ThemePrefView> setThemePreference({
+  required String theme,
+  required String mode,
+}) => RustLib.instance.api.crateApiBragiSetThemePreference(
+  theme: theme,
+  mode: mode,
+);
+
+/// The palette to draw with now; `system_dark` is the platform's brightness, for system mode.
+PaletteView currentPalette({bool? systemDark}) =>
+    RustLib.instance.api.crateApiBragiCurrentPalette(systemDark: systemDark);
+
+/// `name`'s palette in the dark or light variant (the picker's previews and the editor).
+PaletteView themePalette({required String name, required bool dark}) =>
+    RustLib.instance.api.crateApiBragiThemePalette(name: name, dark: dark);
+
+/// The theme to edit when `name` is asked for: itself, or a copy of a built-in.
+Future<String> themeEditable({required String name}) =>
+    RustLib.instance.api.crateApiBragiThemeEditable(name: name);
+
+/// Sets roles of one variant together (all or nothing) and returns the new palette.
+Future<PaletteView> themeApply({
+  required String name,
+  required bool dark,
+  required List<RoleEdit> edits,
+}) => RustLib.instance.api.crateApiBragiThemeApply(
+  name: name,
+  dark: dark,
+  edits: edits,
+);
+
+Future<String> themeDuplicate({required String name, String? asName}) => RustLib
+    .instance
+    .api
+    .crateApiBragiThemeDuplicate(name: name, asName: asName);
+
+Future<void> themeRename({required String from, required String to}) =>
+    RustLib.instance.api.crateApiBragiThemeRename(from: from, to: to);
+
+/// Deletes a user theme or a built-in's edits.
+Future<void> themeDelete({required String name}) =>
+    RustLib.instance.api.crateApiBragiThemeDelete(name: name);
+
+/// Puts a built-in back as it ships.
+Future<void> themeReset({required String name}) =>
+    RustLib.instance.api.crateApiBragiThemeReset(name: name);
+
+Future<String> themeExportText({required String name}) =>
+    RustLib.instance.api.crateApiBragiThemeExportText(name: name);
+
+/// Imports a theme file's text; a name already taken gets a number.
+Future<String> themeImportText({required String text, String? asName}) =>
+    RustLib.instance.api.crateApiBragiThemeImportText(
+      text: text,
+      asName: asName,
+    );
+
+/// Contrast notes for one variant (text on background and the like).
+Future<List<String>> themeWarnings({
+  required String name,
+  required bool dark,
+}) => RustLib.instance.api.crateApiBragiThemeWarnings(name: name, dark: dark);
 
 /// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
 /// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
@@ -1300,6 +1373,35 @@ class PairView {
           message == other.message;
 }
 
+/// Every role of one variant as `#rrggbb`, in editor order.
+class PaletteView {
+  final String theme;
+  final bool dark;
+  final List<RoleColorView> roles;
+  final String raised;
+
+  const PaletteView({
+    required this.theme,
+    required this.dark,
+    required this.roles,
+    required this.raised,
+  });
+
+  @override
+  int get hashCode =>
+      theme.hashCode ^ dark.hashCode ^ roles.hashCode ^ raised.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PaletteView &&
+          runtimeType == other.runtimeType &&
+          theme == other.theme &&
+          dark == other.dark &&
+          roles == other.roles &&
+          raised == other.raised;
+}
+
 class QuantFitView {
   final String id;
   final String? quant;
@@ -1333,6 +1435,72 @@ class QuantFitView {
           size == other.size &&
           footprint == other.footprint &&
           fits == other.fits;
+}
+
+class RoleColorView {
+  final String role;
+
+  /// `#rrggbb`.
+  final String hex;
+
+  const RoleColorView({required this.role, required this.hex});
+
+  @override
+  int get hashCode => role.hashCode ^ hex.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoleColorView &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          hex == other.hex;
+}
+
+class RoleEdit {
+  final String role;
+
+  /// `#rgb` / `#rrggbb`, or empty to clear an optional role.
+  final String value;
+
+  const RoleEdit({required this.role, required this.value});
+
+  @override
+  int get hashCode => role.hashCode ^ value.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoleEdit &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          value == other.value;
+}
+
+class RoleInfoView {
+  final String role;
+  final String label;
+
+  /// Optional roles are derived from the others until set, and can be cleared back.
+  final bool optional;
+
+  const RoleInfoView({
+    required this.role,
+    required this.label,
+    required this.optional,
+  });
+
+  @override
+  int get hashCode => role.hashCode ^ label.hashCode ^ optional.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RoleInfoView &&
+          runtimeType == other.runtimeType &&
+          role == other.role &&
+          label == other.label &&
+          optional == other.optional;
 }
 
 class SessionView {
@@ -1542,4 +1710,61 @@ class TestResultView {
           models == other.models &&
           latencyMs == other.latencyMs &&
           message == other.message;
+}
+
+class ThemePrefView {
+  final String theme;
+
+  /// `light`, `dark` or `system`.
+  final String mode;
+
+  const ThemePrefView({required this.theme, required this.mode});
+
+  @override
+  int get hashCode => theme.hashCode ^ mode.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ThemePrefView &&
+          runtimeType == other.runtimeType &&
+          theme == other.theme &&
+          mode == other.mode;
+}
+
+class ThemeRowView {
+  final String name;
+  final String displayName;
+  final bool builtin;
+
+  /// A user theme, or a built-in the user has edited.
+  final bool userFile;
+  final String? error;
+
+  const ThemeRowView({
+    required this.name,
+    required this.displayName,
+    required this.builtin,
+    required this.userFile,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      displayName.hashCode ^
+      builtin.hashCode ^
+      userFile.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ThemeRowView &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          displayName == other.displayName &&
+          builtin == other.builtin &&
+          userFile == other.userFile &&
+          error == other.error;
 }

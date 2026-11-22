@@ -84,6 +84,7 @@ impl BragiView {
     pub fn toggle_models(&mut self, cx: &mut Context<Self>) {
         self.models_open = !self.models_open;
         self.settings_open = false;
+        self.themes_open = false;
         if self.models_open {
             self.models_reload(cx);
         }
