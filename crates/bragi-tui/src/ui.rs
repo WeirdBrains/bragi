@@ -377,16 +377,26 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
         View::Chat => &[("Enter", "send"), ("Tab", "chats"), ("^O", "target"), ("^K", "thinking"), ("F1", "help"), ("^Q", "quit")],
         View::Link => &[("s", "show a code"), ("c", "copy"), ("Enter", "open/add"), ("Esc", "back")],
         View::Code => match app.code.phase {
-            Phase::Review => &[("y", "accept"), ("n", "reject"), ("↑↓", "hunks"), ("a", "all"), ("r", "none"), ("v", "view"), ("w", "write"), ("Esc", "discard")],
+            Phase::Review => {
+                &[("y", "accept"), ("n", "reject"), ("↑↓", "hunks"), ("a", "all"), ("r", "none"), ("v", "view"), ("w", "write"), ("Esc", "discard")]
+            }
             Phase::Asking => &[("Esc", "stop")],
             Phase::Compose => &[("Enter", "run"), ("/undo", "undo"), ("Esc", "back"), ("F1", "help")],
         },
         View::Status => &[("r", "sync now"), ("Esc", "back")],
         View::Models => &[("↑↓", "move"), ("Tab", "targets/models"), ("Enter", "use"), ("a", "automatic"), ("Esc", "back")],
         View::Settings if app.settings.form.is_some() => &[("Tab", "next"), ("^O", "pool/fallback"), ("Enter", "save"), ("Esc", "cancel")],
-        View::Settings => {
-            &[("a", "add"), ("e", "edit"), ("Space", "on/off"), ("m", "mode"), ("t", "test"), ("J", "down"), ("K", "up"), ("d", "delete"), ("Esc", "back")]
-        }
+        View::Settings => &[
+            ("a", "add"),
+            ("e", "edit"),
+            ("Space", "on/off"),
+            ("m", "mode"),
+            ("t", "test"),
+            ("J", "down"),
+            ("K", "up"),
+            ("d", "delete"),
+            ("Esc", "back"),
+        ],
         View::Help => &[("↑↓", "scroll"), ("Esc", "back")],
     }
 }
@@ -1257,12 +1267,8 @@ fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     };
     let rows = (app.targets.len() + m_items.len().max(2) + 8) as u16;
     let inner = window(f, hits, area, 100, rows + 2, "Where chats go, and the model", "Tab switch · Enter use · a automatic");
-    let [top, rest, btns] =
-        Layout::vertical([Constraint::Length((app.targets.len() + 2) as u16), Constraint::Min(3), Constraint::Length(1)]).areas(Rect {
-            y: inner.y + 1,
-            height: inner.height.saturating_sub(1),
-            ..inner
-        });
+    let [top, rest, btns] = Layout::vertical([Constraint::Length((app.targets.len() + 2) as u16), Constraint::Min(3), Constraint::Length(1)])
+        .areas(Rect { y: inner.y + 1, height: inner.height.saturating_sub(1), ..inner });
     {
         let (line, at) = hit::button_line(&[
             (" Enter Use ".into(), t.pill(t.bg, t.accent), Action::code(KeyCode::Enter)),
@@ -1292,7 +1298,7 @@ fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
         top,
         &mut ts,
     );
-    let (t_inner, m_inner) = (tblock_inner, mblock_inner);
+    let t_inner = tblock_inner;
     list_hits(hits, t_inner, ts.offset(), &vec![1; t_count], Action::PickerTarget);
     hits.wheel(t_inner, Wheel::PickerTargets);
     let title = if pool { "Models on your nodes" } else { "Models on this endpoint" };
@@ -1318,8 +1324,8 @@ fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
         rest,
         &mut ms,
     );
-    list_hits(hits, m_inner, ms.offset(), &vec![1; m_count], Action::PickerModel);
-    hits.wheel(m_inner, Wheel::PickerModels);
+    list_hits(hits, mblock_inner, ms.offset(), &vec![1; m_count], Action::PickerModel);
+    hits.wheel(mblock_inner, Wheel::PickerModels);
 }
 
 /// Whether a form field holds something usable: `Some(problem)` when it doesn't.

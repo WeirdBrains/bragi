@@ -73,14 +73,9 @@ impl Harness {
 
     /// The cell in the middle of the first hit with this action.
     fn spot(&self, action: &Action) -> (u16, u16) {
-        let hit = self
-            .app
-            .hits
-            .hits()
-            .iter()
-            .rev()
-            .find(|h| &h.action == action)
-            .unwrap_or_else(|| panic!("nothing clickable does {action:?}; there is {:#?}", self.app.hits.hits().iter().map(|h| &h.action).collect::<Vec<_>>()));
+        let hit = self.app.hits.hits().iter().rev().find(|h| &h.action == action).unwrap_or_else(|| {
+            panic!("nothing clickable does {action:?}; there is {:#?}", self.app.hits.hits().iter().map(|h| &h.action).collect::<Vec<_>>())
+        });
         (hit.rect.x + hit.rect.width / 2, hit.rect.y + hit.rect.height / 2)
     }
 
@@ -240,13 +235,16 @@ fn links_and_copy_buttons_in_replies() {
     h.key(KeyCode::Enter);
     let screen = h.until("What Bragi renders", |a| !a.streaming());
     assert!(screen.contains(" copy "), "the code block has a copy button:\n{screen}");
-    let copy = h.app.hits.hits().iter().find_map(|x| matches!(&x.action, Action::Copy(t) if t.contains("fn ") || t.contains("let ") || t.contains("println")).then(|| x.action.clone()));
+    let copy = h.app.hits.hits().iter().find_map(|x| {
+        matches!(&x.action, Action::Copy(t) if t.contains("fn ") || t.contains("let ") || t.contains("println")).then(|| x.action.clone())
+    });
     let copy = copy.expect("a copy button for the code block");
     h.click(copy.clone());
     let Action::Copy(code) = copy else { unreachable!() };
     assert_eq!(h.app.clipboard.last(), Some(&code));
     // A reply's own copy button copies the reply.
-    let reply = h.app.hits.hits().iter().find_map(|x| matches!(&x.action, Action::Copy(t) if t.contains("What Bragi renders")).then(|| x.action.clone()));
+    let reply =
+        h.app.hits.hits().iter().find_map(|x| matches!(&x.action, Action::Copy(t) if t.contains("What Bragi renders")).then(|| x.action.clone()));
     assert!(reply.is_some(), "the reply has a copy button");
 
     // Links open through the system opener (the loop takes `open_urls`); only web pages and mail.

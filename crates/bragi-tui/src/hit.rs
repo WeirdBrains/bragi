@@ -221,7 +221,8 @@ mod tests {
     #[test]
     fn marks_follow_the_scrolled_window() {
         let mut m = HitMap::default();
-        let marks = [Mark { line: 5, col: 2, w: 4, action: Action::Url("https://x.test".into()) }, Mark { line: 1, col: 0, w: 1, action: Action::key('z') }];
+        let marks =
+            [Mark { line: 5, col: 2, w: 4, action: Action::Url("https://x.test".into()) }, Mark { line: 1, col: 0, w: 1, action: Action::key('z') }];
         m.marks(r(10, 20, 30, 3), 4, &marks);
         assert_eq!(m.hits().len(), 1);
         assert_eq!(m.hits()[0].rect, r(12, 21, 4, 1));

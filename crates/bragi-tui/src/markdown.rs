@@ -58,7 +58,7 @@ pub fn lines_marked(doc: &Document, width: usize) -> (Vec<Line<'static>>, Vec<Ma
 /// address, and the link text before it, open it. An address wrapped at the full width goes on
 /// at the start of the next line.
 fn link_marks(lines: &[Line<'static>], width: usize) -> Vec<Mark> {
-    let mut out = Vec::new();
+    let mut out: Vec<Mark> = Vec::new();
     // The address a line ended inside of, to be continued on the next line.
     let mut open: Option<(String, Vec<usize>)> = None;
     for (i, line) in lines.iter().enumerate() {
