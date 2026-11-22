@@ -36,5 +36,5 @@ INNER
 chmod +x "$scratch/inner.sh"
 
 env -i PATH=/usr/bin:/bin HOME="$scratch/home" XDG_RUNTIME_DIR="$scratch/run" LANG=C.UTF-8 \
-  BRAGI_SCENARIO_PAUSE_MS="${BRAGI_SCENARIO_PAUSE_MS:-900}" RUST_LOG=warn \
+  BRAGI_SCENARIO_PAUSE_MS="${BRAGI_SCENARIO_PAUSE_MS:-900}" RUST_LOG=warn BRAGI_AUDIO=null \
   xvfb-run -a -s "-screen 0 1100x720x24 -nolisten tcp" "$scratch/inner.sh" "$out" "$bin"

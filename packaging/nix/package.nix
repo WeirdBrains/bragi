@@ -1,7 +1,7 @@
 # Bragi from the GitHub release tarball (prebuilt, no Rust), patched for Nix.
 # `desktop = true` keeps the desktop entry and icons; `false` is the standalone form with only bin/bragi.
 { lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper
-, libxkbcommon, libxcb, libX11, wayland, vulkan-loader, fontconfig, freetype, zlib, desktop ? true }:
+, libxkbcommon, libxcb, libX11, wayland, vulkan-loader, fontconfig, freetype, zlib, alsa-lib, desktop ? true }:
 
 let
   release = lib.importJSON ./release.json;
@@ -14,7 +14,8 @@ stdenv.mkDerivation {
   src = fetchurl { inherit (src) url sha256; };
 
   nativeBuildInputs = [ autoPatchelfHook makeWrapper ];
-  buildInputs = [ libxkbcommon libxcb libX11 wayland fontconfig freetype zlib stdenv.cc.cc.lib ];
+  # alsa-lib: the desktop plays a chat's audio files through ALSA (cpal).
+  buildInputs = [ libxkbcommon libxcb libX11 wayland fontconfig freetype zlib alsa-lib stdenv.cc.cc.lib ];
 
   dontConfigure = true;
   dontBuild = true;
