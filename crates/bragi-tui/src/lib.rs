@@ -8,6 +8,7 @@ pub mod cli;
 pub mod code;
 pub mod editor;
 pub mod markdown;
+pub mod mcp_cli;
 pub mod session;
 pub mod settings;
 pub mod theme;

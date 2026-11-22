@@ -34,6 +34,9 @@ usage:
       options: --context PATH (repeatable; folders respect .gitignore) --model ID
                --apply (write the change; `bragi-tui undo` puts it back)
       Prints the proposed change as a unified diff; the explanation goes to stderr.
+  bragi-tui mcp-servers list|add|remove|enable|disable|test|revoke
+                                                   outside MCP servers a chat can use (bragi-tui mcp-servers
+                                                   add --help). Secrets come from environment variables
   bragi-tui undo [--force]                         put back the last change `code --apply` or the app wrote
   bragi-tui --version | --help
 
@@ -69,6 +72,8 @@ pub enum Cmd {
     Undo {
         force: bool,
     },
+    /// `mcp-servers …`: the words after it, run by [`crate::mcp_cli`].
+    McpServers(Vec<String>),
     Version,
     Help,
 }
@@ -82,6 +87,25 @@ pub enum CodeTaskArg {
 
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut out = Args::default();
+    let args: Vec<String> = args.into_iter().collect();
+    // `bragi-tui [--home DIR] mcp-servers …`: everything after the word is the command's own.
+    if let Some(at) = args.iter().position(|a| a == "mcp-servers")
+        && args[..at].iter().all(|a| !a.starts_with("--") || a == "--home" || a == "--demo")
+        && args[..at].iter().filter(|a| !a.starts_with("--")).count() <= args[..at].iter().filter(|a| *a == "--home").count()
+    {
+        let mut it = args[..at].iter();
+        while let Some(a) = it.next() {
+            match a.as_str() {
+                "--home" => out.launch.home = it.next().map(|h| h.into()),
+                "--demo" => out.launch.demo = true,
+                _ => {}
+            }
+        }
+        let rest = args[at + 1..].to_vec();
+        crate::mcp_cli::parse(rest.clone())?;
+        out.command = Cmd::McpServers(rest);
+        return Ok(out);
+    }
     let mut words: Vec<String> = Vec::new();
     let (mut task, mut context, mut model, mut apply, mut yes, mut force) = (None, Vec::new(), None, false, false, false);
     let mut it = args.into_iter();
@@ -176,6 +200,7 @@ pub fn run(args: Args) -> i32 {
             Ok(())
         }
         Cmd::Undo { force } => undo(&args, force),
+        Cmd::McpServers(rest) => crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask))),
         Cmd::Link { arg, yes } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
