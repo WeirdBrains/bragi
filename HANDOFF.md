@@ -2,6 +2,35 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-15, the Bragi MCP server (branch only)
+
+**What changed**
+- New crate [`bragi-mcp`](crates/bragi-mcp): `bragi mcp` (and the `bragi-mcp` program) serves Bragi over the Model Context Protocol on [`weirdnet-mcp`](https://crates.io/crates/weirdnet-mcp) 0.6, the way Ymir's `ymirctl mcp` does: async tools (`Tools::call_async`), `stdio::serve`, `http::router` with `Guard::loopback(Auth::token(..))`, resources, and image and audio content.
+  - [`lib.rs`](crates/bragi-mcp/src/lib.rs): stdio by default; `--http [ADDR]` serves stateless streamable HTTP at `/mcp` on a loopback address only (default `127.0.0.1:4878`). The guard checks `Host`, `Origin` and the bearer token in constant time; the bind check is ours.
+  - [`tools.rs`](crates/bragi-mcp/src/tools.rs): `bragi_status`, `bragi_chat` (new or continued session, pool or endpoint, optional folder, text/image/audio files from the project root or `data:` URLs), `bragi_sessions_list`, `bragi_session_get`, `bragi_folders_list`, `bragi_folder_create`, `bragi_folder_move`, `bragi_session_move`, `bragi_endpoints_list` (never a key), `bragi_models_list` (pool, or one endpoint's), `bragi_files_list` and `bragi_file_fetch` (LF-12's `Core::files` and `Core::file_bytes`: attachments and files answers wrote; images and audio as MCP media content). Resources: `bragi://status`, `bragi://sessions`, `bragi://sessions/{id}` (Markdown) and `bragi://sessions/{id}/files/{file}`.
+  - [`code.rs`](crates/bragi-mcp/src/code.rs): `bragi_code_suggest` and `bragi_code_rewrite` on `bragi_core::code` (the same gather, prompts, `bragi-edit` parsing and diffs as `bragi-tui` and the editor extension), through `Core::complete_to`, so they stay out of history. They return a unified diff, the explanation and a proposal id, and write nothing.
+  - Off by default: `--allow-writes` adds `bragi_code_apply` (all hunks or chosen ones, through `code::Journal`, refusing a file that changed), `bragi_code_undo` and `bragi_file_save` (never replaces a file unless `overwrite`). `--allow-deletes` adds `bragi_session_delete` and `bragi_folder_delete`. Tools that aren't allowed are not listed, and calling one is an unknown-tool error. Every path a client gives must resolve inside `--root`.
+  - [`collect.rs`](crates/bragi-mcp/src/collect.rs) reads a chat stream to its end (deltas at their offsets) and cancels the request on timeout or when the call is dropped.
+  - [`cli.rs`](crates/bragi-mcp/src/cli.rs): `bragi mcp [--root] [--http] [--allow-writes] [--allow-deletes] [--timeout] [--home] [--demo]`, plus `token`, `token-path`, `status`, `link [CODE]` and `add-node ADDRESS`. `--demo` keeps everything (token, undo journal) in a throwaway folder.
+- The server uses the app's Bragi home (`$BRAGI_HOME`, else `~/.local/share/bragi`), like `bragi serve` on `feature/editor-extension`, so its chats, folders and endpoints are the app's, and it opens the OS keychain for endpoint keys.
+- Auth shared with `bragi serve`: [`local_api.rs`](crates/bragi-core/src/local_api.rs) in `bragi-core` has `default_home`, `token_path` (`<home>/serve/token`) and `load_or_create_token` (32 random bytes as hex, mode 0600), the same file and format as `bragi serve`, so one token works for both. When `feature/editor-extension` lands, `bragi-serve` can call these instead of its own copies.
+- [`main.rs`](crates/bragi-desktop/src/main.rs) of the desktop app runs `bragi mcp …` without opening a window.
+- Docs: the site guide [`docs_mcp.dart`](site/lib/pages/docs_mcp.dart) (`/docs/guides/mcp`, linked from the docs index) with Cursor, Claude Desktop, VS Code and HTTP setups, and an "MCP server" section in the [README](README.md).
+
+**Checks**: see the commit; the full pre-commit list (`cargo fmt --check`, build, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, `flutter analyze`, `flutter test` in demo mode).
+- [`tests/protocol.rs`](crates/bragi-mcp/tests/protocol.rs): raw JSON-RPC through `Server::handle_async` against the demo node: the tool table per flag, chat with a text file and an image, sessions, folders, endpoints (no key in the output), files and media content, resources and templates, file save rules, delete tools; code rewrite and suggest diffs, nothing in history, secrets and paths outside the root refused, apply with chosen hunks, undo, a stale proposal refused; HTTP with and without the token, foreign `Host` and `Origin` refused.
+- [`tests/stdio.rs`](crates/bragi-mcp/tests/stdio.rs): the binary with `--demo`, an empty environment and a throwaway HOME: initialize, tools/list, a chat, clean exit at end of input.
+
+**Not tested**: real MCP clients (Cursor, Claude Desktop, VS Code); a real Weirdnet pool or endpoint; the server and the desktop app running on the same home at once; Windows and macOS.
+
+**What's left**:
+- Prompts: `weirdnet-mcp` 0.6 has none, so the server has none (a `continue_session` or `review_file` prompt would help). Raised for the Weirdnet Lead rather than added here.
+- Streaming answers as progress notifications; MCP cancellation by request id (a dropped call already stops the answer).
+- Agent mode (tools and approvals on the node) is not offered.
+- `bragi-serve` should switch to `bragi_core::local_api` once it is on `main`.
+
+**What's next**: review of `feature/bragi-mcp`, then LF-16.
+
 ## 2026-11-21: LF-13, the terminal app (branch `feature/tui`, not merged)
 
 **What changed**

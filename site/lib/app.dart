@@ -4,6 +4,7 @@ import 'package:jaspr_router/jaspr_router.dart';
 
 import 'components/layout.dart';
 import 'pages/docs.dart';
+import 'pages/docs_mcp.dart';
 import 'pages/docs_started.dart';
 import 'pages/download.dart';
 import 'pages/features.dart';
@@ -43,6 +44,11 @@ class App extends StatelessComponent {
           path: '/docs/guides/getting-started',
           title: 'Getting started · $siteTitle',
           builder: (_, _) => const Layout(active: '/docs', child: GettingStartedPage()),
+        ),
+        Route(
+          path: '/docs/guides/mcp',
+          title: 'MCP server · $siteTitle',
+          builder: (_, _) => const Layout(active: '/docs', child: McpGuidePage()),
         ),
         Route(
           path: '/roadmap',

@@ -24,6 +24,7 @@ pub mod files;
 pub mod highlight;
 pub mod history;
 pub mod identity;
+pub mod local_api;
 pub mod markdown;
 pub mod models;
 mod models_core;
