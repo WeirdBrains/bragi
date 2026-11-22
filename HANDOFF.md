@@ -2,6 +2,18 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-40, the extension does what Bragi does (branch `feature/extension-parity`)
+
+**What changed**
+- [`docs/design/extension-parity.md`](docs/design/extension-parity.md): the feature-by-feature table (apps vs extension), the settings plan, the serve API additions and what is left.
+- `bragi-serve` ([`manage.rs`](crates/bragi-serve/src/manage.rs)): management routes behind the token for links (list, add by address, remove, accept and confirm a link code), OpenAI-compatible endpoints (list, add, edit, delete, test, models; keys accepted, never returned) and sessions (list, delete). They call the `Core` methods the apps use. Tests: [`tests/manage.rs`](crates/bragi-serve/tests/manage.rs).
+- Extension ([`editors/vscode`](editors/vscode)): `package.json` configuration is five sections (Connection, Models, Chat, MCP, Advanced) with title, description, order and scope per key (machine scope for anything that runs a program or points at a server); new commands and the Connections view ([`commands.ts`](editors/vscode/src/commands.ts), [`manage.ts`](editors/vscode/src/manage.ts), [`tree.ts`](editors/vscode/src/tree.ts), [`settings.ts`](editors/vscode/src/settings.ts)); `ServeManager.stop()`. Built on `feature/serve-autostart`, which this branch includes.
+- Tests: [`parity.test.ts`](editors/vscode/src/test/suite/parity.test.ts) (settings scopes and precedence, live changes, every command against a mock `bragi serve`).
+
+**Checks:** extension `npm run lint` and `npm test` (54 passing) under Xvfb with `env -i` and a throwaway HOME. Rust: see below.
+
+**Left / next:** `/v1/mcp-servers` routes once `feature/mcp-client` is in main (the extension is written against them and says so when they are missing); the tool approval card; link offer, chat images and audio, reactions, per-message delete, session open and folders in the extension. Not tested against a real linked node or a real Cursor window.
+
 ## 2026-11-22: LF-15 follow-up, MCP prompts on weirdnet-mcp 0.6.1 (branch `feature/mcp-prompts`)
 
 **What changed**
@@ -20,6 +32,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **Not tested**: real MCP clients' prompt pickers.
 
 **What's next**: none planned for the MCP server.
+
 
 ## 2026-11-22: LF-36, `bragi serve` starts by itself with the terminal app and the editor extension (branch `feature/serve-autostart`)
 

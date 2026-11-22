@@ -132,6 +132,136 @@
         "command": "bragi.showStatus",
         "title": "Show Connection Status",
         "category": "Bragi"
+      },
+      {
+        "command": "bragi.link.add",
+        "title": "Link to an Inference Node…",
+        "category": "Bragi",
+        "icon": "$(link)"
+      },
+      {
+        "command": "bragi.link.addNode",
+        "title": "Add an Inference Node by Address…",
+        "category": "Bragi",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bragi.link.remove",
+        "title": "Remove Link…",
+        "category": "Bragi",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bragi.endpoint.add",
+        "title": "Add OpenAI Connection…",
+        "category": "Bragi",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bragi.endpoint.edit",
+        "title": "Edit OpenAI Connection…",
+        "category": "Bragi",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "bragi.endpoint.remove",
+        "title": "Remove OpenAI Connection…",
+        "category": "Bragi",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bragi.endpoint.test",
+        "title": "Test OpenAI Connection",
+        "category": "Bragi",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "bragi.sessions.manage",
+        "title": "Delete Chats…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.serve.stop",
+        "title": "Stop Server",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.serve.status",
+        "title": "Show Server Status",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.mcp.start",
+        "title": "Start MCP Server",
+        "category": "Bragi",
+        "icon": "$(play)"
+      },
+      {
+        "command": "bragi.mcp.stop",
+        "title": "Stop MCP Server",
+        "category": "Bragi",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "bragi.mcp.copyConfig",
+        "title": "Copy MCP Client Config…",
+        "category": "Bragi",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "bragi.mcpServer.add",
+        "title": "Add MCP Server…",
+        "category": "Bragi",
+        "icon": "$(add)"
+      },
+      {
+        "command": "bragi.mcpServer.remove",
+        "title": "Remove MCP Server…",
+        "category": "Bragi",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "bragi.mcpServer.toggle",
+        "title": "Turn MCP Server On or Off…",
+        "category": "Bragi",
+        "icon": "$(circle-slash)"
+      },
+      {
+        "command": "bragi.mcpServer.test",
+        "title": "Test MCP Server",
+        "category": "Bragi",
+        "icon": "$(debug-start)"
+      },
+      {
+        "command": "bragi.mcp.applySettings",
+        "title": "Apply MCP Servers from Settings",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.settings.open",
+        "title": "Open Settings",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.settings.openJson",
+        "title": "Open Settings (JSON)…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.settings.show",
+        "title": "Show Settings and Where They Come From…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.connections.refresh",
+        "title": "Refresh Connections",
+        "category": "Bragi",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "bragi.mcp.isRunning",
+        "title": "MCP Server Running?",
+        "category": "Bragi"
       }
     ],
     "keybindings": [
@@ -211,6 +341,93 @@
         {
           "command": "bragi.showRewriteDiff",
           "when": "bragi.rewritePending"
+        },
+        {
+          "command": "bragi.mcp.isRunning",
+          "when": "false"
+        },
+        {
+          "command": "bragi.connections.refresh",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "bragi.connections.refresh",
+          "when": "view == bragi.connections",
+          "group": "navigation@1"
+        },
+        {
+          "command": "bragi.link.add",
+          "when": "view == bragi.connections",
+          "group": "navigation@2"
+        },
+        {
+          "command": "bragi.endpoint.add",
+          "when": "view == bragi.connections",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "bragi.link.remove",
+          "when": "view == bragi.connections && viewItem == link",
+          "group": "inline"
+        },
+        {
+          "command": "bragi.endpoint.edit",
+          "when": "view == bragi.connections && viewItem == endpoint",
+          "group": "inline"
+        },
+        {
+          "command": "bragi.endpoint.test",
+          "when": "view == bragi.connections && viewItem == endpoint",
+          "group": "1_test"
+        },
+        {
+          "command": "bragi.endpoint.remove",
+          "when": "view == bragi.connections && viewItem == endpoint",
+          "group": "9_remove"
+        },
+        {
+          "command": "bragi.mcpServer.toggle",
+          "when": "view == bragi.connections && viewItem == mcpServer",
+          "group": "inline"
+        },
+        {
+          "command": "bragi.mcpServer.test",
+          "when": "view == bragi.connections && viewItem == mcpServer",
+          "group": "1_test"
+        },
+        {
+          "command": "bragi.mcpServer.remove",
+          "when": "view == bragi.connections && viewItem == mcpServer",
+          "group": "9_remove"
+        },
+        {
+          "command": "bragi.mcp.start",
+          "when": "view == bragi.connections && viewItem == mcpSelf",
+          "group": "inline"
+        },
+        {
+          "command": "bragi.mcp.copyConfig",
+          "when": "view == bragi.connections && viewItem == mcpSelf",
+          "group": "1_copy"
+        },
+        {
+          "command": "bragi.mcp.stop",
+          "when": "view == bragi.connections && viewItem == mcpSelf",
+          "group": "2_stop"
+        },
+        {
+          "command": "bragi.restartServer",
+          "when": "view == bragi.connections && viewItem == server",
+          "group": "inline"
+        },
+        {
+          "command": "bragi.serve.stop",
+          "when": "view == bragi.connections && viewItem == server",
+          "group": "2_stop"
         }
       ]
     },
@@ -229,97 +446,264 @@
           "type": "webview",
           "id": "bragi.chat",
           "name": "Chat"
+        },
+        {
+          "id": "bragi.connections",
+          "name": "Connections"
         }
       ]
     },
-    "configuration": {
-      "title": "Bragi",
-      "properties": {
-        "bragi.target": {
-          "type": "string",
-          "enum": [
-            "bragi",
-            "direct"
-          ],
-          "enumDescriptions": [
-            "The local Bragi app (bragi serve): your Weirdnet pool and Bragi's endpoints and sessions.",
-            "An OpenAI-compatible server, called directly."
-          ],
-          "default": "bragi",
-          "description": "Where suggestions, rewrites and chat go."
-        },
-        "bragi.serveUrl": {
-          "type": "string",
-          "default": "http://127.0.0.1:4877",
-          "description": "The local Bragi API (`bragi serve`, or the app started with --serve). Loopback only."
-        },
-        "bragi.model": {
-          "type": "string",
-          "default": "",
-          "description": "The model to use; empty means the target's default."
-        },
-        "bragi.bragiTarget": {
-          "type": [
-            "object",
-            "null"
-          ],
-          "default": null,
-          "description": "Where Bragi sends code requests: null for Bragi's default (the Weirdnet pool), or a target from \"Bragi: Choose Target and Model\" (the pool, or an endpoint and model from Bragi's Settings)."
-        },
-        "bragi.autoStartServer": {
-          "type": "boolean",
-          "default": true,
-          "description": "Start `bragi serve` in the background when the Bragi target is used and nothing answers on bragi.serveUrl. A server it starts stops after 30 idle minutes; one that was already running is never touched."
-        },
-        "bragi.path": {
-          "type": "string",
-          "default": "",
-          "scope": "machine",
-          "description": "The `bragi` program to start the server with; empty looks for `bragi` (then `bragi-serve`) on the PATH."
-        },
-        "bragi.tokenFile": {
-          "type": "string",
-          "default": "",
-          "description": "Where `bragi serve` keeps its token, if not in the default Bragi home (`bragi serve token-path` prints it)."
-        },
-        "bragi.direct.url": {
-          "type": "string",
-          "default": "",
-          "description": "Base URL of an OpenAI-compatible server for the direct target or the fallback, e.g. http://127.0.0.1:8484/v1. Its API key is kept in the editor's secret storage (Bragi: Set Direct Endpoint API Key)."
-        },
-        "bragi.direct.model": {
-          "type": "string",
-          "default": "",
-          "description": "The model to ask on the direct server; empty means its first model."
-        },
-        "bragi.fallbackToDirect": {
-          "type": "boolean",
-          "default": false,
-          "description": "When the local Bragi API can't be reached, use the direct server instead."
-        },
-        "bragi.inline.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show inline code suggestions as you type."
-        },
-        "bragi.inline.debounceMs": {
-          "type": "number",
-          "default": 350,
-          "minimum": 0,
-          "description": "How long typing must pause before a suggestion is asked for."
-        },
-        "bragi.context.openFiles": {
-          "type": "boolean",
-          "default": true,
-          "description": "Send other open files along with rewrites and chat."
-        },
-        "bragi.context.diagnostics": {
-          "type": "boolean",
-          "default": true,
-          "description": "Send the editor's problems for the file along."
+    "configuration": [
+      {
+        "id": "bragi.connection",
+        "title": "Bragi: Connection",
+        "order": 1,
+        "properties": {
+          "bragi.target": {
+            "type": "string",
+            "enum": [
+              "bragi",
+              "direct"
+            ],
+            "enumDescriptions": [
+              "The local Bragi app (bragi serve): your Weirdnet pool and Bragi's endpoints and sessions.",
+              "An OpenAI-compatible server, called directly."
+            ],
+            "default": "bragi",
+            "scope": "window",
+            "order": 1,
+            "title": "Target",
+            "markdownDescription": "Where suggestions, rewrites and chat go."
+          },
+          "bragi.serveUrl": {
+            "type": "string",
+            "default": "http://127.0.0.1:4877",
+            "scope": "machine",
+            "order": 2,
+            "title": "Local API address",
+            "markdownDescription": "The local Bragi API (`bragi serve`, or the app started with --serve). Loopback only."
+          },
+          "bragi.autoStartServer": {
+            "type": "boolean",
+            "default": true,
+            "scope": "machine",
+            "order": 3,
+            "title": "Start the server automatically",
+            "markdownDescription": "Start `bragi serve` in the background when the Bragi target is used and nothing answers on bragi.serveUrl. A server it starts stops after 30 idle minutes; one that was already running is never touched."
+          },
+          "bragi.tokenFile": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "order": 4,
+            "title": "Token file",
+            "markdownDescription": "Where `bragi serve` keeps its token, if not in the default Bragi home (`bragi serve token-path` prints it)."
+          },
+          "bragi.direct.url": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "order": 5,
+            "title": "Direct server URL",
+            "markdownDescription": "Base URL of an OpenAI-compatible server for the direct target or the fallback, e.g. http://127.0.0.1:8484/v1. Its API key is kept in the editor's secret storage (Bragi: Set Direct Endpoint API Key)."
+          },
+          "bragi.fallbackToDirect": {
+            "type": "boolean",
+            "default": false,
+            "scope": "window",
+            "order": 6,
+            "title": "Fall back to the direct server",
+            "markdownDescription": "When the local Bragi API can't be reached, use the direct server instead."
+          }
+        }
+      },
+      {
+        "id": "bragi.models",
+        "title": "Bragi: Models",
+        "order": 2,
+        "properties": {
+          "bragi.model": {
+            "type": "string",
+            "default": "",
+            "scope": "window",
+            "order": 1,
+            "title": "Model",
+            "markdownDescription": "The model to use; empty means the target's default."
+          },
+          "bragi.bragiTarget": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "default": null,
+            "scope": "window",
+            "order": 2,
+            "title": "Bragi target",
+            "markdownDescription": "Where Bragi sends code requests: null for Bragi's default (the Weirdnet pool), or a target from \"Bragi: Choose Target and Model\" (the pool, or an endpoint and model from Bragi's Settings)."
+          },
+          "bragi.direct.model": {
+            "type": "string",
+            "default": "",
+            "scope": "window",
+            "order": 3,
+            "title": "Direct server model",
+            "markdownDescription": "The model to ask on the direct server; empty means its first model."
+          }
+        }
+      },
+      {
+        "id": "bragi.chat",
+        "title": "Bragi: Chat",
+        "order": 3,
+        "properties": {
+          "bragi.inline.enabled": {
+            "type": "boolean",
+            "default": true,
+            "scope": "window",
+            "order": 1,
+            "title": "Inline suggestions",
+            "markdownDescription": "Show inline code suggestions as you type."
+          },
+          "bragi.inline.debounceMs": {
+            "type": "number",
+            "default": 350,
+            "minimum": 0,
+            "scope": "window",
+            "order": 2,
+            "title": "Inline delay (ms)",
+            "markdownDescription": "How long typing must pause before a suggestion is asked for."
+          },
+          "bragi.context.openFiles": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "order": 3,
+            "title": "Send open files",
+            "markdownDescription": "Send other open files along with rewrites and chat."
+          },
+          "bragi.context.diagnostics": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "order": 4,
+            "title": "Send problems",
+            "markdownDescription": "Send the editor's problems for the file along."
+          }
+        }
+      },
+      {
+        "id": "bragi.mcp",
+        "title": "Bragi: MCP",
+        "order": 4,
+        "properties": {
+          "bragi.mcp.server.allowWrites": {
+            "type": "boolean",
+            "default": false,
+            "scope": "machine",
+            "order": 1,
+            "title": "MCP server: allow writes",
+            "markdownDescription": "Adds `--allow-writes` to the `bragi mcp` command (**Bragi: Start MCP Server** and **Bragi: Copy MCP Client Config**): the tool that saves a chat's files into the project is offered to MCP clients."
+          },
+          "bragi.mcp.server.allowDeletes": {
+            "type": "boolean",
+            "default": false,
+            "scope": "machine",
+            "order": 2,
+            "title": "MCP server: allow deletes",
+            "markdownDescription": "Adds `--allow-deletes` to the `bragi mcp` command: the tools that delete sessions and folders are offered to MCP clients."
+          },
+          "bragi.mcp.server.args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [],
+            "scope": "machine",
+            "order": 3,
+            "title": "MCP server: extra arguments",
+            "markdownDescription": "Extra arguments for `bragi mcp`, e.g. `[\"--home\", \"/path/to/bragi-home\"]`."
+          },
+          "bragi.mcp.clientServers": {
+            "type": "array",
+            "default": [],
+            "scope": "machine",
+            "order": 4,
+            "title": "MCP servers to add to Bragi",
+            "markdownDescription": "Outside MCP servers whose tools Bragi offers to models. **Bragi: Apply MCP Servers from Settings** adds the ones Bragi does not have yet (matched by `name`). No secrets here: add environment values, bearer tokens and header values with **Bragi: Add MCP Server**, which keeps them in Bragi's secret store. A stdio server runs as you, with your permissions.",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "transport"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What you call it; tools are offered as <name>.<tool>."
+                },
+                "transport": {
+                  "type": "string",
+                  "enum": [
+                    "stdio",
+                    "http"
+                  ],
+                  "description": "A local command, or a streamable HTTP address."
+                },
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "command": {
+                  "type": "string",
+                  "description": "stdio: the program to run."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "stdio: its arguments."
+                },
+                "cwd": {
+                  "type": "string",
+                  "description": "stdio: the folder to run it in."
+                },
+                "url": {
+                  "type": "string",
+                  "description": "http: the server address."
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "all",
+                    "folder"
+                  ],
+                  "default": "all",
+                  "description": "All chats, or only code mode in this workspace folder."
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "bragi.advanced",
+        "title": "Bragi: Advanced",
+        "order": 5,
+        "properties": {
+          "bragi.path": {
+            "type": "string",
+            "default": "",
+            "scope": "machine",
+            "order": 1,
+            "title": "Bragi program",
+            "markdownDescription": "The `bragi` program to start the server with; empty looks for `bragi` (then `bragi-serve`) on the PATH."
+          }
         }
       }
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

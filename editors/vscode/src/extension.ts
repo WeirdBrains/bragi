@@ -5,6 +5,9 @@
 import * as vscode from 'vscode';
 import { Router } from './backends';
 import { ChatView } from './chat';
+import { mcpServerRunning, register as registerManagement } from './commands';
+import { Manage } from './manage';
+import { ConnectionsView } from './tree';
 import { editorContext } from './context';
 import { InlineProvider } from './inline';
 import { PROPOSED_SCHEME, Rewrites } from './rewrite';
@@ -135,6 +138,21 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
       return rewrites.start(editor, scope, typeof instruction === 'string' ? instruction : undefined);
     });
 
+  const manage = new Manage(() => router.bragi);
+  const connections = new ConnectionsView(manage, serve, mcpServerRunning);
+  registerManagement(context, {
+    manage,
+    serve,
+    program: () => cfg().get<string>('path', '') || 'bragi',
+    refresh: () => {
+      connections.refresh();
+      void refreshStatus();
+    },
+    run,
+    token: () => ensureToken(secrets, serve),
+    extension: () => vscode.extensions.getExtension('weirdbrains.bragi'),
+  });
+
   context.subscriptions.push(
     status,
     serveItem,
@@ -226,8 +244,11 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
         return list;
       }),
     ),
+    vscode.window.registerTreeDataProvider(ConnectionsView.id, connections),
+    vscode.commands.registerCommand('bragi.connections.refresh', () => connections.refresh()),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('bragi')) {
+        connections.refresh();
         void refreshStatus();
       }
     }),
