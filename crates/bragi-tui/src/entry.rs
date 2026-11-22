@@ -10,7 +10,7 @@ use crate::app::App;
 use crate::cli::{self, Cmd, USAGE};
 use crate::session::Session;
 use base64::Engine;
-use ratatui::crossterm::event::{self, DisableBracketedPaste, EnableBracketedPaste};
+use ratatui::crossterm::event::{self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture};
 use ratatui::crossterm::execute;
 
 /// The usage text with `prog` for the program's name (`bragi` or `bragi-tui`).
@@ -61,8 +61,9 @@ pub fn run(prog: &str, args: Vec<String>) -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    let mouse = args.mouse.or_else(|| cli::mouse_from_env(std::env::var("BRAGI_TUI_MOUSE").ok().as_deref())).unwrap_or(true);
     let serve = crate::serve::start(args.no_serve || args.launch.demo);
-    match run_app(&session, root, opened, serve) {
+    match run_app(&session, root, opened, mouse, serve) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{prog}: {e}");
@@ -79,10 +80,46 @@ fn osc52(out: &mut impl Write, text: &str) -> std::io::Result<()> {
     out.flush()
 }
 
-fn run_app(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, serve: crate::serve::Shared) -> Result<(), String> {
+/// Opens an address with the system's opener, detached and silent (web pages and mail only).
+fn open_url(url: &str) {
+    if !crate::app::openable(url) {
+        return;
+    }
+    let (cmd, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
+        ("open", vec![url])
+    } else if cfg!(windows) {
+        ("explorer", vec![url])
+    } else {
+        ("xdg-open", vec![url])
+    };
+    let _ = std::process::Command::new(cmd)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|mut c| std::thread::spawn(move || c.wait()));
+}
+
+/// Gives the terminal back as it was: mouse reporting and bracketed paste off. Runs on exit
+/// and, through the panic hook, when the app panics.
+fn leave_modes() {
+    let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableBracketedPaste);
+}
+
+fn run_app(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, mouse: bool, serve: crate::serve::Shared) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
+    // ratatui's panic hook restores the screen; this one also switches off the mouse first,
+    // so a crash doesn't leave the shell reporting clicks as escape codes.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        leave_modes();
+        previous(info);
+    }));
     let _ = execute!(std::io::stdout(), EnableBracketedPaste);
+    let mut captured = false;
     let mut app = App::new(session.core.clone(), &session.home, root);
+    app.mouse = mouse;
     app.serve = Some(serve);
     if let Some(o) = opened {
         app.open_code(&o);
@@ -105,19 +142,30 @@ fn run_app(session: &Session, root: std::path::PathBuf, opened: Option<cli::Open
             for text in std::mem::take(&mut app.clipboard) {
                 osc52(&mut std::io::stdout(), &text)?;
             }
+            for url in std::mem::take(&mut app.open_urls) {
+                open_url(&url);
+            }
+            // The terminal's mouse reporting follows what the app wants (F8 flips it).
+            if app.mouse != captured {
+                captured = app.mouse;
+                if captured {
+                    execute!(std::io::stdout(), EnableMouseCapture)?;
+                } else {
+                    execute!(std::io::stdout(), DisableMouseCapture)?;
+                }
+            }
             if app.quit {
                 return Ok(());
             }
             if event::poll(Duration::from_millis(50))? {
-                app.on_event(event::read()?);
+                dirty |= app.on_event(event::read()?);
                 while event::poll(Duration::ZERO)? {
-                    app.on_event(event::read()?);
+                    dirty |= app.on_event(event::read()?);
                 }
-                dirty = true;
             }
         }
     })();
-    let _ = execute!(std::io::stdout(), DisableBracketedPaste);
+    leave_modes();
     ratatui::restore();
     result.map_err(|e| e.to_string())
 }

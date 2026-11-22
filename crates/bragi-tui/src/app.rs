@@ -15,11 +15,15 @@ use tokio::sync::{mpsc as tmpsc, watch};
 
 use crate::code::{CodeState, Command, Phase};
 use crate::editor::Editor;
+use crate::hit::HitMap;
 use crate::settings::{self, Form, Settings};
 use crate::tree::{self, Row};
 
 mod themes_screen;
 pub use themes_screen::{Ask, Confirm, EditState, ThemeScreen, parse_hex};
+mod mouse;
+
+pub use mouse::openable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -125,7 +129,17 @@ pub struct App {
     pub confirm_delete: Option<String>,
     /// Text to put on the terminal's clipboard (OSC 52), written by the main loop.
     pub clipboard: Vec<String>,
+    /// Addresses to open with the system opener, taken by the main loop.
+    pub open_urls: Vec<String>,
     pub quit: bool,
+    /// What a click does where: rebuilt by every draw ([`crate::hit`]).
+    pub hits: HitMap,
+    /// The cell the pointer is over, when the terminal reports motion.
+    pub hover: Option<(u16, u16)>,
+    /// Whether the app wants the terminal's mouse reporting (F8 turns it off so text can be
+    /// selected); the main loop makes the terminal match.
+    pub mouse: bool,
+    last_click: Option<(Instant, crate::hit::Action)>,
     /// The local API server's state, kept up to date in the background (`None` in tests).
     pub serve: Option<crate::serve::Shared>,
     serve_seen: Option<crate::serve::ServeState>,
@@ -207,7 +221,12 @@ impl App {
             picker: None,
             confirm_delete: None,
             clipboard: Vec::new(),
+            open_urls: Vec::new(),
             quit: false,
+            hits: HitMap::default(),
+            hover: None,
+            mouse: true,
+            last_click: None,
             serve: None,
             serve_seen: None,
             jobs: mpsc::channel(),
@@ -593,7 +612,15 @@ impl App {
 
     // ---- input --------------------------------------------------------------------------
 
-    pub fn on_event(&mut self, ev: Event) {
+    /// Handles one terminal event; `false` when nothing on screen changes because of it.
+    pub fn on_event(&mut self, ev: Event) -> bool {
+        match ev {
+            Event::Mouse(m) => return self.on_mouse(m),
+            Event::Resize(..) => {
+                self.hover = None;
+            }
+            _ => {}
+        }
         match ev {
             Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
             Event::Paste(text) => match self.view {
@@ -613,6 +640,7 @@ impl App {
             },
             _ => {}
         }
+        true
     }
 
     fn open(&mut self, view: View) {
@@ -697,6 +725,15 @@ impl App {
                 return;
             }
             KeyCode::Char('y') if ctrl => return self.copy(),
+            KeyCode::F(8) => {
+                self.mouse = !self.mouse;
+                self.hover = None;
+                return self.say(if self.mouse {
+                    "Mouse on: click and scroll. F8 turns it off so text can be selected."
+                } else {
+                    "Mouse off: select text as usual. F8 turns it back on."
+                });
+            }
             _ => {}
         }
         if let Some(id) = self.confirm_delete.take() {

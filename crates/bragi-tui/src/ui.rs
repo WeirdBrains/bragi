@@ -8,6 +8,7 @@
 use bragi_core::code::{HunkLine, LineTag};
 use bragi_core::{MessageState, ModePref, ModelStatus, PairState, Role};
 use ratatui::Frame;
+use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols;
@@ -18,6 +19,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::app::{App, Focus, Purpose, TOAST_MS, Tone, View};
 use crate::code::Phase;
 use crate::editor::Editor;
+use crate::hit::{self, Action, HitMap, Mark, Wheel};
 use crate::settings::{self, FIELDS, KEY_FIELD};
 use crate::theme::{self, Theme};
 use crate::tree::Row;
@@ -101,12 +103,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     };
     let [header, body, input, footer] =
         Layout::vertical([Constraint::Length(1), Constraint::Min(3), Constraint::Length(input_h), Constraint::Length(1)]).areas(area);
-    draw_header(f, app, header);
+    let mut hits = HitMap::default();
+    draw_header(f, app, &mut hits, header);
     match base {
-        View::Code => draw_code(f, app, body),
-        _ => draw_chat(f, app, body, !modal),
+        View::Code => draw_code(f, app, &mut hits, body),
+        _ => draw_chat(f, app, &mut hits, body, !modal),
     }
     if input_h > 0 {
+        hits.push(input, Action::FocusInput);
         let streaming = app.streaming();
         let (title, placeholder) = match base {
             View::Code => ("Code".to_string(), "f files · /rewrite FILE:A-B how · or ask for suggestions across the context"),
@@ -125,23 +129,64 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         draw_editor(f, &app.input, input, &title, placeholder, keys, focused);
     }
     if modal {
-        backdrop(f, Rect { height: body.height + input.height, ..body });
+        let covered = Rect { height: body.height + input.height, ..body };
+        backdrop(f, covered);
+        // The window takes the clicks; one outside it closes it (not the link window, which
+        // may be waiting for the other device).
+        hits.cover(covered);
+        let closeable = match app.view {
+            View::Models | View::Status | View::Help => true,
+            View::Settings => app.settings.form.is_none(),
+            View::Themes => app.themes.prompt.is_none() && app.themes.confirm.is_none() && app.themes.edit.is_none(),
+            _ => false,
+        };
+        hits.push(covered, if closeable { Action::code(KeyCode::Esc) } else { Action::Noop });
         match app.view {
             // The link window may cover the message box too: its QR code wants the rows.
-            View::Link => draw_link(f, app, Rect { height: body.height + input.height, ..body }),
-            View::Status => draw_status(f, app, body),
-            View::Models => draw_models(f, app, body),
-            View::Settings => draw_settings(f, app, body),
-            View::Themes => draw_themes(f, app, body),
-            _ => draw_help(f, app, body),
+            View::Link => draw_link(f, app, &mut hits, covered),
+            View::Status => draw_status(f, app, &mut hits, body),
+            View::Models => draw_models(f, app, &mut hits, body),
+            View::Settings => draw_settings(f, app, &mut hits, body),
+            View::Themes => draw_themes(f, app, &mut hits, body),
+            _ => draw_help(f, app, &mut hits, body),
         }
     }
     if app.view == View::Code && app.picker.is_some() {
-        backdrop(f, Rect { height: body.height + input.height, ..body });
-        draw_picker(f, app, Rect { height: body.height + input.height, ..body });
+        let covered = Rect { height: body.height + input.height, ..body };
+        backdrop(f, covered);
+        hits.cover(covered);
+        hits.push(covered, Action::code(KeyCode::Esc));
+        draw_picker(f, app, &mut hits, covered);
     }
-    draw_footer(f, app, footer);
-    draw_toast(f, app, body);
+    draw_footer(f, app, &mut hits, footer);
+    draw_toast(f, app, &mut hits, body);
+    hover(f, app, &hits);
+    app.hits = hits;
+}
+
+/// Tints what the pointer is over: a list row's background, or a button or link underlined
+/// (reversed without colour).
+fn hover(f: &mut Frame, app: &App, hits: &HitMap) {
+    let t = th();
+    let Some((x, y)) = app.hover else { return };
+    let Some(h) = hits.at(x, y) else { return };
+    if matches!(h.action, Action::Noop | Action::DismissToast | Action::FocusInput) || (h.rect.height > 1 && !h.row) {
+        return;
+    }
+    let area = h.rect.intersection(f.area());
+    let buf = f.buffer_mut();
+    for yy in area.top()..area.bottom() {
+        for xx in area.left()..area.right() {
+            let cell = &mut buf[(xx, yy)];
+            if !t.color() {
+                cell.modifier.insert(Modifier::REVERSED);
+            } else if h.row {
+                cell.set_bg(t.raised);
+            } else {
+                cell.modifier.insert(Modifier::UNDERLINED);
+            }
+        }
+    }
 }
 
 fn too_small(f: &mut Frame, area: Rect) {
@@ -202,7 +247,7 @@ fn backdrop(f: &mut Frame, area: Rect) {
 }
 
 /// A centred window of at most `w`×`h` in `area`, with a drop shadow; returns its inside.
-fn window(f: &mut Frame, area: Rect, w: u16, h: u16, title: &str, right: &str) -> Rect {
+fn window(f: &mut Frame, hits: &mut HitMap, area: Rect, w: u16, h: u16, title: &str, right: &str) -> Rect {
     let t = th();
     let w = w.min(area.width.saturating_sub(2)).max(10);
     let h = h.min(area.height).max(3);
@@ -219,10 +264,16 @@ fn window(f: &mut Frame, area: Rect, w: u16, h: u16, title: &str, right: &str) -
     f.render_widget(Clear, r);
     let mut block = pane(title, true).style(Style::new().bg(t.surface).fg(t.fg)).padding(Padding::horizontal(1));
     if !right.is_empty() {
-        block = block.title_top(Line::from(Span::styled(format!(" {right} "), t.dim())).right_aligned());
+        // Clear of the close button in the corner.
+        block = block.title_top(Line::from(Span::styled(format!(" {right}     "), t.dim())).right_aligned());
     }
     let inner = block.inner(r);
     f.render_widget(block, r);
+    hits.push(r, Action::Noop);
+    // The close button.
+    let x = Rect { x: r.right().saturating_sub(5), y: r.y, width: 3, height: 1 };
+    f.render_widget(Paragraph::new(Span::styled(format!(" {} ", t.icons.cross), t.muted().bg(t.surface))), x);
+    hits.push(x, Action::code(KeyCode::Esc));
     inner
 }
 
@@ -284,7 +335,7 @@ fn view_name(v: View) -> &'static str {
     }
 }
 
-fn draw_header(f: &mut Frame, app: &App, area: Rect) {
+fn draw_header(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     let t = th();
     f.render_widget(Block::default().style(Style::new().bg(t.surface)), area);
     let mut spans = vec![Span::styled(format!(" {} Bragi ", t.icons.brand), t.pill(t.bg, t.accent)), Span::raw(" ")];
@@ -300,11 +351,20 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
     for (v, name, key) in tabs {
         let on = app.view == v || (app.view == View::Models && v == View::Chat);
         let st = if on { t.bold_accent().bg(t.raised) } else { t.muted().bg(t.surface) };
+        let start = line_width(&spans);
         spans.push(Span::styled(format!(" {name} "), st));
         if wide {
             spans.push(Span::styled(format!("{key} "), t.dim().bg(if on { t.raised } else { t.surface })));
         }
+        let w = line_width(&spans) - start;
+        hits.push(Rect { x: area.x + start as u16, width: w as u16, ..area }, Action::Goto(v));
         spans.push(Span::styled(" ", Style::new().bg(t.surface)));
+    }
+    if area.width >= 60 {
+        let start = line_width(&spans);
+        spans.push(Span::styled(" + New ", t.pill(t.fg, t.raised)));
+        hits.push(Rect { x: area.x + start as u16, width: 7, ..area }, Action::ctrl('n'));
+        spans.push(Span::raw(" "));
     }
     let left = line_width(&spans);
     f.render_widget(Paragraph::new(Line::from(spans)), area);
@@ -331,14 +391,16 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
         };
     }
     match app.view {
-        View::Chat if app.streaming() => &[("Esc", "stop"), ("PgUp/PgDn", "scroll"), ("F1", "help")],
+        View::Chat if app.streaming() => &[("Esc", "stop"), ("PgUp", "up"), ("PgDn", "down"), ("F1", "help")],
         View::Chat if app.focus == Focus::Chats => {
             &[("↑↓", "move"), ("Enter", "open/fold"), ("n", "folder"), ("m", "move"), ("r", "rename"), ("d", "delete"), ("Tab", "back")]
         }
         View::Chat => &[("Enter", "send"), ("Tab", "chats"), ("^O", "target"), ("^K", "thinking"), ("F1", "help"), ("^Q", "quit")],
         View::Link => &[("s", "show a code"), ("c", "copy"), ("Enter", "open/add"), ("Esc", "back")],
         View::Code => match app.code.phase {
-            Phase::Review => &[("y/n", "accept/reject"), ("↑↓", "hunks"), ("a/r", "all"), ("v", "view"), ("w", "write"), ("Esc", "discard")],
+            Phase::Review => {
+                &[("y", "accept"), ("n", "reject"), ("↑↓", "hunks"), ("a", "all"), ("r", "none"), ("v", "view"), ("w", "write"), ("Esc", "discard")]
+            }
             Phase::Asking => &[("Esc", "stop")],
             Phase::Compose => &[("Enter", "run"), ("^F", "files"), ("/undo", "undo"), ("Esc", "back"), ("F1", "help")],
         },
@@ -368,7 +430,7 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
     }
 }
 
-fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
+fn draw_footer(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     let t = th();
     f.render_widget(Block::default().style(Style::new().bg(t.surface)), area);
     let wide = area.width as usize;
@@ -388,12 +450,16 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         _ => (t.icons.half, t.warning, "linking"),
     };
     let seg = Style::new().bg(t.raised);
+    let at = |left: &[Span]| area.x + line_width(left) as u16;
+    let link_at = at(&left);
     left.push(Span::styled(format!(" {dot}"), seg.fg(color)));
     left.push(Span::styled(format!(" {state} "), seg.fg(t.fg)));
+    hits.push(Rect { x: link_at, width: at(&left) - link_at, ..area }, Action::Goto(View::Status));
     if wide >= 60
         && let Some(sv) = app.serve.as_ref().and_then(|s| s.lock().ok().map(|g| g.clone()))
     {
         use crate::serve::ServeState;
+        let serve_at = at(&left);
         let color = match sv {
             ServeState::Running { .. } => t.success,
             ServeState::Starting | ServeState::Stopped => t.warning,
@@ -402,21 +468,28 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         };
         left.push(Span::styled(format!(" {}", t.icons.on), seg.fg(color)));
         left.push(Span::styled(format!(" {} ", sv.label()), seg.fg(t.fg)));
+        hits.push(Rect { x: serve_at, width: at(&left) - serve_at, ..area }, Action::Goto(View::Status));
     }
     if wide >= 96 {
         let n = app.state.catalog.nodes.len();
         left.push(Span::styled(format!(" {n} node{} ", crate::code::plural(n)), t.muted()));
         left.push(Span::styled(t.icons.sep, t.fg(t.border)));
+        let model_at = at(&left);
         left.push(Span::styled(format!(" {} ", app.model_label()), t.accent()));
+        hits.push(Rect { x: model_at, width: at(&left) - model_at, ..area }, Action::ctrl('o'));
     }
     if wide >= 76 {
         left.push(Span::styled(t.icons.sep, t.fg(t.border)));
+        let via_at = at(&left);
         left.push(Span::styled(format!(" via {} ", app.target_label()), t.muted()));
+        hits.push(Rect { x: via_at, width: at(&left) - via_at, ..area }, Action::ctrl('o'));
     }
     let used = line_width(&left);
     // Key hints on the right, as many as fit.
     let mut right: Vec<Span> = Vec::new();
     let mut w = 0;
+    // Each hint's offset in the right-hand block, width and key, clickable when it is one key.
+    let mut cells: Vec<(usize, usize, Action)> = Vec::new();
     for (k, v) in hints(app) {
         let need = width(k) + width(v) + 3;
         if used + w + need + 1 > wide {
@@ -424,18 +497,24 @@ fn draw_footer(f: &mut Frame, app: &App, area: Rect) {
         }
         right.push(Span::styled(format!(" {k}"), t.text().add_modifier(Modifier::BOLD)));
         right.push(Span::styled(format!(" {v} "), t.dim()));
+        if let Some(a) = hit::hint_action(k) {
+            cells.push((w, need, a));
+        }
         w += need;
     }
     f.render_widget(Paragraph::new(Line::from(left)), area);
     if w > 0 {
         let r = Rect { x: area.x + area.width - w as u16, width: w as u16, ..area };
         f.render_widget(Paragraph::new(Line::from(right)), r);
+        for (off, n, a) in cells {
+            hits.push(Rect { x: r.x + off as u16, width: n as u16, ..r }, a);
+        }
     }
 }
 
 /// The notice as a toast in the top right of `area`; it goes after a few seconds (a question
 /// stays until answered).
-fn draw_toast(f: &mut Frame, app: &App, area: Rect) {
+fn draw_toast(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let Some(text) = &app.notice else { return };
     let (icon, color) = match app.notice_tone {
@@ -447,7 +526,8 @@ fn draw_toast(f: &mut Frame, app: &App, area: Rect) {
     let max = ((area.width as usize) * 3 / 5).clamp(24, 72).min(area.width.saturating_sub(4) as usize);
     let body = wrap(text, max.saturating_sub(6));
     let w = (body.iter().map(|l| width(l)).max().unwrap_or(0) + 6).min(max) as u16;
-    let h = (body.len().min(4) + 2) as u16;
+    let ask = app.notice_tone == Tone::Ask;
+    let h = (body.len().min(4) + 2 + ask as usize) as u16;
     // Top right; in code mode bottom right, clear of the file and change being reviewed.
     let y = if app.view == View::Code { area.bottom().saturating_sub(h + 1) } else { area.y + 1 };
     let r = Rect { x: area.x + area.width.saturating_sub(w + 2), y, width: w, height: h }.intersection(area);
@@ -468,7 +548,21 @@ fn draw_toast(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![lead, Span::raw(l)])
         })
         .collect();
+    let shown = lines.len() as u16;
     f.render_widget(Paragraph::new(lines), inner);
+    // A click closes a notice; a question has its answers as buttons.
+    hits.push(r, if ask { Action::Noop } else { Action::DismissToast });
+    if ask && inner.height > shown {
+        let (line, at) = hit::button_line(&[
+            (" y Yes ".into(), t.pill(t.bg, t.success), Action::key('y')),
+            (" n No ".into(), t.pill(t.bg, t.error), Action::key('n')),
+        ]);
+        let row = Rect { y: inner.y + shown, height: 1, ..inner };
+        f.render_widget(Paragraph::new(line), row);
+        for (c, w, a) in at {
+            hits.push(Rect { x: row.x + c, width: w, ..row }, a);
+        }
+    }
 }
 
 /// Splits `text` into lines no wider than `width` columns, at spaces where it can.
@@ -567,7 +661,7 @@ fn draw_editor(f: &mut Frame, editor: &Editor, area: Rect, title: &str, placehol
 
 /// Shows the last `area.height` of `lines`, `scroll` lines up from the bottom (clamped), with a
 /// marker when there's more below.
-fn bottom(f: &mut Frame, lines: Vec<Line<'static>>, area: Rect, scroll: &mut usize) {
+fn bottom(f: &mut Frame, hits: &mut HitMap, lines: Vec<Line<'static>>, marks: &[Mark], area: Rect, scroll: &mut usize) {
     let t = th();
     let h = area.height as usize;
     let max = lines.len().saturating_sub(h);
@@ -575,15 +669,32 @@ fn bottom(f: &mut Frame, lines: Vec<Line<'static>>, area: Rect, scroll: &mut usi
     let start = lines.len().saturating_sub(h + *scroll);
     let shown: Vec<Line> = lines.into_iter().skip(start).take(h).collect();
     f.render_widget(Paragraph::new(shown), area);
+    hits.wheel(area, Wheel::Transcript);
+    hits.marks(area, start, marks);
     if *scroll > 0 && area.height > 0 {
         let tag = format!(" {} more below · PgDn ", *scroll);
         let w = (width(&tag) as u16).min(area.width);
         let r = Rect { x: area.x + area.width - w, y: area.y + area.height - 1, width: w, height: 1 };
         f.render_widget(Paragraph::new(Span::styled(tag, t.pill(t.bg, t.muted))), r);
+        hits.push(r, Action::code(KeyCode::PageDown));
     }
 }
 
-fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
+/// The rows of a list drawn at `inner` (its block's inside), as clicks: `heights` are the items'
+/// heights and `offset` the first one shown. `action` makes the click of item `i`.
+fn list_hits(hits: &mut HitMap, inner: Rect, offset: usize, heights: &[u16], action: impl Fn(usize) -> Action) {
+    let mut y = inner.y;
+    for (i, h) in heights.iter().enumerate().skip(offset) {
+        if y >= inner.bottom() {
+            break;
+        }
+        let height = (*h).min(inner.bottom() - y);
+        hits.row(Rect { y, height, ..inner }, action(i));
+        y += *h;
+    }
+}
+
+fn draw_sidebar(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let focused = app.focus == Focus::Chats;
     let chats = app.sessions.len();
@@ -637,6 +748,8 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(Paragraph::new(msg).alignment(Alignment::Center), Rect { y: inner.y + 1, height: 2.min(inner.height), ..inner });
         return;
     }
+    let heights: Vec<u16> = items.iter().map(|i| i.height() as u16).collect();
+    let list_inner = block.inner(area);
     let sel = if focused { Some(app.chat_sel) } else { app.rows.iter().position(|r| r.chat_id().is_some() && r.chat_id() == current.as_deref()) };
     let mut state = ListState::default().with_selected(sel);
     let hl = if focused { t.selection() } else { Style::new().bg(t.raised) };
@@ -646,6 +759,8 @@ fn draw_sidebar(f: &mut Frame, app: &App, area: Rect) {
         .highlight_symbol(Line::styled(format!("{} ", t.icons.bar), if focused { t.accent() } else { t.fg(t.border) }))
         .highlight_spacing(HighlightSpacing::Always);
     f.render_stateful_widget(list, area, &mut state);
+    list_hits(hits, list_inner, state.offset(), &heights, Action::Sidebar);
+    hits.wheel(list_inner, Wheel::Sidebar);
 }
 
 /// The Thinking section: a chevron and the title line (`Thinking… 4s` / `Thought for 4s`, the
@@ -677,7 +792,7 @@ fn tip(key: &str, what: &str) -> Line<'static> {
     Line::from(vec![Span::styled(format!(" {key} "), t.pill(t.fg, t.raised)), Span::styled(format!("  {what}"), t.muted())])
 }
 
-fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
+fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active: bool) {
     let t = th();
     // The sidebar folds away in narrow terminals.
     let (list, main) = if area.width >= 90 {
@@ -688,8 +803,9 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
         (None, area)
     };
     if let Some(list) = list {
-        draw_sidebar(f, app, list);
+        draw_sidebar(f, app, hits, list);
     }
+    hits.push(main, Action::FocusInput);
     let title = app.current.as_ref().map(|c| c.title.clone()).unwrap_or_else(|| "New chat".into());
     let title = clip(&title, (main.width as usize).saturating_sub(30).max(8));
     let block = pane(&title, active && app.focus == Focus::Input)
@@ -699,6 +815,7 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
     f.render_widget(block, main);
     let w = inner.width as usize;
     let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut marks: Vec<Mark> = Vec::new();
     let streaming_here =
         app.stream.as_ref().filter(|s| s.purpose == Purpose::Chat && app.current.as_ref().is_some_and(|c| c.id == s.conversation_id));
     let now = bragi_core::history::now_ms();
@@ -736,7 +853,10 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
                 width: bw.min(inner.width),
                 height: bh.min(inner.height),
             };
+            let tips = [("Ctrl-O", Action::ctrl('o')), ("Ctrl-E", Action::ctrl('e')), ("F1", Action::code(KeyCode::F(1)))];
+            let tip_marks: Vec<Mark> = card.iter().enumerate().flat_map(|(i, l)| hit::scan_pills(i, l, 0, &tips)).collect();
             f.render_widget(Paragraph::new(card), r);
+            hits.marks(r, 0, &tip_marks);
             return;
         }
         Some(c) => {
@@ -762,14 +882,19 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
                 }
                 if live.is_none() {
                     head.push(when);
+                    let at = line_width(&head);
+                    head.push(Span::styled("  copy", t.dim()));
+                    marks.push(Mark { line: lines.len(), col: at as u16 + 2, w: 4, action: Action::Copy(m.text.clone()) });
                 }
                 lines.push(Line::from(head));
                 let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
+                let gw = line_width(std::slice::from_ref(&gutter)) as u16;
                 let body_w = w.saturating_sub(2);
                 for a in &m.attachments {
                     lines.push(Line::from(vec![gutter.clone(), Span::styled(format!("{} attached {}", t.icons.attach, a.label()), t.muted())]));
                 }
                 let text = live.map(|s| s.text.clone()).unwrap_or_else(|| m.text.clone());
+                let before = lines.len();
                 match live {
                     Some(s) => {
                         let ms = s.thought_ms.or_else(|| s.thinking_since.map(|x| x.elapsed().as_millis() as u64));
@@ -777,7 +902,14 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
                     }
                     None => thinking(&mut lines, &gutter, &m.reasoning, m.thinking_ms, true, app.show_thinking, body_w),
                 }
-                let body = if live.is_some() { crate::markdown::render_streaming(&text, body_w) } else { crate::markdown::render(&text, body_w) };
+                if lines.len() > before {
+                    // The Thinking line folds and unfolds the reasoning, like Ctrl-K.
+                    let w = lines[before].width() as u16 - gw;
+                    marks.push(Mark { line: before, col: gw, w, action: Action::ctrl('k') });
+                }
+                let (body, body_marks) = crate::markdown::render_marked(&text, body_w, live.is_some());
+                let base = lines.len();
+                marks.extend(body_marks.into_iter().map(|m| Mark { line: m.line + base, col: m.col + gw, ..m }));
                 for l in body {
                     let mut spans = vec![gutter.clone()];
                     spans.extend(l.spans);
@@ -800,9 +932,11 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
                 } else {
                     match m.state {
                         MessageState::Stopped => {
+                            marks.push(Mark { line: lines.len(), col: gw, w: 26, action: Action::ctrl('r') });
                             lines.push(Line::from(vec![gutter.clone(), Span::styled("stopped · Ctrl-R continues", t.fg(t.warning))]))
                         }
                         MessageState::Failed => {
+                            marks.push(Mark { line: lines.len(), col: gw, w: 33, action: Action::ctrl('r') });
                             lines.push(Line::from(vec![gutter.clone(), Span::styled("failed · Ctrl-R tries to continue", t.fg(t.error))]))
                         }
                         _ => {}
@@ -815,7 +949,7 @@ fn draw_chat(f: &mut Frame, app: &mut App, area: Rect, active: bool) {
     while lines.last().is_some_and(|l| l.width() == 0) {
         lines.pop();
     }
-    bottom(f, lines, inner, &mut app.scroll);
+    bottom(f, hits, lines, &marks, inner, &mut app.scroll);
 }
 
 /// The user's message: a bubble on the right with the label above it.
@@ -864,14 +998,14 @@ fn qr_lines(text: &str) -> Option<Vec<String>> {
     Some(std::iter::once(blank.clone()).chain(rows).chain(std::iter::once(blank)).collect())
 }
 
-fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_link(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let qr = match &app.state.pair {
         PairState::Offering { link, .. } if app.link_check.is_none() => qr_lines(link),
         _ => None,
     };
     let qw = qr.as_ref().and_then(|q| q.first()).map(|l| l.chars().count()).unwrap_or(0) as u16;
-    let inner = window(f, area, if qr.is_some() { 124 } else { 92 }, area.height, "Link this terminal to your Weirdnet", "Esc back");
+    let inner = window(f, hits, area, if qr.is_some() { 124 } else { 92 }, area.height, "Link this terminal to your Weirdnet", "Esc back");
     // The QR code takes the right side, full height, when there's room beside the words; else
     // it goes under them if it fits.
     let (col, qr_area) = match &qr {
@@ -881,9 +1015,11 @@ fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
         }
         _ => (inner, None),
     };
-    let [top, field] = Layout::vertical([Constraint::Min(3), Constraint::Length(input_height(app.link_input.text(), col.width))]).areas(col);
+    let [top, btns, field] =
+        Layout::vertical([Constraint::Min(3), Constraint::Length(1), Constraint::Length(input_height(app.link_input.text(), col.width))]).areas(col);
     let w = top.width.saturating_sub(1) as usize;
     let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
+    let mut copy_marks: Vec<Mark> = Vec::new();
     let push = |lines: &mut Vec<Line<'static>>, text: &str, style: Style| {
         for l in wrap(text, w) {
             lines.push(Line::styled(l, style));
@@ -934,7 +1070,12 @@ fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
                 ]));
                 push(&mut lines, "c copies it to your clipboard, even over SSH.", t.muted());
                 lines.push(Line::raw(""));
+                // The code itself copies when clicked.
+                let from = lines.len();
                 push(&mut lines, link, t.accent());
+                for i in from..lines.len() {
+                    copy_marks.push(Mark { line: i, col: 0, w: lines[i].width() as u16, action: Action::Copy(link.clone()) });
+                }
                 lines.push(Line::raw(""));
                 if qr_area.is_none()
                     && let Some(qr) = qr_lines(link)
@@ -994,6 +1135,32 @@ fn draw_link(f: &mut Frame, app: &mut App, area: Rect) {
     // Top-anchored: the code stays where it is while the timer runs.
     lines.truncate(top.height as usize);
     f.render_widget(Paragraph::new(lines), top);
+    hits.marks(top, 0, &copy_marks);
+    // The buttons for this step (the letter keys only reach an empty box).
+    let ok = |label: &str, c: char, st: Style| (format!(" {label} "), st, Action::key(c));
+    let esc = |label: &str| (format!(" Esc {label} "), t.pill(t.fg, t.raised), Action::code(KeyCode::Esc));
+    let typed = !app.link_input.is_empty();
+    let buttons: Vec<(String, Style, Action)> = if typed {
+        vec![(" Enter Open or add ".into(), t.pill(t.bg, t.accent), Action::code(KeyCode::Enter)), esc("Clear")]
+    } else if app.link_check.is_some() || matches!(app.state.pair, PairState::Confirm { .. }) {
+        let mut b = vec![ok("y Yes, link", 'y', t.pill(t.bg, t.success)), ok("n No, cancel", 'n', t.pill(t.bg, t.error))];
+        if app.link_check.is_none() {
+            b.push(esc("Stop"));
+        }
+        b
+    } else {
+        match &app.state.pair {
+            PairState::Unpaired | PairState::Failed { .. } => vec![ok("s Show a code", 's', t.pill(t.bg, t.accent)), esc("Back")],
+            PairState::Offering { .. } => vec![ok("c Copy", 'c', t.pill(t.bg, t.accent)), esc("Cancel")],
+            PairState::Waiting { .. } => vec![esc("Cancel")],
+            _ => vec![esc("Back")],
+        }
+    };
+    let (line, at) = hit::button_line(&buttons);
+    f.render_widget(Paragraph::new(line), btns);
+    for (c, w, a) in at {
+        hits.push(Rect { x: btns.x + c, width: w, ..btns }, a);
+    }
     if let Some((r, q)) = qr_area {
         let y = r.y + (r.height.saturating_sub(q.len() as u16)) / 2;
         let ql: Vec<Line> = q.into_iter().map(|l| Line::styled(l, qr_style())).collect();
@@ -1012,7 +1179,7 @@ fn section(title: &str) -> Line<'static> {
     Line::styled(title.to_string(), t.fg(t.header).add_modifier(Modifier::BOLD))
 }
 
-fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_status(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let s = &app.state;
     let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
@@ -1056,10 +1223,22 @@ fn draw_status(f: &mut Frame, app: &mut App, area: Rect) {
             lines.push(Line::styled(format!("  {p}"), t.dim()));
         }
     }
+    lines.push(Line::raw(""));
     let h = (lines.len() + 3) as u16;
-    let inner = window(f, area, 100, h, "Status", "r sync now · Esc back");
-    lines.truncate(inner.height as usize);
+    let inner = window(f, hits, area, 100, h, "Status", "r sync now · Esc back");
+    lines.truncate(inner.height.saturating_sub(1) as usize);
     f.render_widget(Paragraph::new(lines), inner);
+    if inner.height >= 2 {
+        let row = Rect { y: inner.y + inner.height - 1, height: 1, ..inner };
+        let (line, at) = hit::button_line(&[
+            (" r Sync now ".into(), t.pill(t.bg, t.accent), Action::key('r')),
+            (" Esc Close ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Esc)),
+        ]);
+        f.render_widget(Paragraph::new(line), row);
+        for (c, w, a) in at {
+            hits.push(Rect { x: row.x + c, width: w, ..row }, a);
+        }
+    }
 }
 
 fn model_line(m: &bragi_core::ModelInfo, picked: bool) -> Line<'static> {
@@ -1080,7 +1259,7 @@ fn model_line(m: &bragi_core::ModelInfo, picked: bool) -> Line<'static> {
     ])
 }
 
-fn draw_models(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let current = app.effective_target();
     let pool = !matches!(app.targets.get(app.picker_target).map(|x| &x.target), Some(bragi_core::Target::Endpoint { .. }));
@@ -1115,19 +1294,30 @@ fn draw_models(f: &mut Frame, app: &mut App, area: Rect) {
             })
             .collect()
     };
-    let rows = (app.targets.len() + m_items.len().max(2) + 7) as u16;
-    let inner = window(f, area, 100, rows + 2, "Where chats go, and the model", "Tab switch · Enter use · a automatic");
-    let [top, rest] = Layout::vertical([Constraint::Length((app.targets.len() + 2) as u16), Constraint::Min(3)]).areas(Rect {
-        y: inner.y + 1,
-        height: inner.height.saturating_sub(1),
-        ..inner
-    });
+    let rows = (app.targets.len() + m_items.len().max(2) + 8) as u16;
+    let inner = window(f, hits, area, 100, rows + 2, "Where chats go, and the model", "Tab switch · Enter use · a automatic");
+    let [top, rest, btns] = Layout::vertical([Constraint::Length((app.targets.len() + 2) as u16), Constraint::Min(3), Constraint::Length(1)])
+        .areas(Rect { y: inner.y + 1, height: inner.height.saturating_sub(1), ..inner });
+    {
+        let (line, at) = hit::button_line(&[
+            (" Enter Use ".into(), t.pill(t.bg, t.accent), Action::code(KeyCode::Enter)),
+            (" Tab Targets/models ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Tab)),
+            (" a Automatic ".into(), t.pill(t.fg, t.raised), Action::key('a')),
+            (" Esc Close ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Esc)),
+        ]);
+        f.render_widget(Paragraph::new(line), btns);
+        for (c, w, a) in at {
+            hits.push(Rect { x: btns.x + c, width: w, ..btns }, a);
+        }
+    }
+    let (t_count, m_count) = (app.targets.len(), m_items.len());
     let on = t.selection();
     let off = Style::new().bg(t.raised);
     let (thl, mhl) = if app.picker_models_pane { (off, on) } else { (on, off) };
     let bar = |active: bool| Line::styled(format!("{} ", t.icons.bar), if active { t.accent() } else { t.fg(t.border) });
     let mut ts = ListState::default().with_selected(Some(app.picker_target));
     let tblock = pane("Send to", !app.picker_models_pane).style(Style::new().bg(t.surface));
+    let tblock_inner = tblock.inner(top);
     f.render_stateful_widget(
         List::new(t_items)
             .block(tblock)
@@ -1137,8 +1327,12 @@ fn draw_models(f: &mut Frame, app: &mut App, area: Rect) {
         top,
         &mut ts,
     );
+    let t_inner = tblock_inner;
+    list_hits(hits, t_inner, ts.offset(), &vec![1; t_count], Action::PickerTarget);
+    hits.wheel(t_inner, Wheel::PickerTargets);
     let title = if pool { "Models on your nodes" } else { "Models on this endpoint" };
     let mblock = pane(title, app.picker_models_pane).style(Style::new().bg(t.surface));
+    let mblock_inner = mblock.inner(rest);
     if m_items.is_empty() {
         let msg = match (pool, app.linked()) {
             (true, true) => app.core.no_node_message(),
@@ -1159,6 +1353,8 @@ fn draw_models(f: &mut Frame, app: &mut App, area: Rect) {
         rest,
         &mut ms,
     );
+    list_hits(hits, mblock_inner, ms.offset(), &vec![1; m_count], Action::PickerModel);
+    hits.wheel(mblock_inner, Wheel::PickerModels);
 }
 
 /// Whether a form field holds something usable: `Some(problem)` when it doesn't.
@@ -1172,7 +1368,7 @@ fn field_problem(i: usize, text: &str) -> Option<&'static str> {
     }
 }
 
-fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let st = &app.settings;
     let right = if st.form.is_some() { "Tab next · Enter save · Esc cancel" } else { "a add · e edit · t test · d delete · Esc back" };
@@ -1180,6 +1376,10 @@ fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     let ww = 108.min(area.width.saturating_sub(2)).saturating_sub(4);
     let w = ww as usize;
     let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
+    // The line of each endpoint and of each form field, for clicks.
+    let mut endpoint_lines: Vec<usize> = Vec::new();
+    let mut field_lines: Vec<usize> = Vec::new();
+    let mut mode_line = None;
     if st.endpoints.is_empty() {
         for l in wrap("No endpoints. a adds one: any server with an OpenAI-compatible /v1 API (llama.cpp, vLLM, Ollama, a hosted one).", w) {
             lines.push(Line::styled(l, t.muted()));
@@ -1210,6 +1410,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
         if sel && used < w {
             spans.push(Span::styled(" ".repeat(w - used), base));
         }
+        endpoint_lines.push(lines.len());
         lines.push(Line::from(spans));
         if e.insecure {
             lines.push(Line::styled("      plain http to another machine: the key and chats can be read on the way", t.fg(t.warning)));
@@ -1268,9 +1469,11 @@ fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 };
                 cursor = Some(((LABEL + 3 + col.min(fw.saturating_sub(2))) as u16, lines.len() as u16));
             }
+            field_lines.push(lines.len());
             lines.push(Line::from(spans));
             lines.push(Line::raw(""));
         }
+        mode_line = Some(lines.len());
         let mode = if form.alongside {
             "offered next to the Weirdnet pool (a chat can be sent to it)"
         } else {
@@ -1292,9 +1495,56 @@ fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
         }
     }
     lines.push(Line::raw(""));
-    let inner = window(f, area, 108, (lines.len() + 2).max(14) as u16, "Settings · OpenAI-compatible endpoints", right);
+    // The buttons: what the keys do.
+    let pill = |label: &str, a: Action, accent: bool| (format!(" {label} "), if accent { t.pill(t.bg, t.accent) } else { t.pill(t.fg, t.raised) }, a);
+    let buttons: Vec<(String, Style, Action)> = if st.form.is_some() {
+        vec![
+            pill("Ctrl-S Save", Action::ctrl('s'), true),
+            pill("Tab Next field", Action::code(KeyCode::Tab), false),
+            pill("Ctrl-O Pool/fallback", Action::ctrl('o'), false),
+            pill("Esc Cancel", Action::code(KeyCode::Esc), false),
+        ]
+    } else {
+        let have = !st.endpoints.is_empty();
+        let mut b = vec![pill("a Add", Action::key('a'), true)];
+        if have {
+            b.extend([
+                pill("e Edit", Action::key('e'), false),
+                pill("Space On/off", Action::key(' '), false),
+                pill("m Mode", Action::key('m'), false),
+                pill("t Test", Action::key('t'), false),
+                pill("K Up", Action::key('K'), false),
+                pill("J Down", Action::key('J'), false),
+                pill("d Delete", Action::key('d'), false),
+            ]);
+        }
+        b.push(pill("Esc Close", Action::code(KeyCode::Esc), false));
+        b
+    };
+    let (button_row, button_at) = hit::button_line(&buttons);
+    let button_line_idx = lines.len();
+    lines.push(button_row);
+    let inner = window(f, hits, area, 108, (lines.len() + 2).max(14) as u16, "Settings · OpenAI-compatible endpoints", right);
     lines.truncate(inner.height as usize);
     f.render_widget(Paragraph::new(lines), inner);
+    let row_at = |line: usize| Rect { y: inner.y + line as u16, height: 1, ..inner };
+    if st.form.is_none() {
+        for (i, l) in endpoint_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
+            hits.row(row_at(*l), Action::SettingsRow(i));
+        }
+        hits.wheel(inner, Wheel::Settings);
+    }
+    for (i, l) in field_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
+        hits.push(row_at(*l), Action::FormField(i));
+    }
+    if let Some(l) = mode_line.filter(|l| *l < inner.height as usize) {
+        hits.push(row_at(l), Action::ctrl('o'));
+    }
+    if button_line_idx < inner.height as usize {
+        for (c, w, a) in button_at {
+            hits.push(Rect { x: inner.x + c, width: w, ..row_at(button_line_idx) }, a);
+        }
+    }
     if let Some((x, y)) = cursor
         && y < inner.height
     {
@@ -1302,7 +1552,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-fn draw_help(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_help(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let row = |k: &str, v: &str| Line::from(vec![Span::styled(format!("  {k:<26}"), t.accent()), Span::styled(v.to_string(), t.text())]);
     let mut lines = vec![section("Keyboard")];
@@ -1313,7 +1563,8 @@ fn draw_help(f: &mut Frame, app: &mut App, area: Rect) {
     lines.push(Line::raw(""));
     lines.push(section("Code mode (Ctrl-E)"));
     lines.extend(CODE_HELP.iter().map(|(k, v)| row(k, v)));
-    let inner = window(f, area, 112, (lines.len() + 2) as u16, "Help", "↑↓ scroll · Esc back");
+    let inner = window(f, hits, area, 112, (lines.len() + 2) as u16, "Help", "↑↓ scroll · Esc back");
+    hits.wheel(inner, Wheel::Help);
     let h = inner.height as usize;
     let max = lines.len().saturating_sub(h);
     app.help_scroll = app.help_scroll.min(max);
@@ -1327,6 +1578,7 @@ fn draw_help(f: &mut Frame, app: &mut App, area: Rect) {
             Paragraph::new(Span::styled(tag, t.pill(t.bg, t.muted))),
             Rect { x: inner.right().saturating_sub(w), y: inner.bottom() - 1, width: w, height: 1 },
         );
+        hits.push(Rect { x: inner.right().saturating_sub(w), y: inner.bottom() - 1, width: w, height: 1 }, Action::code(KeyCode::PageDown));
     }
 }
 
@@ -1395,7 +1647,7 @@ fn clip(s: &str, width: usize) -> String {
     out
 }
 
-fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let (side, main) = if area.width >= 96 {
         let [a, b] = Layout::horizontal([Constraint::Length(34), Constraint::Min(30)]).areas(area);
@@ -1431,10 +1683,12 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
         if !app.code.gathered.skipped.is_empty() {
             lines.push(Line::styled(format!("{} left out", app.code.gathered.skipped.len()), t.dim()));
         }
+        let mut file_lines: Vec<usize> = Vec::new();
         if !app.code.diffs.is_empty() {
             lines.push(Line::raw(""));
             lines.push(Line::styled("Proposed", t.muted()));
             for (i, d) in app.code.diffs.iter().enumerate() {
+                file_lines.push(lines.len());
                 let (a, r) = d.stats();
                 let on = i == app.code.file;
                 let name = clip(&d.path, sw.saturating_sub(12));
@@ -1447,6 +1701,9 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
             }
         }
         f.render_widget(Paragraph::new(lines).block(block), side);
+        for (i, l) in file_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
+            hits.row(Rect { y: inner.y + *l as u16, height: 1, ..inner }, Action::CodeFile(i));
+        }
     }
     let title = match app.code.phase {
         Phase::Compose => "Code suggestions and rewrites".to_string(),
@@ -1456,6 +1713,7 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
     let block = pane(&clip(&title, (main.width as usize).saturating_sub(6)), app.code.phase != Phase::Compose).padding(Padding::horizontal(1));
     let inner = block.inner(main);
     f.render_widget(block, main);
+    hits.push(main, Action::FocusInput);
     let w = inner.width as usize;
     match app.code.phase {
         Phase::Compose => {
@@ -1492,9 +1750,21 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
                 lines.push(Line::raw(""));
                 lines.extend(crate::markdown::render_streaming(&s.text, w));
             }
-            bottom(f, lines, inner, &mut app.scroll);
+            let marks = match &app.stream {
+                Some(s) => {
+                    // The spinner and a blank line come before the markdown.
+                    let (_, marks) = crate::markdown::render_marked(&s.text, w, true);
+                    marks.into_iter().map(|m| Mark { line: m.line + 2, ..m }).collect()
+                }
+                None => Vec::new(),
+            };
+            bottom(f, hits, lines, &marks, inner, &mut app.scroll);
         }
         Phase::Review => {
+            let (inner, btns) = {
+                let [a, b] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+                (a, b)
+            };
             let Some((d, hi)) = app.code.current() else { return };
             let total: usize = app.code.diffs.iter().map(|d| d.hunks.len()).sum();
             let index = app.code.diffs[..app.code.file].iter().map(|d| d.hunks.len()).sum::<usize>() + hi + 1;
@@ -1513,6 +1783,26 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
                 },
                 Span::styled(format!("  {acc}/{all} accepted"), t.dim()),
             ])];
+            // The accepted/rejected pill toggles the hunk.
+            let pill_at: usize = lines[0].spans[..4].iter().map(|s| width(&s.content)).sum();
+            let pill_w = width(&lines[0].spans[4].content);
+            hits.push(Rect { x: inner.x + pill_at as u16, y: inner.y, width: pill_w as u16, height: 1 }.intersection(inner), Action::key(' '));
+            hits.wheel(inner, Wheel::Hunks);
+            let (line, at) = hit::button_line(&[
+                (" y Accept ".into(), t.pill(t.bg, t.success), Action::key('y')),
+                (" n Reject ".into(), t.pill(t.bg, t.error), Action::key('n')),
+                (" ↑ ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Up)),
+                (" ↓ ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Down)),
+                (" a All ".into(), t.pill(t.fg, t.raised), Action::key('a')),
+                (" r None ".into(), t.pill(t.fg, t.raised), Action::key('r')),
+                (" v View ".into(), t.pill(t.fg, t.raised), Action::key('v')),
+                (" w Write ".into(), t.pill(t.bg, t.accent), Action::key('w')),
+                (" Esc Discard ".into(), t.pill(t.fg, t.raised), Action::code(KeyCode::Esc)),
+            ]);
+            f.render_widget(Paragraph::new(line), btns);
+            for (c, bw, a) in at {
+                hits.push(Rect { x: btns.x + c, width: bw, ..btns }.intersection(btns), a);
+            }
             lines.push(Line::raw(""));
             if !app.code.explanation.is_empty() {
                 for l in wrap(&app.code.explanation, w).into_iter().take(4) {
@@ -1566,11 +1856,11 @@ fn swatch_color(hex: &str) -> Color {
     }
 }
 
-fn draw_themes(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_themes(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let st = &app.themes;
     let right = if st.edit.is_some() { "Editing" } else { "Pick a theme: moving previews it" };
-    let inner = window(f, area, 104, 29, "Theme", right);
+    let inner = window(f, hits, area, 104, 29, "Theme", right);
     if inner.height < 8 || inner.width < 40 {
         return;
     }
@@ -1745,14 +2035,14 @@ fn draw_theme_side(f: &mut Frame, app: &App, area: Rect, editing: bool) {
 
 /// The file picker: a window over code mode with the tree (or the filter's matches), what is
 /// in the context marked, sizes, and the context against its limit.
-fn draw_picker(f: &mut Frame, app: &mut App, area: Rect) {
+fn draw_picker(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     use crate::picker::{self, Mode};
     let t = th();
     let limits = bragi_core::code::Limits::default();
     let used = app.code.gathered.total_bytes();
     let n_files = app.code.gathered.files.len();
     let right = format!("{} (at most {} files)", app.code.summary(), limits.max_files);
-    let inner = window(f, area, 100, area.height.saturating_sub(2), "Files", "Space select · Enter open · / filter");
+    let inner = window(f, hits, area, 100, area.height.saturating_sub(2), "Files", "Space select · Enter open · / filter");
     if inner.height < 4 {
         return;
     }

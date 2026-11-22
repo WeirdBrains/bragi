@@ -2,6 +2,17 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: mouse in the terminal app (branch `feature/tui-mouse`)
+
+**What changed**
+- Clicks, wheel and hover in the terminal app, via a hit map built while drawing ([`hit.rs`](crates/bragi-tui/src/hit.rs), [`app/mouse.rs`](crates/bragi-tui/src/app/mouse.rs)). Most clicks are the same key the button already has.
+- `--mouse` / `--no-mouse` and `BRAGI_TUI_MOUSE`; F8 toggles reporting so text can be selected as usual. The event loop (now in [`entry.rs`](crates/bragi-tui/src/entry.rs)) turns capture on and off to match, and a panic hook turns it off so a crash doesn't leave the shell eating clicks.
+- The Theme screen and the file picker keep their windows; a click outside or on the close button dismisses them when it is safe (not mid-edit).
+
+**Tests**: `crates/bragi-tui/tests/mouse.rs` (clicks, wheel, hover, F8).
+
+**Not tested**: click-to-select on every Theme row and every file-picker row (those screens landed after this branch; the windows still take clicks and close).
+
 ## 2026-11-22: LF-39, one `bragi` command: the terminal app is in it (branch `feature/bragi-single-binary`)
 
 **What changed**
