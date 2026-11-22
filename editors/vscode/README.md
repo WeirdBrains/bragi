@@ -10,8 +10,12 @@ that install from a VSIX or Open VSX.
 - **Inline suggestions** as you type (ghost text; Tab accepts). Bragi sees the code around the
   cursor and the file's problems.
 - **Rewrite selection or file** (`Bragi: Rewrite Selection…`, Ctrl+Alt+R / Cmd+Alt+R): say how
-  the code should change, review the change in a diff, then accept (✓, Ctrl+Alt+Enter) or reject
-  (✕, Ctrl+Alt+Backspace).
+  the code should change, then review it hunk by hunk. Each hunk has Accept and Reject above it
+  in the editor (or Ctrl+Alt+Y / Ctrl+Alt+N for the hunk at the cursor), its removed lines are
+  marked and a hover shows the change, and the whole proposal is in a diff beside it. Accept All
+  (Ctrl+Alt+Enter) and Reject All (Ctrl+Alt+Backspace) finish it at once. Accepting is an
+  ordinary edit, so the editor's undo takes it back and the hunk is there to review again; your
+  own edits while reviewing go into the proposal too, so they never show up as hunks.
 - **Chat panel** (the Bragi icon in the activity bar) that can include the current file, the
   selection, other open files and the file's problems. Code blocks in answers have Insert and Copy.
   On the Bragi target, chats are kept in Bragi's history like any other.
@@ -66,12 +70,15 @@ to Weird Brains. Inline suggestions are off in untrusted workspaces.
   take an optional `target`)
 - `POST /v1/code/suggest`, `POST /v1/code/rewrite`, `POST /v1/code/chat` (server-sent events),
   `POST /v1/cancel`
+- `POST /v1/code/hunks` (the hunks between two texts) and `POST /v1/code/apply` (a text with only
+  the accepted hunks), for reviewing a rewrite hunk by hunk
 - `GET /v1/models` and `POST /v1/chat/completions`, OpenAI-compatible, so other local tools can
   use Bragi too.
 
-The prompts, the reading of code out of answers and the diffs live in `bragi-core`
-(`crates/bragi-core/src/code.rs`), shared with Bragi's terminal app. The direct target uses a
-TypeScript copy (`src/prompts.ts`) kept in step with it.
+The prompts, the reading of code out of answers, the diffs and the hunks live in `bragi-core`
+(`crates/bragi-core/src/code`), shared with Bragi's terminal app, which reviews hunks the same
+way. The direct target, which has no Bragi behind it, uses TypeScript copies (`src/prompts.ts`,
+`src/hunks.ts`) kept in step with them.
 
 ## Develop
 

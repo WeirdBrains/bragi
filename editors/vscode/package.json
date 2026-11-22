@@ -56,15 +56,32 @@
       },
       {
         "command": "bragi.acceptRewrite",
-        "title": "Accept Rewrite",
+        "title": "Accept All Hunks of the Rewrite",
         "category": "Bragi",
         "icon": "$(check)"
       },
       {
         "command": "bragi.rejectRewrite",
-        "title": "Reject Rewrite",
+        "title": "Reject All Hunks of the Rewrite",
         "category": "Bragi",
         "icon": "$(close)"
+      },
+      {
+        "command": "bragi.acceptHunk",
+        "title": "Accept Rewrite Hunk",
+        "category": "Bragi",
+        "icon": "$(check)"
+      },
+      {
+        "command": "bragi.rejectHunk",
+        "title": "Reject Rewrite Hunk",
+        "category": "Bragi",
+        "icon": "$(close)"
+      },
+      {
+        "command": "bragi.showRewriteDiff",
+        "title": "Show Rewrite Diff",
+        "category": "Bragi"
       },
       {
         "command": "bragi.openChat",
@@ -130,6 +147,18 @@
         "key": "ctrl+alt+backspace",
         "mac": "cmd+alt+backspace",
         "when": "bragi.rewritePending"
+      },
+      {
+        "command": "bragi.acceptHunk",
+        "key": "ctrl+alt+y",
+        "mac": "cmd+alt+y",
+        "when": "bragi.rewritePending && editorTextFocus"
+      },
+      {
+        "command": "bragi.rejectHunk",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n",
+        "when": "bragi.rewritePending && editorTextFocus"
       }
     ],
     "menus": {
@@ -164,6 +193,18 @@
         },
         {
           "command": "bragi.rejectRewrite",
+          "when": "bragi.rewritePending"
+        },
+        {
+          "command": "bragi.acceptHunk",
+          "when": "bragi.rewritePending"
+        },
+        {
+          "command": "bragi.rejectHunk",
+          "when": "bragi.rewritePending"
+        },
+        {
+          "command": "bragi.showRewriteDiff",
           "when": "bragi.rewritePending"
         }
       ]
