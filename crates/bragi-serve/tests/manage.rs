@@ -80,8 +80,10 @@ async fn links_and_sessions_start_empty_and_bad_input_is_refused() {
     let app = app(d.path());
     let (_, v) = call(&app, "GET", "/v1/links", None, true).await;
     assert_eq!(v["links"].as_array().unwrap().len(), 0);
-    let (_, v) = call(&app, "GET", "/v1/sessions?limit=5", None, true).await;
-    assert_eq!(v["sessions"].as_array().unwrap().len(), 0);
+    // History is in the context store, which is attached only after the device is linked.
+    let (s, v) = call(&app, "GET", "/v1/sessions?limit=5", None, true).await;
+    assert_eq!(s, StatusCode::SERVICE_UNAVAILABLE, "{v}");
+    assert_eq!(v["error"]["kind"], "not_paired");
     let (s, _) = call(&app, "POST", "/v1/links/remove", Some(json!({ "address": "/ip4/1.2.3.4/tcp/1" })), true).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     let (s, _) = call(&app, "POST", "/v1/links/node", Some(json!({ "address": "not an address" })), true).await;
