@@ -9,10 +9,14 @@ use std::time::Duration;
 use bragi_core::demo::DemoNode;
 use bragi_core::{Config, Core, PairState, Transport};
 
-use crate::{DEFAULT_PORT, bind, load_or_create_token, serve, token_path};
+use crate::{Activity, DEFAULT_PORT, bind, ensure, load_or_create_token, serve_tracked, token_path};
 
 pub const USAGE: &str = "usage:
   bragi serve [--home DIR] [--port PORT] [--demo]   serve the local API on 127.0.0.1
+        [--idle-timeout MINUTES]                   stop after that long with no client (default: never)
+  bragi serve ensure [--home DIR] [--port PORT]     start a server in the background if none is
+                                                   running (reuses one that is); prints its state
+  bragi serve status [--home DIR] [--port PORT]     is a server running? exit 0 if so
   bragi serve token [--home DIR]                    print the API token, to paste into an editor
   bragi serve token-path [--home DIR]               print where the token is kept
 
@@ -47,16 +51,25 @@ enum Cmd {
     Serve,
     Token,
     TokenPath,
+    Ensure,
+    Status,
 }
 
 /// Runs `bragi serve` with the arguments after `serve`.
 pub fn run(args: impl IntoIterator<Item = String>) -> ExitCode {
     let (mut home, mut port, mut demo, mut cmd) = (None::<PathBuf>, DEFAULT_PORT, false, Cmd::Serve);
+    let mut idle = 0u64;
     let mut args = args.into_iter();
     while let Some(a) = args.next() {
         match a.as_str() {
             "token" => cmd = Cmd::Token,
             "token-path" => cmd = Cmd::TokenPath,
+            "ensure" => cmd = Cmd::Ensure,
+            "status" => cmd = Cmd::Status,
+            "--idle-timeout" => match args.next().and_then(|p| p.parse().ok()) {
+                Some(m) => idle = m,
+                None => return usage(),
+            },
             "--home" => match args.next() {
                 Some(h) => home = Some(h.into()),
                 None => return usage(),
@@ -86,7 +99,38 @@ pub fn run(args: impl IntoIterator<Item = String>) -> ExitCode {
             }
             Err(e) => fail(e),
         },
-        Cmd::Serve => match serve_blocking(home, port, demo) {
+        Cmd::Ensure => match ensure::ensure(&ensure::Options::new(home, port)) {
+            Ok(o) => {
+                println!(
+                    "{}",
+                    match o {
+                        ensure::Outcome::Reused { version } => format!("bragi serve {version} is already running on port {port}"),
+                        ensure::Outcome::Started { version } => format!("started bragi serve {version} on port {port}"),
+                    }
+                );
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(e.into()),
+        },
+        Cmd::Status => match ensure::probe(&home, port) {
+            ensure::Probe::Ready { version } => {
+                println!("running: bragi serve {version} on port {port}");
+                ExitCode::SUCCESS
+            }
+            ensure::Probe::OtherToken { .. } => {
+                println!("a Bragi server on port {port} uses another Bragi home");
+                ExitCode::FAILURE
+            }
+            ensure::Probe::NotBragi => {
+                println!("port {port} is used by something else");
+                ExitCode::FAILURE
+            }
+            ensure::Probe::Down => {
+                println!("not running");
+                ExitCode::FAILURE
+            }
+        },
+        Cmd::Serve => match serve_blocking(home, port, demo, idle) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => fail(e),
         },
@@ -103,7 +147,7 @@ fn fail(e: anyhow::Error) -> ExitCode {
     ExitCode::FAILURE
 }
 
-fn serve_blocking(home: PathBuf, port: u16, demo: bool) -> anyhow::Result<()> {
+fn serve_blocking(home: PathBuf, port: u16, demo: bool, idle_minutes: u64) -> anyhow::Result<()> {
     let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).thread_name("bragi-serve").enable_all().build()?;
     rt.block_on(async move {
         let mut _scratch = None;
@@ -135,10 +179,28 @@ fn serve_blocking(home: PathBuf, port: u16, demo: bool) -> anyhow::Result<()> {
             token_path(&token_home).display(),
             if demo { ", demo node" } else { "" }
         );
-        let shutdown = async {
-            let _ = tokio::signal::ctrl_c().await;
+        let activity = Activity::default();
+        let idle_for = (idle_minutes > 0).then(|| Duration::from_secs(idle_minutes * 60));
+        if let Some(d) = idle_for {
+            eprintln!("bragi serve: stops after {} idle minute{}", d.as_secs() / 60, if d.as_secs() == 60 { "" } else { "s" });
+        }
+        let watch = activity.clone();
+        let shutdown = async move {
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {}
+                () = async {
+                    match idle_for {
+                        Some(d) => watch.idle(d).await,
+                        None => std::future::pending().await,
+                    }
+                } => eprintln!("bragi serve: no client for a while, stopping"),
+            }
         };
-        serve(core.clone(), token, listener, shutdown).await?;
+        // `server.pid` says a server is up (a stale one is told apart by nothing answering).
+        let _ = ensure::write_pid_file(&token_home, listener.local_addr()?.port());
+        let result = serve_tracked(core.clone(), token, listener, shutdown, Some(activity)).await;
+        ensure::remove_pid_file(&token_home);
+        result?;
         core.shutdown();
         Ok(())
     })

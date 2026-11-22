@@ -14,13 +14,15 @@ use crate::session::{Launch, Session};
 
 pub const USAGE: &str = "\
 usage:
-  bragi-tui [PATH] [--home DIR] [--demo] [--root DIR]  the terminal app (F1 lists its keys)
+  bragi-tui [PATH] [--home DIR] [--demo] [--no-serve] [--root DIR]  the terminal app (F1 lists its keys)
                                                    with a PATH it opens code mode there: a folder is
                                                    the root and its files the context; a file is
                                                    opened in its git repository (or its folder).
                                                    `bragi-tui .` works here; use ./link for a path
                                                    named like a command, or --path PATH
       [--theme NAME|FILE.toml] [--mode dark|light|system]
+                                                   --no-serve (or BRAGI_TUI_SERVE=off) doesn't start
+                                                   `bragi serve` for the editors; it is on otherwise
                                                    its look (weirdnet-themes: bragi, the default,
                                                    tokyo-night, catppuccin, gruvbox, dracula, nord,
                                                    one, solarized). NO_COLOR, BRAGI_TUI_COLOR
@@ -48,6 +50,8 @@ pub struct Args {
     pub open: Option<String>,
     pub command: Cmd,
     pub theme: crate::theme::Choice,
+    /// Don't make sure `bragi serve` is running.
+    pub no_serve: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -98,6 +102,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 out.open = Some(value("--path")?);
             }
             "--demo" => out.launch.demo = true,
+            "--no-serve" => out.no_serve = true,
             "--theme" => out.theme.theme = Some(value("--theme")?),
             "--mode" => out.theme.mode = Some(value("--mode")?),
             "--rewrite" => {

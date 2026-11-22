@@ -124,6 +124,11 @@
         "category": "Bragi"
       },
       {
+        "command": "bragi.restartServer",
+        "title": "Start/Restart Server",
+        "category": "Bragi"
+      },
+      {
         "command": "bragi.showStatus",
         "title": "Show Connection Status",
         "category": "Bragi"
@@ -260,6 +265,17 @@
           ],
           "default": null,
           "description": "Where Bragi sends code requests: null for Bragi's default (the Weirdnet pool), or a target from \"Bragi: Choose Target and Model\" (the pool, or an endpoint and model from Bragi's Settings)."
+        },
+        "bragi.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start `bragi serve` in the background when the Bragi target is used and nothing answers on bragi.serveUrl. A server it starts stops after 30 idle minutes; one that was already running is never touched."
+        },
+        "bragi.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "The `bragi` program to start the server with; empty looks for `bragi` (then `bragi-serve`) on the PATH."
         },
         "bragi.tokenFile": {
           "type": "string",
