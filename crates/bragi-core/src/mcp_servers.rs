@@ -187,7 +187,8 @@ impl McpServers {
     fn save(&self, list: &[McpServer]) -> Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         let bytes = serde_json::to_vec_pretty(list).map_err(storage)?;
-        crate::identity::write_private_file(&self.dir.join(MCP_FILE), &bytes)
+        crate::identity::write_private_file(&self.dir.join(MCP_FILE), &bytes)?;
+        Ok(())
     }
 
     pub fn list(&self) -> Vec<McpServer> {
