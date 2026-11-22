@@ -1,4 +1,5 @@
-# nfpm config for `bragi-standalone`: the desktop shell binary only, no desktop entry or icons.
+# nfpm config for `bragi-standalone`: the desktop shell and terminal app binaries only, no desktop
+# entry or icons.
 # Used by scripts/dist-linux.sh, which sets BRAGI_VERSION, BRAGI_ARCH and BRAGI_BUNDLE.
 name: bragi-standalone
 arch: "${BRAGI_ARCH}"
@@ -13,8 +14,8 @@ vendor: "Weird Brains LLC"
 homepage: https://github.com/WeirdBrains/bragi
 license: BSD-3-Clause
 description: "Chat with your private AI cloud (Ymir) over Weirdnet. The binary only, without desktop integration."
-provides: [bragi]
-conflicts: [bragi, bragi-bin]
+provides: [bragi, bragi-tui]
+conflicts: [bragi, bragi-bin, bragi-tui]
 overrides:
   deb:
     depends: [libc6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6]
@@ -25,6 +26,9 @@ overrides:
 contents:
   - src: "${BRAGI_BUNDLE}/bin/bragi"
     dst: /usr/bin/bragi
+    file_info: {mode: 0755}
+  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
+    dst: /usr/bin/bragi-tui
     file_info: {mode: 0755}
   - src: "${BRAGI_BUNDLE}/LICENSE"
     dst: /usr/share/licenses/bragi-standalone/LICENSE

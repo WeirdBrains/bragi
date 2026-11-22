@@ -1,0 +1,26 @@
+[package]
+name = "bragi-tui"
+description = "Bragi in a terminal (local or over SSH): link, sessions and folders, endpoints, chat with Markdown and reasoning, attachments, node status and code suggestions and rewrites, all drawn from bragi-core."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[[bin]]
+name = "bragi-tui"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+bragi-core.workspace = true
+qrcode = { version = "0.14", default-features = false }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache", "underline-color"] }
+tempfile.workspace = true
+tokio.workspace = true
+unicode-width = "0.2"
+
+[lints]
+workspace = true

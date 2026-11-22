@@ -1,4 +1,5 @@
-# nfpm config for the `bragi` package: the desktop shell with its desktop entry and icons.
+# nfpm config for the `bragi` package: the desktop shell with its desktop entry and icons, and the
+# terminal app (bragi-tui).
 # Used by scripts/dist-linux.sh, which sets BRAGI_VERSION, BRAGI_ARCH and BRAGI_BUNDLE.
 name: bragi
 arch: "${BRAGI_ARCH}"
@@ -13,7 +14,8 @@ vendor: "Weird Brains LLC"
 homepage: https://github.com/WeirdBrains/bragi
 license: BSD-3-Clause
 description: "Chat with your private AI cloud (Ymir) over Weirdnet. Desktop app."
-conflicts: [bragi-standalone, bragi-bin]
+provides: [bragi-tui]
+conflicts: [bragi-standalone, bragi-bin, bragi-tui]
 overrides:
   deb:
     depends: [libc6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6]
@@ -24,6 +26,9 @@ overrides:
 contents:
   - src: "${BRAGI_BUNDLE}/bin/bragi"
     dst: /usr/bin/bragi
+    file_info: {mode: 0755}
+  - src: "${BRAGI_BUNDLE}/bin/bragi-tui"
+    dst: /usr/bin/bragi-tui
     file_info: {mode: 0755}
   - src: "${BRAGI_BUNDLE}/share/applications/bragi.desktop"
     dst: /usr/share/applications/bragi.desktop
