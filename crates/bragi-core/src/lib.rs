@@ -10,6 +10,7 @@
 //!   reviewable hunk diffs and an undo journal, shared by the editor extension and the terminal app.
 
 pub mod agent;
+pub mod appearance;
 pub mod attach;
 pub mod catalog;
 pub mod chat;
@@ -35,6 +36,7 @@ mod targets;
 pub mod think;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
+pub use crate::appearance::{Appearance, ModePref, Palette, Preference, ThemeRow};
 pub use crate::attach::{Attachment, Media};
 pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;

@@ -18,6 +18,9 @@ use crate::editor::Editor;
 use crate::settings::{self, Form, Settings};
 use crate::tree::{self, Row};
 
+mod themes_screen;
+pub use themes_screen::{Ask, Confirm, EditState, ThemeScreen, parse_hex};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
     Chat,
@@ -26,6 +29,7 @@ pub enum View {
     Status,
     Models,
     Settings,
+    Themes,
     Help,
 }
 
@@ -100,6 +104,7 @@ pub struct App {
     pub endpoint_models: Vec<String>,
     pub models_for: Option<String>,
     pub settings: Settings,
+    pub themes: ThemeScreen,
     /// The folder a `/folder` typed after `n` in the sidebar goes in.
     pub new_folder_parent: Option<String>,
     /// Show the reasoning of every answer, not only the title line.
@@ -183,6 +188,7 @@ impl App {
             endpoint_models: Vec::new(),
             models_for: None,
             settings: Settings::default(),
+            themes: ThemeScreen::default(),
             show_thinking: false,
             new_folder_parent: None,
             notice: None,
@@ -471,6 +477,7 @@ impl App {
             Event::Key(k) if k.kind != KeyEventKind::Release => self.on_key(k),
             Event::Paste(text) => match self.view {
                 View::Link => self.link_input.insert(text.trim()),
+                View::Themes => self.themes_paste(&text),
                 View::Settings => {
                     if let Some(f) = &mut self.settings.form {
                         f.fields[f.field].insert(text.trim());
@@ -491,7 +498,7 @@ impl App {
         if view == self.view {
             return;
         }
-        const OVERLAYS: [View; 4] = [View::Help, View::Models, View::Status, View::Settings];
+        const OVERLAYS: [View; 5] = [View::Help, View::Models, View::Status, View::Settings, View::Themes];
         if OVERLAYS.contains(&view) && !OVERLAYS.contains(&self.view) {
             self.back = self.view;
         }
@@ -510,12 +517,16 @@ impl App {
         if view == View::Help {
             self.help_scroll = 0;
         }
+        if view == View::Themes {
+            self.open_themes();
+        }
         self.auto_link = false;
         self.view = view;
     }
 
     fn close(&mut self) {
-        self.view = if matches!(self.view, View::Help | View::Models | View::Status | View::Settings) { self.back } else { View::Chat };
+        self.view =
+            if matches!(self.view, View::Help | View::Models | View::Status | View::Settings | View::Themes) { self.back } else { View::Chat };
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
@@ -543,6 +554,8 @@ impl App {
             KeyCode::F(5) => return self.open(View::Status),
             KeyCode::Char('p') if ctrl => return self.open(View::Settings),
             KeyCode::F(6) => return self.open(View::Settings),
+            KeyCode::Char('g') if ctrl => return self.open(View::Themes),
+            KeyCode::F(7) => return self.open(View::Themes),
             KeyCode::Char('k') if ctrl => {
                 self.show_thinking = !self.show_thinking;
                 return self.say(if self.show_thinking { "Showing the reasoning." } else { "Reasoning folded." });
@@ -590,6 +603,7 @@ impl App {
             },
             View::Models => self.models_key(k),
             View::Settings => self.settings_key(k, ctrl),
+            View::Themes => self.themes_key(k),
             View::Status => match k.code {
                 KeyCode::Esc | KeyCode::Char('q') => self.close(),
                 KeyCode::Char('r') => {

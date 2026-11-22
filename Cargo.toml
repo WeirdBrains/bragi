@@ -24,6 +24,8 @@ weirdnet-device-link = "=0.3.2"
 weirdnet-net = "=0.8.2"
 weirdnet-sync = "0.5.2"
 weirdnet-text = "0.1"
+# Themes (LF-33): the TOML theme format, built-ins and the user-theme helpers (0.2.0).
+weirdnet-themes = { version = "0.2.0", default-features = false }
 
 anyhow = "1"
 # OpenAI-compatible endpoints (LF-11): rustls so Android needs no system TLS; streaming bodies.
