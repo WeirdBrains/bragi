@@ -223,7 +223,9 @@ pub fn run(args: Args) -> i32 {
             Ok(())
         }
         Cmd::Undo { force } => undo(&args, force),
-        Cmd::McpServers(rest) => crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask))),
+        Cmd::McpServers(rest) => {
+            crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask)))
+        }
         Cmd::Link { arg, yes } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {

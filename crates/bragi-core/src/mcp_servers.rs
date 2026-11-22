@@ -170,7 +170,8 @@ pub fn slug(name: &str) -> String {
 fn loopback(url: &str) -> bool {
     let Some(rest) = url.strip_prefix("http://") else { return false };
     let host = rest.split(['/', '?']).next().unwrap_or_default();
-    let name = if let Some(r) = host.strip_prefix('[') { r.split(']').next().unwrap_or_default() } else { host.split(':').next().unwrap_or_default() };
+    let name =
+        if let Some(r) = host.strip_prefix('[') { r.split(']').next().unwrap_or_default() } else { host.split(':').next().unwrap_or_default() };
     name == "localhost" || name == "::1" || name.parse::<std::net::Ipv4Addr>().is_ok_and(|a| a.is_loopback())
 }
 
@@ -365,9 +366,7 @@ impl McpServers {
     /// `<slug>.<tool>`. A local command runs now, as the user.
     pub async fn connect(&self, ep: &Endpoints, id: &str) -> Result<McpSource> {
         let s = self.get(id).ok_or_else(|| missing(id))?;
-        let get = |kind: &str, key: &str| -> Result<Secret> {
-            Ok(Secret::new(ep.get_secret(&secret_name(&s.id, kind, key))?.unwrap_or_default()))
-        };
+        let get = |kind: &str, key: &str| -> Result<Secret> { Ok(Secret::new(ep.get_secret(&secret_name(&s.id, kind, key))?.unwrap_or_default())) };
         let options = ClientOptions { timeout: Duration::from_secs(s.timeout_secs.max(1)), client_name: "bragi".into(), ..ClientOptions::default() };
         let source = match s.transport {
             McpTransport::Stdio => {

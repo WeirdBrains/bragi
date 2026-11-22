@@ -214,7 +214,9 @@ pub fn wire_messages(messages: &[Message]) -> serde_json::Value {
 pub fn wire_tools(tools: &[weirdnet_agent::ToolSpec]) -> serde_json::Value {
     tools
         .iter()
-        .map(|t| serde_json::json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": t.input_schema } }))
+        .map(
+            |t| serde_json::json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": t.input_schema } }),
+        )
         .collect()
 }
 

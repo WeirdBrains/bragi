@@ -31,6 +31,9 @@ pub const DEFAULT_COMPANION: &str = "assistant";
 /// Most model turns one task may take when Bragi runs the loop itself.
 pub const MAX_STEPS: u32 = 8;
 
+/// Called with the tool name when the user answers [`Choice::Always`].
+type OnAlways = Arc<dyn Fn(&str) + Send + Sync>;
+
 /// What a tool call's state is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -71,7 +74,7 @@ struct CardApprover {
     /// Tools the user chose "always allow" for: their cards are answered without being shown.
     always: std::collections::HashSet<String>,
     /// Called with the tool when the user answers [`Choice::Always`].
-    on_always: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+    on_always: Option<OnAlways>,
 }
 
 #[async_trait]
@@ -228,10 +231,19 @@ impl Core {
         let companion = companion.filter(|c| !c.is_empty()).unwrap_or_else(|| DEFAULT_COMPANION.into());
         let label = node.clone();
         let name = companion.clone();
-        self.spawn_agent(conversation, prompt, attachments, node, companion, Default::default(), None, move |input, messages, ev_tx, approver, cancel, _out| async move {
-            let request = TaskRequest::new(AgentId::new(name.as_str()), input, messages);
-            run_task(&*net.dialer, &label, request, Some(ev_tx), &approver, &cancel).await.map(|o| o.outcome.stop).map_err(|e| agent_error(&e))
-        })
+        self.spawn_agent(
+            conversation,
+            prompt,
+            attachments,
+            node,
+            companion,
+            Default::default(),
+            None,
+            move |input, messages, ev_tx, approver, cancel, _out| async move {
+                let request = TaskRequest::new(AgentId::new(name.as_str()), input, messages);
+                run_task(&*net.dialer, &label, request, Some(ev_tx), &approver, &cancel).await.map(|o| o.outcome.stop).map_err(|e| agent_error(&e))
+            },
+        )
     }
 
     /// Agent mode on an OpenAI-compatible endpoint (no Ymir node): Bragi runs the tool-call loop
@@ -274,37 +286,52 @@ impl Core {
             })
         };
         let companion = DEFAULT_COMPANION.to_string();
-        self.spawn_agent(conversation, prompt, attachments, label.clone(), companion, always, Some(on_always), move |input, messages, ev_tx, approver, cancel, out| async move {
-            let model = match model {
-                Some(m) => m,
-                None => crate::openai::list_models(&target)
-                    .await
-                    .ok()
-                    .and_then(|m| m.into_iter().next())
-                    .ok_or_else(|| CoreError::new(ErrorKind::BadRequest, format!("{label} has no model picked and lists none")))?,
-            };
-            let mut registry = weirdnet_agent::ToolRegistry::new();
-            for s in &servers {
-                let notice = |text: String| {
-                    let _ = out.send(ChatEvent::Notice { text });
+        self.spawn_agent(
+            conversation,
+            prompt,
+            attachments,
+            label.clone(),
+            companion,
+            always,
+            Some(on_always),
+            move |input, messages, ev_tx, approver, cancel, out| async move {
+                let model = match model {
+                    Some(m) => m,
+                    None => crate::openai::list_models(&target)
+                        .await
+                        .ok()
+                        .and_then(|m| m.into_iter().next())
+                        .ok_or_else(|| CoreError::new(ErrorKind::BadRequest, format!("{label} has no model picked and lists none")))?,
                 };
-                match core.inner.mcp.connect(&core.inner.endpoints, &s.id).await {
-                    Ok(source) => match source.client().list_tools().await {
-                        Ok(_) => registry.add_source(Arc::new(source)),
-                        Err(e) => notice(format!("{} left out: couldn't list its tools ({e:?})", s.name)),
-                    },
-                    Err(e) => notice(format!("{} left out: {}", s.name, e.message)),
+                let mut registry = weirdnet_agent::ToolRegistry::new();
+                for s in &servers {
+                    let notice = |text: String| {
+                        let _ = out.send(ChatEvent::Notice { text });
+                    };
+                    match core.inner.mcp.connect(&core.inner.endpoints, &s.id).await {
+                        Ok(source) => match source.client().list_tools().await {
+                            Ok(_) => registry.add_source(Arc::new(source)),
+                            Err(e) => notice(format!("{} left out: couldn't list its tools ({e:?})", s.name)),
+                        },
+                        Err(e) => notice(format!("{} left out: {}", s.name, e.message)),
+                    }
                 }
-            }
-            registry.refresh().await.map_err(|e| CoreError::new(ErrorKind::Unavailable, e.to_string()))?;
-            let identity = weirdnet_agent::AgentIdentity::new(DEFAULT_COMPANION, "Assistant", weirdnet_agent::AgentKind::Local);
-            let mut config = weirdnet_agent::AgentConfig::new(identity);
-            config.budget.max_steps = MAX_STEPS;
-            let backend = Arc::new(crate::openai::EndpointBackend::new(target, model, label));
-            let mut session = weirdnet_agent::AgentSession::new(config, backend, Arc::new(registry), weirdnet_agent::Policy::new().shared(), Arc::new(approver));
-            session.restore_messages(messages);
-            Ok(session.run(input, Some(ev_tx), cancel).await.stop)
-        })
+                registry.refresh().await.map_err(|e| CoreError::new(ErrorKind::Unavailable, e.to_string()))?;
+                let identity = weirdnet_agent::AgentIdentity::new(DEFAULT_COMPANION, "Assistant", weirdnet_agent::AgentKind::Local);
+                let mut config = weirdnet_agent::AgentConfig::new(identity);
+                config.budget.max_steps = MAX_STEPS;
+                let backend = Arc::new(crate::openai::EndpointBackend::new(target, model, label));
+                let mut session = weirdnet_agent::AgentSession::new(
+                    config,
+                    backend,
+                    Arc::new(registry),
+                    weirdnet_agent::Policy::new().shared(),
+                    Arc::new(approver),
+                );
+                session.restore_messages(messages);
+                Ok(session.run(input, Some(ev_tx), cancel).await.stop)
+            },
+        )
     }
 
     /// The shared start of an agent task: records the turn, runs `run` (which streams events and
@@ -318,11 +345,18 @@ impl Core {
         node: String,
         companion: String,
         always: std::collections::HashSet<String>,
-        on_always: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+        on_always: Option<OnAlways>,
         run: F,
     ) -> Result<ChatHandle>
     where
-        F: FnOnce(String, Vec<weirdnet_agent::Message>, mpsc::UnboundedSender<AgentEvent>, CardApprover, CancelToken, mpsc::UnboundedSender<ChatEvent>) -> Fut
+        F: FnOnce(
+                String,
+                Vec<weirdnet_agent::Message>,
+                mpsc::UnboundedSender<AgentEvent>,
+                CardApprover,
+                CancelToken,
+                mpsc::UnboundedSender<ChatEvent>,
+            ) -> Fut
             + Send
             + 'static,
         Fut: std::future::Future<Output = Result<StopReason>> + Send + 'static,

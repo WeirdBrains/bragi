@@ -92,9 +92,11 @@ async fn ask(core: &Core, target: Option<Target>, conv: Option<&str>, choice: Ch
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_chat_on_an_endpoint_uses_an_outside_servers_tool_after_the_card_is_approved() {
     let tmp = tempfile::tempdir().unwrap();
-    let core = Core::start(bragi_core::Config::new(tmp.path().join("app"), "t")).unwrap();
+    let (core, _demo) = linked(tmp.path()).await;
     let url = demo_server("tok-123").await;
-    let mock = mock_openai(None, vec!["mock-1"], Chat::Tools("demo.echo", r#"{"text":"hi from the server"}"#, vec!["It said: ", "hi from the server"])).await;
+    let mock =
+        mock_openai(None, vec!["mock-1"], Chat::Tools("demo.echo", r#"{"text":"hi from the server"}"#, vec!["It said: ", "hi from the server"]))
+            .await;
     let target = endpoint(&core, &mock.url).await;
 
     // No server yet: a plain chat, no tools sent.
@@ -119,7 +121,9 @@ async fn a_chat_on_an_endpoint_uses_an_outside_servers_tool_after_the_card_is_ap
     let last = bodies.last().unwrap();
     let msgs = last["messages"].as_array().unwrap();
     assert!(msgs.iter().any(|m| m["role"] == "assistant" && m["tool_calls"][0]["function"]["name"] == "demo.echo"));
-    assert!(msgs.iter().any(|m| m["role"] == "tool" && m["tool_call_id"] == "call_1" && m["content"].as_str().unwrap().contains("hi from the server")));
+    assert!(
+        msgs.iter().any(|m| m["role"] == "tool" && m["tool_call_id"] == "call_1" && m["content"].as_str().unwrap().contains("hi from the server"))
+    );
 
     // Declined: the tool never runs.
     let events = ask(&core, Some(target.clone()), None, Choice::Deny).await;
@@ -144,7 +148,7 @@ async fn a_chat_on_an_endpoint_uses_an_outside_servers_tool_after_the_card_is_ap
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_server_that_is_down_or_refuses_the_token_is_left_out_and_secrets_stay_out_of_files() {
     let tmp = tempfile::tempdir().unwrap();
-    let core = Core::start(bragi_core::Config::new(tmp.path().join("app"), "t")).unwrap();
+    let (core, _demo) = linked(tmp.path()).await;
     let url = demo_server("right-token").await;
     let mock = mock_openai(None, vec!["mock-1"], Chat::Words(vec!["plain answer"])).await;
     let target = endpoint(&core, &mock.url).await;

@@ -112,7 +112,10 @@ fn from_env(var: &str) -> Result<String, String> {
 
 fn find(core: &Core, name: &str) -> Result<McpServerView, String> {
     let slug = bragi_core::mcp_servers::slug(name);
-    core.mcp_servers().into_iter().find(|s| s.id == name || bragi_core::mcp_servers::slug(&s.name) == slug).ok_or_else(|| format!("no MCP server named {name}"))
+    core.mcp_servers()
+        .into_iter()
+        .find(|s| s.id == name || bragi_core::mcp_servers::slug(&s.name) == slug)
+        .ok_or_else(|| format!("no MCP server named {name}"))
 }
 
 /// Builds the input and secrets for `add` (reads the environment for secret values).
@@ -159,7 +162,13 @@ pub fn run(core: &Core, sub: Sub, confirm: &dyn Fn(&str) -> bool) -> Result<(), 
                     McpScope::Session(id) => format!("session {id}"),
                 };
                 let secrets = s.env_names.len() + s.header_names.len() + usize::from(s.has_bearer);
-                println!("{}\t{}\t{}\t{scope}\t({secrets} secret{} set)", s.name, if s.enabled { "on" } else { "off" }, s.target, if secrets == 1 { "" } else { "s" });
+                println!(
+                    "{}\t{}\t{}\t{scope}\t({secrets} secret{} set)",
+                    s.name,
+                    if s.enabled { "on" } else { "off" },
+                    s.target,
+                    if secrets == 1 { "" } else { "s" }
+                );
                 for t in &s.always_allow {
                     println!("  always allowed: {t}");
                 }
@@ -220,7 +229,8 @@ struct StdioPreview<'a>(&'a McpServerInput);
 impl StdioPreview<'_> {
     fn warning(&self) -> String {
         let cmd = self.0.command.clone().unwrap_or_default();
-        format!("This starts `{} {}` on this computer, with your permissions, whenever a chat uses it.", cmd, self.0.args.join(" ")).replace("  ", " ")
+        format!("This starts `{} {}` on this computer, with your permissions, whenever a chat uses it.", cmd, self.0.args.join(" "))
+            .replace("  ", " ")
     }
 }
 
@@ -239,7 +249,9 @@ mod tests {
         assert!(parse(v(&["remove"])).is_err());
         assert!(parse(v(&["add", "x"])).is_err(), "needs a command or a url");
         assert!(parse(v(&["add", "x", "--command", "a", "--url", "https://h"])).is_err());
-        let Sub::Add(a) = parse(v(&["add", "x", "--command", "npx", "--arg", "-y", "--arg", "srv", "--env", "TOKEN", "--yes"])).unwrap() else { panic!() };
+        let Sub::Add(a) = parse(v(&["add", "x", "--command", "npx", "--arg", "-y", "--arg", "srv", "--env", "TOKEN", "--yes"])).unwrap() else {
+            panic!()
+        };
         assert_eq!((a.args.as_slice(), a.env.as_slice(), a.yes), (&v(&["-y", "srv"])[..], &v(&["TOKEN"])[..], true));
         assert_eq!(scope(Some("folder:/src")).unwrap(), McpScope::Folder("/src".into()));
         assert!(scope(Some("nope")).is_err());
