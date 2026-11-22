@@ -2,6 +2,39 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-13 polish, the terminal app's look on weirdnet-themes (branch `feature/tui-polish`, not merged)
+
+**What changed**
+- The look comes from [`weirdnet-themes`](https://crates.io/crates/weirdnet-themes) 0.1.1 (without its default `terminal-background` feature) through an adapter, [`theme.rs`](crates/bragi-tui/src/theme.rs). Bragi's palette from [BRAND.md](BRAND.md) is a theme file in the crate's format, [`themes/bragi.toml`](crates/bragi-tui/themes/bragi.toml), with dark and light variants.
+  - `--theme NAME|FILE.toml` picks `bragi` (the default), one of the crate's built-ins or a file, and `--mode dark|light|system` picks the variant. `BRAGI_TUI_THEME` and `BRAGI_TUI_MODE` do the same.
+  - Colours are truecolor, 256 or 16 (`BRAGI_TUI_COLOR` overrides the detected depth). `NO_COLOR` draws no colour at all, and `BRAGI_TUI_ASCII` (or a non-UTF-8 locale) swaps the icons and borders for ASCII.
+  - The adapter fills what the crate doesn't have yet: surfaces, code and diff backgrounds, a link colour, the terminal's own colours below 256, `NO_COLOR`, and the icons. The gaps are listed under **Left**.
+- [`ui.rs`](crates/bragi-tui/src/ui.rs):
+  - Rounded, titled panes with an accent border on the focused one, a title bar with tabs, and a status bar with segments (mode, connection dot, nodes, model, target, key hints).
+  - Your messages sit in bubbles on the right; replies are labelled with the model, node and time. A spinner shows while an answer streams, and the Thinking line folds with a chevron.
+  - Link, the picker, settings, status and help open as centred windows with a shadow over the dimmed screen. The endpoint form aligns its labels and marks fields valid or not. Notices are toasts that go after five seconds; questions stay until answered.
+  - Diffs have a line-number gutter, add and remove backgrounds and a hunk header strip.
+  - The link's QR code sits beside its words and fits a 120×40 terminal.
+  - The sidebar has chevrons, icons, counts and a selection bar, and it folds away below 90 columns. A terminal smaller than 44×12 gets a note instead of a broken frame.
+- [`markdown.rs`](crates/bragi-tui/src/markdown.rs): titles get rules, quotes get a bar, and code blocks get their own background with a language tag.
+- [`main.rs`](crates/bragi-tui/src/main.rs) draws only when something changed: input, a job or stream event, a toast, or a spinner frame.
+
+**Commits:** `a3d6ee3` (theme adapter), `d0572a6` (polish pass), `d5ca364` (QR code, backdrop, look test), `51bf5be` (merge of main 3de0499), `34332b7` (the QR code beside the link code), and this entry.
+
+**Checks:** before the merge, the full set: `cargo fmt --check`, build, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace`, `flutter analyze` and `flutter test --dart-define=BRAGI_DEMO=true`. On the merge, the Rust workspace checks and `flutter analyze` passed. `flutter test` couldn't finish: `/tmp` hit its disk quota, then `settings_test.dart` failed once in main's endpoint save, which this branch doesn't touch. After the merge, only bragi-tui was checked (fmt, clippy and tests). [`tests/scripted.rs`](crates/bragi-tui/tests/scripted.rs) was updated for the new layout. [`tests/look.rs`](crates/bragi-tui/tests/look.rs) is new: it covers `NO_COLOR`, ASCII, the narrow layout and a tiny terminal. Before and after screenshots of the same 13 screens were taken headless, outside the repo.
+
+**Not tested:** real terminals other than tmux (kitty, iTerm2, Windows Terminal), `--mode system` (it asks the desktop portal), and the light theme beyond one screenshot.
+
+**Left:** what weirdnet-themes lacks for a terminal (for the Weirdnet Lead):
+- A Bragi or Weird Brains built-in theme.
+- `NO_COLOR`: `ColorDepth` has no none level. `TERM=dumb` and unknown terminals detect as truecolor.
+- Roles for surface and raised surface, code background, diff add/remove backgrounds, link and a dim text colour.
+- In 16 colours: `to_color` maps the background to ANSI black instead of the terminal's default.
+- The default `terminal-background` feature queries OSC 11 on the tty, which a full-screen app has to do before raw mode. Its system check calls `busctl` or `gdbus`.
+- Neither the desktop nor Flutter uses the crate yet.
+
+**Next:** move the extra roles into weirdnet-themes once it has them, and drop the adapter's stand-ins.
+
 ## 2026-11-21: LF-12 follow-up, the audio player on chat file cards (branch only)
 
 **What changed**

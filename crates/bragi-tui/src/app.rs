@@ -62,6 +62,8 @@ pub struct Stream {
     /// When the first reasoning arrived, and how long it took once the answer began.
     pub thinking_since: Option<Instant>,
     pub thought_ms: Option<u64>,
+    /// When it was sent (the spinner's clock).
+    pub started: Instant,
     pub purpose: Purpose,
     events: tmpsc::UnboundedReceiver<ChatEvent>,
 }
@@ -71,7 +73,7 @@ pub struct App {
     pub state: AppState,
     watch: watch::Receiver<AppState>,
     pub view: View,
-    back: View,
+    pub back: View,
     /// The link view was opened because the device wasn't linked (not by the user).
     auto_link: bool,
     pub focus: Focus,
@@ -103,6 +105,11 @@ pub struct App {
     /// Show the reasoning of every answer, not only the title line.
     pub show_thinking: bool,
     pub notice: Option<String>,
+    /// How the notice reads (its toast's colour), and when it first showed.
+    pub notice_tone: Tone,
+    pub notice_since: Option<(String, Instant)>,
+    /// Lines scrolled down in the help.
+    pub help_scroll: usize,
     /// Lines scrolled up from the bottom of the transcript (or the code answer).
     pub scroll: usize,
     pub link_input: Editor,
@@ -114,6 +121,31 @@ pub struct App {
     pub quit: bool,
     jobs: (mpsc::Sender<Job>, mpsc::Receiver<Job>),
     last_reload: Instant,
+}
+
+/// A notice's kind: the colour and icon of its toast, and whether it waits for an answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tone {
+    Info,
+    Ok,
+    /// A question (y/n): it stays until answered.
+    Ask,
+    Error,
+}
+
+/// How long a toast stays up.
+pub const TOAST_MS: u128 = 5000;
+
+fn tone_of(text: &str) -> Tone {
+    const OK: &[&str] =
+        &["Saved", "Deleted", "Linked", "Wrote", "Undid", "Copied", "Added", "Attached", "Moved", "Renamed", "Made", "OK in", "Model:"];
+    if text.contains("? y yes") || text.starts_with("Does ") {
+        Tone::Ask
+    } else if OK.iter().any(|w| text.starts_with(w)) {
+        Tone::Ok
+    } else {
+        Tone::Info
+    }
 }
 
 fn linked(s: &AppState) -> bool {
@@ -154,7 +186,10 @@ impl App {
             show_thinking: false,
             new_folder_parent: None,
             notice: None,
+            notice_tone: Tone::Info,
+            notice_since: None,
             scroll: 0,
+            help_scroll: 0,
             link_input: Editor::default(),
             link_check: None,
             code: CodeState::new(root, home.join("code-undo")),
@@ -230,14 +265,33 @@ impl App {
     }
 
     fn say(&mut self, s: impl Into<String>) {
+        let s = s.into();
+        self.notice_tone = tone_of(&s);
+        self.notice = Some(s);
+        self.notice_since = None;
+    }
+
+    /// A notice that something went wrong.
+    fn fail(&mut self, s: impl Into<String>) {
         self.notice = Some(s.into());
+        self.notice_tone = Tone::Error;
+        self.notice_since = None;
+    }
+
+    /// Whether something on screen moves by itself (a spinner, a countdown), so the loop
+    /// redraws without input.
+    pub fn animating(&self) -> bool {
+        self.stream.is_some() || matches!(self.state.pair, PairState::Offering { .. } | PairState::Waiting { .. })
     }
 
     // ---- the loop's side: state, jobs, streams ------------------------------------------
 
     /// Takes in whatever changed since the last frame. Call before every draw.
-    pub fn tick(&mut self) {
+    pub fn tick(&mut self) -> bool {
+        let before = (self.notice.clone(), self.stream.as_ref().map(|s| (s.text.len(), s.reasoning.len(), s.queued, s.node.clone())));
+        let mut changed = false;
         if self.watch.has_changed().unwrap_or(false) {
+            changed = true;
             let was = self.linked();
             self.state = self.watch.borrow_and_update().clone();
             if !was && self.linked() {
@@ -251,18 +305,40 @@ impl App {
         }
         while let Ok(job) = self.jobs.1.try_recv() {
             self.job(job);
+            changed = true;
         }
+        let streaming = self.stream.is_some();
         self.drain_stream();
+        changed |= streaming != self.stream.is_some();
         if self.stream.is_none() && self.last_reload.elapsed() > Duration::from_secs(3) {
             // Conversations from the user's other devices arrive by sync.
+            let seen = (self.sessions.len(), self.sessions.first().map(|s| s.updated_ms), self.folders.len());
             self.reload();
+            changed |= seen != (self.sessions.len(), self.sessions.first().map(|s| s.updated_ms), self.folders.len());
         }
+        // Toasts: note when one shows; take it down when its time is up (questions stay).
+        match (&self.notice, &self.notice_since) {
+            (None, _) => self.notice_since = None,
+            (Some(n), Some((seen, _))) if n == seen => {}
+            (Some(n), _) => self.notice_since = Some((n.clone(), Instant::now())),
+        }
+        if let Some((_, at)) = &self.notice_since
+            && self.notice_tone != Tone::Ask
+            && at.elapsed().as_millis() > TOAST_MS
+        {
+            self.notice = None;
+            self.notice_since = None;
+        }
+        let after = (self.notice.clone(), self.stream.as_ref().map(|s| (s.text.len(), s.reasoning.len(), s.queued, s.node.clone())));
+        changed || before != after
     }
 
     fn job(&mut self, job: Job) {
         match job {
+            // The link window says it already.
+            Job::Offer(Ok(_)) if self.view == View::Link => {}
             Job::Offer(Ok(_)) => self.say("Open this code on a device that's already linked; c copies it."),
-            Job::Offer(Err(e)) | Job::Accept(Err(e)) => self.say(e),
+            Job::Offer(Err(e)) | Job::Accept(Err(e)) => self.fail(e),
             Job::Accept(Ok(check)) => {
                 self.say(format!("Does {} show {}? y yes · n no", check.device, check.sas));
                 self.link_check = Some(check);
@@ -279,7 +355,7 @@ impl App {
             Job::Models(id, r) => match r {
                 Ok(models) if self.models_for.as_deref() == Some(id.as_str()) => self.endpoint_models = models,
                 Ok(_) => {}
-                Err(e) => self.say(e),
+                Err(e) => self.fail(e),
             },
             Job::AcceptDone(matches, r) => {
                 self.say(match r {
@@ -321,8 +397,14 @@ impl App {
                     }
                     ChatEvent::Done { .. } => finished = Some(Ok(())),
                     ChatEvent::Error { kind, message, .. } => finished = Some(Err((kind, message))),
-                    ChatEvent::Notice { text } => self.notice = Some(text),
-                    ChatEvent::Retry { attempt, .. } => self.notice = Some(format!("Trying again (attempt {attempt})…")),
+                    ChatEvent::Notice { text } => {
+                        self.notice = Some(text);
+                        self.notice_tone = Tone::Info;
+                    }
+                    ChatEvent::Retry { attempt, .. } => {
+                        self.notice = Some(format!("Trying again (attempt {attempt})…"));
+                        self.notice_tone = Tone::Info;
+                    }
                     _ => {}
                 }
                 if finished.is_some() {
@@ -335,10 +417,14 @@ impl App {
         match (s.purpose, result) {
             (Purpose::Chat, r) => {
                 self.reload();
+                self.notice_tone = Tone::Info;
                 self.notice = match r {
                     Ok(()) => None,
                     Err((ErrorKind::Cancelled, _)) => Some("Stopped. Ctrl-R continues it.".into()),
-                    Err((_, m)) => Some(m),
+                    Err((_, m)) => {
+                        self.notice_tone = Tone::Error;
+                        Some(m)
+                    }
                 };
             }
             (Purpose::Code, Ok(())) => {
@@ -371,6 +457,7 @@ impl App {
             model: None,
             queued: None,
             thinking_since: None,
+            started: Instant::now(),
             thought_ms: None,
             purpose,
             events: h.events,
@@ -419,6 +506,9 @@ impl App {
         }
         if view == View::Settings {
             self.settings.reload(&self.core);
+        }
+        if view == View::Help {
+            self.help_scroll = 0;
         }
         self.auto_link = false;
         self.view = view;
@@ -482,7 +572,7 @@ impl App {
                         self.reload();
                         self.say("Deleted.");
                     }
-                    Err(e) => self.say(e.message),
+                    Err(e) => self.fail(e.message),
                 }
             } else {
                 self.say("Kept.");
@@ -490,11 +580,14 @@ impl App {
             return;
         }
         match self.view {
-            View::Help => {
-                if matches!(k.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
-                    self.close();
-                }
-            }
+            View::Help => match k.code {
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => self.close(),
+                KeyCode::Down | KeyCode::Char('j') => self.help_scroll += 1,
+                KeyCode::Up | KeyCode::Char('k') => self.help_scroll = self.help_scroll.saturating_sub(1),
+                KeyCode::PageDown | KeyCode::Char(' ') => self.help_scroll += 10,
+                KeyCode::PageUp => self.help_scroll = self.help_scroll.saturating_sub(10),
+                _ => {}
+            },
             View::Models => self.models_key(k),
             View::Settings => self.settings_key(k, ctrl),
             View::Status => match k.code {
@@ -562,7 +655,7 @@ impl App {
         if let Some(c) = &self.current
             && let Err(e) = self.core.bind_session(&c.id, t.clone())
         {
-            return self.say(e.message);
+            return self.fail(e.message);
         }
         self.target = Some(t);
         self.reload();
@@ -628,7 +721,7 @@ impl App {
             if k.code == KeyCode::Char('y') {
                 match self.core.delete_endpoint(&id, Some(Target::Pool)) {
                     Ok(r) => self.say(format!("Deleted; {} chat{} moved to the Weirdnet pool.", r.rebound, crate::code::plural(r.rebound))),
-                    Err(e) => self.say(e.message),
+                    Err(e) => self.fail(e.message),
                 }
                 if matches!(&self.target, Some(Target::Endpoint { id: t, .. }) if *t == id) {
                     self.target = None;
@@ -672,7 +765,7 @@ impl App {
             }
             (KeyCode::Char('K'), Some(e)) => {
                 if let Err(err) = self.core.move_endpoint(&e.id, self.settings.sel.saturating_sub(1)) {
-                    self.say(err.message);
+                    self.fail(err.message);
                 }
                 self.settings.sel = self.settings.sel.saturating_sub(1);
                 self.reload();
@@ -680,7 +773,7 @@ impl App {
             (KeyCode::Char('J'), Some(e)) => {
                 let to = (self.settings.sel + 1).min(n.saturating_sub(1));
                 if let Err(err) = self.core.move_endpoint(&e.id, to) {
-                    self.say(err.message);
+                    self.fail(err.message);
                 }
                 self.settings.sel = to;
                 self.reload();
@@ -731,7 +824,7 @@ impl App {
                         self.settings.sel = self.settings.endpoints.iter().position(|e| e.id == v.id).unwrap_or(0);
                     }
                     Err(e) => {
-                        self.say(e.message);
+                        self.fail(e.message);
                         self.settings.form = Some(form);
                     }
                 }
@@ -766,7 +859,7 @@ impl App {
         match (&self.state.pair, k.code) {
             (PairState::Confirm { .. }, KeyCode::Char(c @ ('y' | 'n'))) if empty => {
                 if let Err(e) = self.core.pair_confirm(c == 'y') {
-                    self.say(e.message);
+                    self.fail(e.message);
                 }
             }
             (PairState::Offering { .. }, KeyCode::Char('c')) if empty => self.copy(),
@@ -811,7 +904,7 @@ impl App {
                     self.link_input.take();
                     self.say("Added the node's address; looking for it…");
                 }
-                Err(e) => self.say(e.message),
+                Err(e) => self.fail(e.message),
             }
             return;
         }
@@ -1006,7 +1099,7 @@ impl App {
                     self.attachments.push(a);
                     self.input.take();
                 }
-                Err(e) => self.say(e.message),
+                Err(e) => self.fail(e.message),
             }
             return;
         }
@@ -1022,7 +1115,7 @@ impl App {
                     self.reload();
                     self.say(n);
                 }
-                Err(e) => self.say(e),
+                Err(e) => self.fail(e),
             }
             return;
         }
@@ -1037,7 +1130,7 @@ impl App {
             }
             Err(e) => {
                 self.attachments = files;
-                self.say(e.message);
+                self.fail(e.message);
             }
         }
     }
@@ -1049,7 +1142,7 @@ impl App {
         }
         match self.core.continue_answer(&c.id, self.model.clone()) {
             Ok(h) => self.follow(h, Purpose::Chat),
-            Err(e) => self.say(e.message),
+            Err(e) => self.fail(e.message),
         }
     }
 
@@ -1075,7 +1168,7 @@ impl App {
                 KeyCode::Char('v') => self.code.side_by_side = !self.code.side_by_side,
                 KeyCode::Char('w') | KeyCode::Enter => match self.code.write() {
                     Ok(n) => self.say(n),
-                    Err(e) => self.say(e),
+                    Err(e) => self.fail(e),
                 },
                 KeyCode::Esc | KeyCode::Char('q') => {
                     self.code.discard();
@@ -1112,7 +1205,7 @@ impl App {
         let line = self.input.text().to_string();
         let cmd = match self.code.parse(&line) {
             Ok(c) => c,
-            Err(e) => return self.say(e),
+            Err(e) => return self.fail(e),
         };
         self.input.take();
         let note = match cmd {
@@ -1153,7 +1246,7 @@ impl App {
         };
         match note {
             Ok(n) => self.say(n),
-            Err(e) => self.say(e),
+            Err(e) => self.fail(e),
         }
     }
 }
