@@ -13,6 +13,7 @@ const _html = r'''
   <li><a href="${started}#link">Link Bragi to your Weirdnet</a></li>
   <li><a href="${started}#chat">Chat</a></li>
   </ul></li>
+<li><a href="${mcp}">MCP server</a>: use Bragi from Cursor, Claude Desktop and VS Code</li>
 <li><a href="${ymirGuide}">Ymir deployment guide</a>: set up the model cloud Bragi talks to, add a device, and connect Jan</li>
 <li><a href="${features}">Features</a>: what Bragi does today</li>
 </ul>
@@ -30,6 +31,7 @@ class DocsPage extends StatelessComponent {
       prose(
         _html
             .replaceAll(r'${started}', siteLink('/docs/guides/getting-started'))
+            .replaceAll(r'${mcp}', siteLink('/docs/guides/mcp'))
             .replaceAll(r'${features}', siteLink('/features'))
             .replaceAll(r'${ymirGuide}', '${ymirSiteUrl}docs/guides/deployment')
             .replaceAll(r'${ymirDocs}', '${ymirSiteUrl}docs'),

@@ -89,6 +89,34 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **What's next**: review of `feature/audio-player`.
 
+## 2026-11-21: LF-15, the Bragi MCP server (branch only)
+
+**What changed**
+- New crate [`bragi-mcp`](crates/bragi-mcp): `bragi mcp` (and the `bragi-mcp` program) serves Bragi over the Model Context Protocol on [`weirdnet-mcp`](https://crates.io/crates/weirdnet-mcp) 0.6, the way Ymir's `ymirctl mcp` does: async tools (`Tools::call_async`), `stdio::serve`, `http::router` with `Guard::loopback(Auth::token(..))`, resources, and image and audio content.
+  - [`lib.rs`](crates/bragi-mcp/src/lib.rs): stdio by default; `--http [ADDR]` serves stateless streamable HTTP at `/mcp` on a loopback address only (default `127.0.0.1:4878`). The guard checks `Host`, `Origin` and the bearer token in constant time; the bind check is ours.
+  - [`tools.rs`](crates/bragi-mcp/src/tools.rs): `bragi_status`, `bragi_chat` (new or continued session, pool or endpoint, optional folder, text/image/audio files from the project root or `data:` URLs), `bragi_sessions_list`, `bragi_session_get`, `bragi_folders_list`, `bragi_folder_create`, `bragi_folder_move`, `bragi_session_move`, `bragi_endpoints_list` (never a key), `bragi_models_list` (pool, or one endpoint's), `bragi_files_list` and `bragi_file_fetch` (LF-12's `Core::files` and `Core::file_bytes`: attachments and files answers wrote; images and audio as MCP media content). Resources: `bragi://status`, `bragi://sessions`, `bragi://sessions/{id}` (Markdown) and `bragi://sessions/{id}/files/{file}`.
+  - [`code.rs`](crates/bragi-mcp/src/code.rs): `bragi_code_suggest` and `bragi_code_rewrite` on `bragi_core::code` (the same gather, prompts, `bragi-edit` parsing and diffs as `bragi-tui` and the editor extension), through `Core::complete_to`, so they stay out of history. They return a unified diff, the explanation and a proposal id, and write nothing.
+  - Off by default: `--allow-writes` adds `bragi_code_apply` (all hunks or chosen ones, through `code::Journal`, refusing a file that changed), `bragi_code_undo` and `bragi_file_save` (never replaces a file unless `overwrite`). `--allow-deletes` adds `bragi_session_delete` and `bragi_folder_delete`. Tools that aren't allowed are not listed, and calling one is an unknown-tool error. Every path a client gives must resolve inside `--root`.
+  - [`collect.rs`](crates/bragi-mcp/src/collect.rs) reads a chat stream to its end (deltas at their offsets) and cancels the request on timeout or when the call is dropped.
+  - [`cli.rs`](crates/bragi-mcp/src/cli.rs): `bragi mcp [--root] [--http] [--allow-writes] [--allow-deletes] [--timeout] [--home] [--demo]`, plus `token`, `token-path`, `status`, `link [CODE]` and `add-node ADDRESS`. `--demo` keeps everything (token, undo journal) in a throwaway folder.
+- The server uses the app's Bragi home (`$BRAGI_HOME`, else `~/.local/share/bragi`), like `bragi serve` on `feature/editor-extension`, so its chats, folders and endpoints are the app's, and it opens the OS keychain for endpoint keys.
+- Auth reused from `bragi serve` (LF-14): the HTTP transport takes its token from [`bragi_serve::load_or_create_token`](crates/bragi-serve/src/lib.rs) (`<home>/serve/token`, 32 random bytes as hex, mode 0600) and the home from `bragi_serve::cli::default_home`, so one token works for both local APIs and `bragi mcp token` prints the same value as `bragi serve token`. Loopback only, `Host` checked and any `Origin` refused, as in `bragi serve`, here through `weirdnet-mcp`'s `Guard::loopback`.
+- [`main.rs`](crates/bragi-desktop/src/main.rs) of the desktop app runs `bragi mcp …` without opening a window.
+- Docs: the site guide [`docs_mcp.dart`](site/lib/pages/docs_mcp.dart) (`/docs/guides/mcp`, linked from the docs index) with Cursor, Claude Desktop, VS Code and HTTP setups, and an "MCP server" section in the [README](README.md).
+
+**Checks** (after merging `main` at `3de0499`, under the shared build lock): `cargo fmt --check`, `cargo build --workspace`, `cargo clippy --workspace --all-targets -D warnings`, `cargo test --workspace` and `flutter analyze` pass. `flutter test` in demo mode: 5 pass, 1 fails, `settings_test.dart` line 306 (`needsTarget` still true after picking a target for a session whose endpoint was deleted). This branch changes nothing in `bragi-core`, `bragi-bridge` or `app/` compared with `main`, so the failure comes from `main` or from timing on a loaded machine. It was not chased here.
+- [`tests/protocol.rs`](crates/bragi-mcp/tests/protocol.rs): raw JSON-RPC through `Server::handle_async` against the demo node: the tool table per flag, chat with a text file and an image, sessions, folders, endpoints (no key in the output), files and media content, resources and templates, file save rules, delete tools; code rewrite and suggest diffs, nothing in history, secrets and paths outside the root refused, apply with chosen hunks, undo, a stale proposal refused; HTTP with and without the token, foreign `Host` and `Origin` refused.
+- [`tests/stdio.rs`](crates/bragi-mcp/tests/stdio.rs): the binary with `--demo`, an empty environment and a throwaway HOME: initialize, tools/list, a chat, clean exit at end of input.
+
+**Not tested**: real MCP clients (Cursor, Claude Desktop, VS Code); a real Weirdnet pool or endpoint; the server and the desktop app running on the same home at once; Windows and macOS.
+
+**What's left**:
+- Prompts: `weirdnet-mcp` 0.6 has none, so the server has none (a `continue_session` or `review_file` prompt would help). Raised for the Weirdnet Lead rather than added here.
+- Streaming answers as progress notifications; MCP cancellation by request id (a dropped call already stops the answer).
+- Agent mode (tools and approvals on the node) is not offered.
+
+**What's next**: review of `feature/bragi-mcp`, then LF-16.
+
 ## 2026-11-21: LF-14, the VS Code and Cursor extension and `bragi serve` (branch only)
 
 **What changed**

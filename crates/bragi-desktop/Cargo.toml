@@ -16,6 +16,7 @@ path = "src/main.rs"
 [dependencies]
 bragi-core = { workspace = true, features = ["decode"] }
 cpal.workspace = true
+bragi-mcp.workspace = true
 bragi-serve.workspace = true
 gpui.workspace = true
 gpui_platform.workspace = true
