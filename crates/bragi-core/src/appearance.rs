@@ -103,7 +103,6 @@ impl Palette {
     /// The role as `0xRRGGBB` (gray when unknown).
     pub fn rgb(&self, role: &str) -> u32 {
         self.get(role)
-            .map(String::as_str)
             .and_then(weirdnet_themes::parse_hex)
             .map(|(r, g, b)| u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b))
             .unwrap_or(0x80_80_80)
@@ -247,7 +246,6 @@ impl Appearance {
         let raised = v
             .palette
             .get("raised")
-            .map(String::as_str)
             .and_then(weirdnet_themes::parse_hex)
             .or_else(|| Some(weirdnet_themes::mix(v.color("bg")?, v.color("fg")?, 0.11)))
             .map(weirdnet_themes::to_hex)
