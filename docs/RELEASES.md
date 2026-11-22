@@ -35,7 +35,7 @@ Flutter.
 ## WiX
 
 The Windows installers use WiX Toolset 7, which is licensed under the Open Source Maintenance Fee EULA v1.1
-(https://docs.firegiant.com/wix/osmf/). Weird Brains LLC accepted it on 2026-11-12, so every `wix`
+(https://docs.firegiant.com/wix/osmf/). [Weird Brains](https://weirdbrains.com) LLC accepted it on 2026-11-12, so every `wix`
 command passes `-acceptEula wix7`. The WiX CLI MSI is pinned by version and SHA-256 in the workflow.
 
 ## Android signing
@@ -45,3 +45,7 @@ The workflow signs with a release key only when these repository secrets exist:
 `BRAGI_ANDROID_KEY_ALIAS` and `BRAGI_ANDROID_KEY_PASSWORD`. Without them the apks are signed with the
 runner's debug key, which changes between builds, so a new version has to be installed fresh rather than
 over an older one.
+
+## minisign
+
+The `minisign` job signs every release file when the `MINISIGN_SECRET_KEY` and `MINISIGN_PASSWORD` repository secrets are set, and uploads the `.minisig` files as the `bragi-minisign` artifact to attach to the release. Without them it skips with a notice; there is no minisign key yet.

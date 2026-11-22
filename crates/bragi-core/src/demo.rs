@@ -132,7 +132,47 @@ fn split_attachments(prompt: &str) -> (Vec<(String, usize)>, &str) {
     (files, rest)
 }
 
+/// The demo's answer to a code request ([`crate::code::prompt::build`]): a rewrite puts a
+/// comment naming the instruction above the target, keeping its indentation; suggestions add
+/// one at the top of the first file. Always a well-formed `bragi-edit` block.
+fn code_answer(model: &str, prompt: &str) -> Option<String> {
+    use crate::code::prompt::{fenced_blocks, strip_numbers};
+    if !prompt.starts_with("The files (line-numbered for reference):") {
+        return None;
+    }
+    let blocks = fenced_blocks(prompt);
+    let files: Vec<(&str, &str)> = blocks.iter().filter_map(|(info, body)| Some((info.strip_prefix("text path=")?, body.as_str()))).collect();
+    let ask = prompt.rsplit_once("```\n\n").map(|(_, a)| a).unwrap_or(prompt).trim();
+    if let Some(rest) = prompt.split("Answer with one `bragi-edit ").nth(1) {
+        let attr = rest.split('`').next().unwrap_or("");
+        let instruction =
+            prompt.lines().rev().find_map(|l| l.strip_prefix("Rewrite ")).and_then(|l| l.split_once(": ")).map(|(_, i)| i).unwrap_or("rewrite");
+        let target = match blocks.iter().find(|(info, _)| info.is_empty()) {
+            Some((_, sel)) => sel.clone(),
+            None => {
+                let path = attr.strip_prefix("path=").unwrap_or(attr);
+                strip_numbers(files.iter().find(|(p, _)| *p == path).map(|(_, b)| *b).unwrap_or(""))
+            }
+        };
+        let indent: String = target.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take_while(|c| c.is_whitespace()).collect();
+        return Some(format!(
+            "```bragi-edit {attr}\n{indent}// {model}: {instruction}\n{target}```\nAdded a comment naming the instruction; the code itself is unchanged (demo)."
+        ));
+    }
+    let (path, _) = files.first()?;
+    let instruction = ask.lines().next().unwrap_or("").trim();
+    Some(format!(
+        "{model} suggests one change: a header comment saying what {path} is for.\n\n```bragi-edit path={path} after=0\n// {model}: {instruction}\n```\n"
+    ))
+}
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
+    if let Some(a) = code_answer(model, prompt) {
+        return a;
+    }
+    if prompt.contains("Markdown") {
+        return format!("{model} here. 2 + 2 equals **4**.\n\n{MARKDOWN_SAMPLE}");
+    }
     let (files, question) = split_attachments(prompt);
     if !files.is_empty() {
         let list = files.iter().map(|(n, l)| format!("{n} ({l} lines)")).collect::<Vec<_>>().join(", ");
@@ -148,6 +188,43 @@ pub fn answer_for(model: &str, prompt: &str) -> String {
     )
 }
 
+/// What the demo answers to a prompt that mentions Markdown: every kind of block the shells draw.
+pub const MARKDOWN_SAMPLE: &str = "## What Bragi renders
+
+- **Bold**, *italic* and ~~struck~~ text
+- `inline code` and [links](https://github.com/WeirdBrains/bragi)
+- [x] task lists
+
+| Shell | Toolkit | Markdown |
+|:------|:-------:|---------:|
+| Desktop | GPUI | yes |
+| Phone | Flutter | yes |
+
+```rust
+fn main() {
+    // One parse for every shell.
+    let doc = bragi_core::markdown::parse(\"**4**\");
+    println!(\"{} blocks\", doc.blocks.len());
+}
+```
+
+> Nothing leaves your devices.";
+/// A prompt that starts with this makes the demo model reason first, in reasoning frames (what
+/// llama.cpp's `--reasoning-format` and vLLM's reasoning parsers send).
+pub const THINK_PROMPT: &str = "Think it through:";
+/// A prompt that starts with this makes the demo model reason in a `<think>` block at the start of
+/// its text (Qwen3 served without a reasoning parser).
+pub const THINK_INLINE_PROMPT: &str = "Think inline:";
+
+/// The demo model's reasoning for `prompt`, when it reasons (see [`THINK_PROMPT`]).
+pub fn reasoning_for(prompt: &str) -> Option<String> {
+    (prompt.starts_with(THINK_PROMPT) || prompt.starts_with(THINK_INLINE_PROMPT)).then(|| {
+        "The user wants to see me think. First I check which nodes serve the model, then I pick the \
+         warm one, and the answer streams back over Weirdnet."
+            .to_string()
+    })
+}
+
 /// Answers with [`answer_for`], one word every `delay`, honouring cancel, resume and the
 /// scripted [`Faults`]. A repeated prompt is a cache hit; a model that isn't warm here is
 /// answered by a stand-in, flagged.
@@ -160,8 +237,22 @@ struct FakeBackend {
     faults: Arc<Faults>,
 }
 
+trait Parts {
+    /// How many images and how many sounds the request's messages carry.
+    fn messages_parts(&self) -> (usize, usize);
+}
+
+impl Parts for Request {
+    fn messages_parts(&self) -> (usize, usize) {
+        let parts: Vec<weirdnet_agent::ContentPart> = self.inline_messages().unwrap_or_default().iter().flat_map(|m| m.content.parts()).collect();
+        let images = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::ImageUrl { .. })).count();
+        let sounds = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::InputAudio { .. })).count();
+        (images, sounds)
+    }
+}
+
 fn last_user(req: &Request) -> String {
-    req.inline_messages().and_then(|m| m.iter().rev().find(|m| m.role == Role::User)).map(|m| m.content.clone()).unwrap_or_default()
+    req.inline_messages().and_then(|m| m.iter().rev().find(|m| m.role == Role::User)).map(|m| m.content.text().into_owned()).unwrap_or_default()
 }
 
 #[async_trait]
@@ -178,9 +269,33 @@ impl InferBackend for FakeBackend {
         let prompt = last_user(request);
         let answering = self.standin.clone().unwrap_or_else(|| self.model.clone());
         let mut text = answer_for(&answering, &prompt);
+        // A model that reads what it was sent says so (WARM_MODEL, like Gemma 4, takes images and audio; the others are text only).
+        let seen = request.messages_parts();
+        if seen.0 + seen.1 > 0 {
+            text = format!("I can see {} image(s) and {} sound(s). {text}", seen.0, seen.1);
+        }
+        let reasoning = reasoning_for(&prompt);
+        let inline = prompt.starts_with(THINK_INLINE_PROMPT);
+        // A continued answer's prefix is the answer without its block; a resumed one is the raw text.
+        let raw_prefix = request.assistant_prefix.as_ref().is_none_or(|p| p.text.is_empty() || p.text.starts_with("<think>"));
+        if let (Some(r), true, true) = (&reasoning, inline, raw_prefix) {
+            text = format!("<think>\n{r}\n</think>\n\n{text}");
+        }
         // A resumed or continued attempt generates only what comes after the prefix already shown.
+        let fresh = request.assistant_prefix.as_ref().is_none_or(|p| p.text.is_empty() && p.reasoning.is_empty());
         if let Some(p) = &request.assistant_prefix {
             text = text.chars().skip(p.text.chars().count()).collect();
+        }
+        if let (Some(r), false, true) = (&reasoning, inline, fresh) {
+            for piece in r.split_inclusive(' ') {
+                if cancel.is_cancelled() {
+                    return Err(RemoteError::Cancelled);
+                }
+                if !self.cache_hit {
+                    tokio::time::sleep(self.delay).await;
+                }
+                out.reasoning(piece);
+            }
         }
         let mut meta = Meta::default();
         meta.cache_hit = self.cache_hit;
@@ -268,12 +383,13 @@ impl ModelBackend for AgentModel {
         match messages.last() {
             Some(m) if m.role == Role::Tool => {
                 // The runtime wraps tool output in `<untrusted_tool_result>` and adds a trace note.
-                let said: Vec<&str> = m.content.lines().filter(|l| !l.starts_with('<') && !l.starts_with('[')).collect();
+                let body = m.content.text();
+                let said: Vec<&str> = body.lines().filter(|l| !l.starts_with('<') && !l.starts_with('[')).collect();
                 self.say(deltas, cancel, &format!("The notes tool said: {}. That is everything it found.", said.join(" "))).await?;
                 Ok(ModelTurn { text: String::new(), tool_calls: Vec::new() })
             }
             other => {
-                let ask: String = other.map(|m| m.content.clone()).unwrap_or_default().chars().take(40).collect();
+                let ask: String = other.map(|m| m.content.text().into_owned()).unwrap_or_default().chars().take(40).collect();
                 self.say(deltas, cancel, "Let me check your notes. ").await?;
                 let call = ToolCall { id: "call-1".into(), name: DEMO_TOOL.into(), arguments: serde_json::json!({ "query": ask }) };
                 Ok(ModelTurn { text: String::new(), tool_calls: vec![call] })
@@ -403,6 +519,7 @@ impl DemoNode {
             .map(|(id, state)| {
                 let warm = *state == ModelState::Warm;
                 let m = CatalogModel::new(id.clone(), Purpose::Chat, *state).with_context(32768);
+                let m = if id == WARM_MODEL { m.with_inputs(weirdnet_agent::Modalities::new(true, true)) } else { m };
                 if warm { m.with_replicas(1).with_speed(if id == BIG_MODEL { 22.0 } else { 48.0 }) } else { m.with_speed(14.0) }
             })
             .collect();

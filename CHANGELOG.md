@@ -6,6 +6,25 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-21
+
+### Added
+
+- Replies render as Markdown on the desktop and the phone: bold, italic and strikethrough, headings, lists and task lists, quotes, tables, links (opened in your browser, address shown on hover), rules, inline code, and code blocks with highlighting, their language and a Copy button. It renders as the answer streams, without flicker or broken half-open code blocks. Each reply has a Copy button for its raw Markdown. Raw HTML stays text and images are never fetched.
+- A Thinking section above each answer from a reasoning model, on desktop and phone. The model's reasoning streams into it live with the time it takes, it folds away when the answer starts, and you can open it again. Before anything arrives, the reply says it is waiting. Reasoning comes from servers that send it apart from the answer (llama.cpp, vLLM) or from a `<think>` block at the start of the text (Qwen3 and similar). It is kept with the message and is not sent back to the model.
+- Delete from your history: a single message (hover or long-press it; deleting a question asks whether to delete its answer too), a whole conversation from the history list, or all history from Settings behind a typed confirm. Message and conversation deletes can be undone for a few seconds.
+- Deletes reach your other linked devices with the next sync, and each device removes the deleted messages, their attachments and older versions from its own stored history. Deleted messages are never sent to a model again.
+- Emoji reactions on any message, the model's replies too, on desktop and phone: a quick bar (👍 👎 ❤️ 😂 🎉 🤔) and a picker (hover on desktop, long-press on the phone), shown as small pills under the message. Click a reaction again to remove it. They are saved with the conversation, sync to your other devices and go when their message is deleted. The next turn tells the model about them in a short note, such as "[The user reacted to this reply with 👎]". They are not part of Copy.
+
+### Fixed
+
+- Links carry node addresses, so Bragi finds inference nodes that discovery misses.
+- Paste a node address into Link a device on desktop and mobile; it is kept and dialed at once.
+- A clearer message when no inference node is found, saying what to check.
+- Desktop has a Copy button for the link code and Ctrl+Shift+V to paste one.
+- The Link a device node notice clears itself or times out with advice, and its placeholder fits.
+- The chat scrolls with a fixed composer, sticks to the latest message and offers Jump to latest.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added

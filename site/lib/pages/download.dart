@@ -40,7 +40,7 @@ final List<_Row> _rows = [
       ('zip', 'bragi-$latestVersion-universal-apple-darwin.zip'),
       ('binary, tar.gz', 'bragi-$latestVersion-universal-apple-darwin.tar.gz'),
     ],
-    'Not notarized yet: the first time, right-click Bragi and choose Open.',
+    'Not notarized: the first time, right-click Bragi and choose Open.',
   ),
   (
     'Windows x86_64',
@@ -51,7 +51,7 @@ final List<_Row> _rows = [
       ('Standalone exe', 'bragi-$latestVersion-x86_64-pc-windows-msvc.exe'),
       ('zip', 'bragi-$latestVersion-x86_64-pc-windows-msvc.zip'),
     ],
-    'Installs for your user only, no admin needed. Not code-signed yet, so SmartScreen may warn.',
+    'Installs for your user only, no admin needed. Not code-signed, so SmartScreen may warn.',
   ),
   (
     'Windows ARM64',
@@ -62,7 +62,7 @@ final List<_Row> _rows = [
       ('Standalone exe', 'bragi-$latestVersion-aarch64-pc-windows-msvc.exe'),
       ('zip', 'bragi-$latestVersion-aarch64-pc-windows-msvc.zip'),
     ],
-    'Not code-signed yet.',
+    'Not code-signed, so SmartScreen may warn.',
   ),
   (
     'Android',
@@ -72,8 +72,8 @@ final List<_Row> _rows = [
       ('apk, armv7', 'bragi-$latestVersion-android-armeabi-v7a$androidSuffix.apk'),
       ('apk, x86_64', 'bragi-$latestVersion-android-x86_64$androidSuffix.apk'),
     ],
-    'Sideload: most phones need the arm64 apk. Signed with a test key for now, so uninstall before installing a newer '
-        'version. F-Droid and Google Play come later.',
+    'Sideload: most phones need the arm64 apk. Signed with a debug key, so uninstall before installing a newer '
+        'version. Not on F-Droid or Google Play.',
   ),
   (
     'iOS',
@@ -81,8 +81,8 @@ final List<_Row> _rows = [
     [
       ('ipa, unsigned', 'bragi-$latestVersion-ios-unsigned.ipa'),
     ],
-    'Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. TestFlight and the App '
-        'Store come later.',
+    'Sideload with AltStore, SideStore or Sideloadly, which sign it with your own Apple ID. Not on TestFlight or the App '
+        'Store.',
   ),
 ];
 

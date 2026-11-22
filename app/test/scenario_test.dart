@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:bragi/src/api.dart';
 import 'package:bragi/src/app.dart';
 import 'package:bragi/src/controller.dart';
+import 'package:bragi/src/theme.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -172,6 +173,149 @@ void main() {
     expect(last().agent, isTrue);
     expect(find.textContaining('agent task · used notes.search'), findsOneWidget);
     expect(c.card, isNull);
+
+    // Markdown: bragi-core parses the reply; bold, a list, a table and a code block render as
+    // such, never with their markers, and the reply's copy button gives the raw Markdown.
+    // The model's reasoning streams in an open Thinking section, which closes when the answer
+    // starts and opens again on a tap; the answer has none of it.
+    c.newChat();
+    await tester.tap(find.byKey(const Key('agent')));
+    await tester.pump();
+    expect(c.agent, isFalse);
+    await ask('Show me some Markdown.', 2);
+    expect(last().text, contains('2 + 2 equals **4**.'));
+    await tester.pump();
+    expect(find.byKey(const Key('bubble-markdown')), findsOneWidget);
+    expect(find.textContaining('equals **'), findsNothing, reason: 'no literal asterisks');
+    expect(find.textContaining('2 + 2 equals 4.', findRichText: true), findsOneWidget);
+    expect(find.byType(Table), findsOneWidget);
+    expect(find.byKey(const Key('code-copy')), findsOneWidget);
+    expect(find.textContaining('What Bragi renders', findRichText: true), findsOneWidget);
+    final doc = c.markdown(last().text, false);
+    expect((doc['blocks'] as List).map((b) => (b as Map)['type']), containsAll(['heading', 'list', 'table', 'code', 'quote']));
+    expect((c.markdown('2 + 2 equals **4', true)['blocks'] as List).first['spans'][1], containsPair('bold', true));
+    c.newChat();
+    await tester.pump();
+    const thinkPrompt = 'Think it through: which node answers?';
+    await tester.enterText(find.byKey(const Key('prompt')), thinkPrompt);
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the reasoning', () => c.messages.length == 2 && last().reasoning.split(' ').length > 5 && last().text.isEmpty);
+    expect(find.byKey(const Key('thinking-text')), findsOneWidget, reason: 'open while the model reasons');
+    expect(find.textContaining('Thinking…'), findsOneWidget);
+    await until('the answer', () => !c.streaming && last().state == 'complete');
+    final wantThink = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: thinkPrompt)))!;
+    expect(last().text, wantThink);
+    expect(last().reasoning, isNotEmpty);
+    expect(last().thinkingMs, isNotNull);
+    expect(find.byKey(const Key('thinking-text')), findsNothing, reason: 'closed once the answer starts');
+    expect(find.textContaining('Thought for'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('thinking')));
+    await tester.pump();
+    expect(find.byKey(const Key('thinking-text')), findsOneWidget);
+
+    // A node address pasted into Link a device is kept and dialed (core: add_node), as on the
+    // desktop; one without a peer id is refused in the core's words.
+    const address = '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await until('the drawer', () => shown('link-code'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.enterText(find.byKey(const Key('link-code')), '  $address ');
+    await tester.tap(find.byKey(const Key('link-go')));
+    await until('the address added', () => rust.peers().contains(address));
+    expect(c.notice, isNull, reason: 'progress is not an error');
+    // That address isn't one of the demo user's devices: said at once, as a warning.
+    await until('the node search', () => c.nodeSearch == 'not_found');
+    expect(c.nodeSearchLine, contains("isn't one of your linked devices"));
+    expect(find.byKey(const Key('node-search')), findsOneWidget);
+    expect(find.text(address), findsNothing, reason: 'the box is cleared');
+    expect(await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')), isFalse);
+    expect(c.notice, contains('peer'));
+    expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
+    // Anything else the user does cleared the line (it arrives with the next state).
+    await until('the line cleared', () => c.nodeSearchLine == null);
+
+    // A linked node: looking, then "Connected to …" in the success colour (it used to stay red forever).
+    final first = (await tester.runAsync(() async => rust.demoNodeAddress()))!;
+    expect(await tester.runAsync(() => c.linkDevice(first)), isTrue);
+    await until('connected', () => c.nodeSearch == 'found');
+    expect(c.nodeSearchLine, 'Connected to demo inference node.');
+    expect(c.notice, isNull);
+    final line = tester.widget<Text>(find.byKey(const Key('node-search')));
+    expect(line.style!.color, BragiColors.warm);
+
+    // Delete from the history: a question and its answer (long-press menu, confirm, Undo), a
+    // whole conversation from the list, then everything from Settings behind a typed confirm.
+    Navigator.of(tester.element(find.byKey(const Key('link-code')))).pop();
+    await tester.pump(const Duration(milliseconds: 400));
+    final target = c.conversations.last;
+    await tester.runAsync(() => c.open(target.id));
+    await tester.pump();
+    expect(c.messages, hasLength(4));
+    expect(c.messages[2].hasReply, isTrue);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.byKey(const Key('bubble-2')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.byKey(const Key('bubble-2')));
+    await until('the message menu', () => shown('menu-delete'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('menu-delete')));
+    await until('the confirm', () => shown('delete-with-reply'));
+    await tester.tap(find.byKey(const Key('delete-with-reply')));
+    await until('the delete', () => c.messages.length == 2 && shown('undo'));
+    expect(c.messages.map((m) => m.text), isNot(contains(prompt2)));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.byKey(const Key('undo')));
+    await until('the undo', () => c.messages.length == 4);
+    expect(c.messages[2].text, prompt2);
+    await tester.pump(const Duration(seconds: 10));
+
+    // Reactions on the model's answer: quick pick, a second one, the pill turns one off again.
+    await tester.ensureVisible(find.byKey(const Key('bubble-3')));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.byKey(const Key('bubble-3')));
+    await until('the reaction bar', () => shown('reaction-bar'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('react-👍')));
+    await until('the first reaction', () => c.messages[3].reactions.length == 1);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.longPress(find.byKey(const Key('bubble-3')));
+    await until('the reaction bar', () => shown('react-🤔'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('react-🤔')));
+    await until('the second reaction', () => c.messages[3].reactions.length == 2);
+    expect(c.messages[3].reactions, ['👍', '🤔']);
+    expect(c.messages[2].reactions, isEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('pill-👍')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('pill-👍')));
+    await until('the reaction off', () => c.messages[3].reactions.length == 1);
+    expect(c.messages[3].reactions, ['🤔']);
+    await tester.pump(const Duration(seconds: 10));
+
+    final before = c.conversations.length;
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await until('the drawer', () => shown('delete-conv-${target.id}'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(Key('delete-conv-${target.id}')));
+    await until('the confirm', () => shown('delete-confirm'));
+    await tester.tap(find.byKey(const Key('delete-confirm')));
+    await until('the conversation gone', () => c.conversations.length == before - 1);
+    expect(c.current, isNull);
+
+    await tester.tap(find.byKey(const Key('settings')));
+    await until('settings', () => shown('clear-history'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.byKey(const Key('clear-history')));
+    await until('the typed confirm', () => shown('clear-confirm-text'));
+    await tester.tap(find.byKey(const Key('clear-confirm')));
+    await tester.pump();
+    expect(c.conversations, isNotEmpty, reason: 'not before the word is typed');
+    await tester.enterText(find.byKey(const Key('clear-confirm-text')), 'delete');
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('clear-confirm')));
+    await until('all history gone', () => c.conversations.isEmpty);
+    await until('the notice', () => c.notice != null);
+    expect(c.notice, startsWith('Deleted'));
   });
 
   test('splice puts a delta at its offset', () {

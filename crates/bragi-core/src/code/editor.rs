@@ -251,20 +251,20 @@ pub fn chat_attachments(ctx: &EditorContext) -> Vec<Attachment> {
     let mut out = Vec::new();
     let file = ctx.file();
     if !file.is_empty() {
-        out.push(Attachment { name: ctx.name().to_string(), text: head(&file, MAX_FILE_CHARS).to_string() });
+        out.push(Attachment { name: ctx.name().to_string(), text: head(&file, MAX_FILE_CHARS).to_string(), media: None });
     }
     if !ctx.selection.is_empty() {
-        out.push(Attachment { name: format!("selection in {}", ctx.name()), text: head(&ctx.selection, MAX_FILE_CHARS).to_string() });
+        out.push(Attachment { name: format!("selection in {}", ctx.name()), text: head(&ctx.selection, MAX_FILE_CHARS).to_string(), media: None });
     }
     let diags = diagnostics_text(ctx);
     if !diags.is_empty() {
-        out.push(Attachment { name: format!("problems in {}", ctx.name()), text: diags });
+        out.push(Attachment { name: format!("problems in {}", ctx.name()), text: diags, media: None });
     }
     for f in ctx.open_files.iter().filter(|f| f.path != ctx.path && !f.text.is_empty()) {
         if out.len() >= crate::attach::MAX_PER_MESSAGE {
             break;
         }
-        out.push(Attachment { name: f.path.clone(), text: head(&f.text, MAX_OPEN_FILE_CHARS).to_string() });
+        out.push(Attachment { name: f.path.clone(), text: head(&f.text, MAX_OPEN_FILE_CHARS).to_string(), media: None });
     }
     for a in &mut out {
         a.name = a.name.replace(['/', '\\'], "∕");

@@ -11,6 +11,9 @@ use crate::context::{ContextStore, Stored, StoredConversation, updated_ms};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::identity::Identity;
 
+mod forget;
+pub use forget::{Deleted, UNDO_MS};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -38,6 +41,13 @@ pub struct ChatMessage {
     pub id: String,
     pub role: Role,
     pub text: String,
+    /// The model's reasoning ("thinking") for an assistant answer, shown apart from it and never
+    /// sent back to the model. Empty when the model didn't reason.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub reasoning: String,
+    /// How long the model reasoned before answering, in milliseconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_ms: Option<u64>,
     pub state: MessageState,
     /// The model that answered (assistant messages).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,6 +73,11 @@ pub struct ChatMessage {
     /// The answer came from an agent task on a node, not a plain model reply.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub agent: bool,
+    /// Emoji the user reacted with, in the order they were added (no repeats). Absent in
+    /// records written before reactions existed. They ride along in the stored record, so
+    /// the user's other devices and a Ymir pool reading the context see them too.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<String>,
     pub at_ms: i64,
 }
 
@@ -93,6 +108,14 @@ impl Conversation {
         ConversationSummary { id: self.id.clone(), title: self.title.clone(), updated_ms: self.updated_ms, messages: self.messages.len() }
     }
 
+    /// The answer that followed user message `id`, if the next message is one: deleting a
+    /// question offers to delete it too.
+    pub fn reply_to(&self, id: &str) -> Option<&ChatMessage> {
+        let i = self.messages.iter().position(|m| m.id == id)?;
+        let next = self.messages.get(i + 1)?;
+        (self.messages[i].role == Role::User && next.role == Role::Assistant).then_some(next)
+    }
+
     /// The last message, if it is an assistant answer that was cut off.
     pub fn continuable(&self) -> bool {
         self.messages.last().is_some_and(|m| m.role == Role::Assistant && matches!(m.state, MessageState::Stopped | MessageState::Failed))
@@ -120,6 +143,8 @@ pub struct History {
     store: RwLock<Option<Arc<ContextStore>>>,
     /// Ids handed to messages this `History` saved; none is reused.
     seq: Mutex<u16>,
+    /// What the last delete removed, for [`History::undo`] (see [`forget`]).
+    undo: Mutex<Option<forget::Undo>>,
 }
 
 fn valid_id(id: &str) -> bool {
@@ -165,15 +190,33 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if m.agent {
         ext.insert("agent".into(), true.into());
     }
+    if !m.reasoning.is_empty() {
+        ext.insert("reasoning".into(), m.reasoning.clone().into());
+    }
+    if let Some(ms) = m.thinking_ms {
+        ext.insert("thinking_ms".into(), ms.into());
+    }
+    if !m.reactions.is_empty() {
+        ext.insert("reactions".into(), serde_json::to_value(&m.reactions).unwrap_or_default());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
 fn from_stored(m: &Stored) -> ChatMessage {
     let get = |k: &str| m.ext.get(k);
+    let assistant = m.role == "assistant";
+    let mut reasoning = get("reasoning").and_then(|v| v.as_str()).unwrap_or_default().to_string();
+    let mut text = m.text.clone();
+    // An answer saved with its `<think>` block still in the text (by an app that doesn't split it).
+    if assistant && reasoning.is_empty() && text.trim_start().starts_with("<think>") {
+        (reasoning, text) = crate::think::split(&text);
+    }
     ChatMessage {
         id: m.id.clone(),
-        role: if m.role == "assistant" { Role::Assistant } else { Role::User },
-        text: m.text.clone(),
+        role: if assistant { Role::Assistant } else { Role::User },
+        text,
+        reasoning,
+        thinking_ms: get("thinking_ms").and_then(|v| v.as_u64()),
         // Messages from apps that don't track it (Ymir's) are whole.
         state: get("state").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or(MessageState::Complete),
         model: m.model.clone(),
@@ -184,6 +227,7 @@ fn from_stored(m: &Stored) -> ChatMessage {
         attachments: get("attachments").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         tools: get("tools").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         agent: get("agent").and_then(|v| v.as_bool()).unwrap_or(false),
+        reactions: get("reactions").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         at_ms: m.at_ms,
     }
 }
@@ -202,7 +246,7 @@ fn from_conversation(c: &StoredConversation) -> Conversation {
 impl History {
     /// `dir` is the app's data directory: B1's files, if any, are in `<dir>/history/`.
     pub fn open(dir: &Path) -> Result<Self> {
-        Ok(Self { dir: dir.join("history"), store: RwLock::new(None), seq: Mutex::new(0) })
+        Ok(Self { dir: dir.join("history"), store: RwLock::new(None), seq: Mutex::new(0), undo: Mutex::new(None) })
     }
 
     /// Puts history on `identity`'s context store (the device is linked), importing B1's local
@@ -210,7 +254,10 @@ impl History {
     pub fn attach(&self, identity: Arc<Identity>) -> usize {
         let store = Arc::new(ContextStore::new(identity));
         *self.store.write().unwrap_or_else(|e| e.into_inner()) = Some(store);
-        self.import_local()
+        let n = self.import_local();
+        // Deletes made before deleting compacted (or on another device) leave nothing behind.
+        self.compact();
+        n
     }
 
     fn store(&self) -> Result<Arc<ContextStore>> {
@@ -290,15 +337,9 @@ impl History {
         format!("{at_ms:013}-{index:04}-{:04x}{:04x}", u16::from_le_bytes(b), *seq)
     }
 
+    /// Deletes one conversation (see [`History::delete_conversations`]).
     pub fn delete(&self, id: &str) -> Result<()> {
-        if !valid_id(id) {
-            return Err(not_found(id));
-        }
-        let store = self.store()?;
-        if store.load(id).is_none() {
-            return Err(not_found(id));
-        }
-        store.delete(id).map_err(storage)
+        self.delete_conversations(&[id.to_string()]).map(|_| ())
     }
 
     /// Newest first: `offset` and `limit` page through them.
@@ -321,14 +362,14 @@ impl History {
 mod tests {
     use super::*;
 
-    fn linked(dir: &Path) -> (Arc<Identity>, History) {
+    pub(super) fn linked(dir: &Path) -> (Arc<Identity>, History) {
         let id = Arc::new(Identity::create(&dir.join("identity"), "t").unwrap());
         let h = History::open(dir).unwrap();
         h.attach(id.clone());
         (id, h)
     }
 
-    fn conv(id: &str, texts: &[&str]) -> Conversation {
+    pub(super) fn conv(id: &str, texts: &[&str]) -> Conversation {
         let messages = texts
             .iter()
             .enumerate()
@@ -336,6 +377,8 @@ mod tests {
                 id: String::new(),
                 role: if i % 2 == 0 { Role::User } else { Role::Assistant },
                 text: t.to_string(),
+                reasoning: String::new(),
+                thinking_ms: None,
                 state: MessageState::Complete,
                 model: (i % 2 == 1).then(|| "alpha".to_string()),
                 node: None,
@@ -345,6 +388,7 @@ mod tests {
                 attachments: Vec::new(),
                 tools: Vec::new(),
                 agent: false,
+                reactions: Vec::new(),
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })
@@ -441,5 +485,67 @@ mod tests {
         let h = History::open(tmp.path()).unwrap();
         assert_eq!(h.page(0, 5).unwrap_err().kind, ErrorKind::NotPaired);
         assert_eq!(h.load("x").unwrap_err().kind, ErrorKind::NotPaired);
+    }
+
+    #[test]
+    fn reasoning_is_kept_and_inline_blocks_are_split() {
+        let mut m = conv("c", &["q", "391"]).messages.remove(1);
+        m.reasoning = "17*20 + 17*3".into();
+        m.thinking_ms = Some(1500);
+        let back = from_stored(&to_stored(&m, "m1".into()));
+        assert_eq!((back.reasoning.as_str(), back.thinking_ms, back.text.as_str()), ("17*20 + 17*3", Some(1500), "391"));
+        // Saved by an app that left the block in the text.
+        let mut raw = to_stored(&conv("c", &["q", "x"]).messages[1], "m2".into());
+        raw.text = "<think>hm</think>\n\n391".into();
+        let back = from_stored(&raw);
+        assert_eq!((back.reasoning.as_str(), back.text.as_str()), ("hm", "391"));
+    }
+}
+
+#[cfg(test)]
+mod reaction_tests {
+    use super::*;
+
+    #[test]
+    fn reactions_round_trip_and_old_records_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = Arc::new(Identity::create(&dir.path().join("identity"), "t").unwrap());
+        let h = History::open(dir.path()).unwrap();
+        h.attach(id);
+        let m = |role, text: &str| ChatMessage {
+            id: String::new(),
+            role,
+            text: text.into(),
+            reasoning: String::new(),
+            thinking_ms: None,
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
+            reactions: Vec::new(),
+            at_ms: 5,
+        };
+        let mut c = Conversation {
+            id: "c1".into(),
+            title: "t".into(),
+            created_ms: 5,
+            updated_ms: 5,
+            messages: vec![m(Role::User, "a"), m(Role::Assistant, "b")],
+        };
+        h.save(&c).unwrap();
+        // A record written before reactions existed has none.
+        assert!(h.load("c1").unwrap().messages.iter().all(|m| m.reactions.is_empty()));
+        c = h.load("c1").unwrap();
+        c.messages[1].reactions = vec!["👍".into(), "❤️".into()];
+        h.save(&c).unwrap();
+        assert_eq!(h.load("c1").unwrap().messages[1].reactions, ["👍", "❤️"]);
+        // Old JSON without the field still parses.
+        let j = r#"{"role":"user","text":"x","state":"complete","at_ms":1}"#;
+        assert!(serde_json::from_str::<ChatMessage>(j).unwrap().reactions.is_empty());
     }
 }
