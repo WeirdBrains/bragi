@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
+
+**What changed**
+- [`cli.rs`](crates/bragi-tui/src/cli.rs): `bragi-tui PATH` (or `--path PATH`) opens code mode on it. A lone word that is not a command (`link`, `status`, `undo`, `code`, `tui`) is the path; `./link` or `--path link` name a folder like a command. `--root` and a path together, or a path with a command, are errors. `resolve_open` handles `~`, `.`, `..` and symlinks: a folder is the root with its files as context; a file's root is its git repository (the nearest `.git`) or its folder, with the file as context; a missing path says `X doesn't exist` (exit 2).
+- [`app.rs`](crates/bragi-tui/src/app.rs) `open_code` and [`main.rs`](crates/bragi-tui/src/main.rs): start in code mode (after linking, on a new device). The root is `CodeState.root`, so suggest, rewrite and hunk review stay inside it as before.
+- [`main.rs`](crates/bragi-desktop/src/main.rs) and [`terminal.rs`](crates/bragi-desktop/src/terminal.rs) in the desktop crate: `bragi PATH` (and `bragi status` etc.) hands over to the `bragi-tui` beside it or on the PATH; `--demo`, `--serve` and `serve` are unchanged.
+- [README](README.md) and the [Getting started guide](site/lib/pages/docs_started.dart) describe it.
+
+**Not tested**: a real linked device; Windows (the hand-over spawns instead of exec); a file picker (code mode has none, the context is the folder).
+
 ## 2026-11-22: LF-13 polish, the terminal app's look on weirdnet-themes (branch `feature/tui-polish`, not merged)
 
 **What changed**

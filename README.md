@@ -68,11 +68,20 @@ reject (`n`) each hunk, `w` writes the ones you kept, and `/undo` reverts the wr
 
 ```sh
 bragi-tui                                                  # the full-screen app
+bragi-tui .                                                # code mode on the current folder (also `bragi .`)
+bragi-tui src/main.rs                                      # on one file, rooted at its git repository
+bragi-tui --path serve                                     # explicit path, for a folder named like a command
 bragi-tui link /ip4/…/tcp/4848/p2p/…                       # dial a node Bragi can't find by itself
 bragi-tui code --rewrite src/lib.rs:10-40 "use iterators"  # prints a unified diff
 bragi-tui code --suggest --context src "find bugs" --apply # writes the change
 bragi-tui undo                                             # puts the last written change back
 ```
+
+Give it a path and it opens code mode there: a folder is the root and its files the context; a file opens
+from its git repository (or its folder). `.`, `..`, `~` and relative paths work, and a missing path is an
+error. A lone word that is a command (`link`, `status`, `undo`, `code`, `tui`) stays a command; write
+`./link` or `--path link` for a folder of that name. `bragi PATH` (the desktop binary) hands over to `bragi-tui`
+the same way. Suggestions, rewrites and hunk review never leave the root.
 
 The prompts, the diffs and the undo journal are `bragi_core::code`, shared with the editor extension.
 

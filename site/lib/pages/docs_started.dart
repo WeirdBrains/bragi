@@ -52,6 +52,17 @@ digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
 </ul>
 <p>Phones are reachable only while the app is open, and Bragi needs the Ymir pool to be reachable over Weirdnet, either on
 the same network or through a relay.</p>
+<h2 id="terminal">The terminal app: open a folder or file</h2>
+<p>Bragi also runs in a terminal (<code>bragi-tui</code>, over SSH too). Give it a path and it opens code mode there, with
+the files as context and suggestions, rewrites and hunk review limited to that folder:</p>
+<pre><code>bragi .                  # code mode on the current folder
+bragi ~/src/app          # on another folder
+bragi src/main.rs        # on one file, rooted at its git repository (or its folder)
+bragi-tui --path serve   # a folder named like a command; ./serve works too</code></pre>
+<p>A relative path, <code>.</code>, <code>..</code> and <code>~</code> are resolved first, and a path that doesn't exist is
+an error. <code>bragi status</code>, <code>bragi link</code> and the other commands work as before. <code>bragi PATH</code>
+starts <code>bragi-tui</code>, so install it beside <code>bragi</code> (the packages do).</p>
+
 <p>More: <a href="${features}">Features</a>, the <a href="${roadmap}">roadmap</a>, and the
 <a href="${docs}">documentation index</a>. Bragi is a <a href="https://weirdbrains.com">Weird Brains</a> project.</p>
 ''';

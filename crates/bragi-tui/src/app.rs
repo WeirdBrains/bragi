@@ -210,6 +210,21 @@ impl App {
         app
     }
 
+    /// Starts in code mode on what `bragi-tui PATH` named: the folder's files, or the one file,
+    /// are the context. Requests and diffs stay inside the root.
+    pub fn open_code(&mut self, o: &crate::cli::Opened) {
+        match self.code.add(&[o.context.display().to_string()]) {
+            Ok(note) => self.say(&note),
+            Err(e) => self.fail(e),
+        }
+        // A new device links first; the code view waits behind that screen.
+        if self.view == View::Link {
+            self.back = View::Code;
+        } else {
+            self.view = View::Code;
+        }
+    }
+
     pub fn linked(&self) -> bool {
         linked(&self.state)
     }
@@ -297,7 +312,8 @@ impl App {
             if !was && self.linked() {
                 self.reload();
                 if self.view == View::Link && self.auto_link {
-                    self.view = View::Chat;
+                    // `back` is Code when the app was started on a path.
+                    self.view = if self.back == View::Code { View::Code } else { View::Chat };
                 }
                 self.auto_link = false;
                 self.say("Linked. Type a message and press Enter.");

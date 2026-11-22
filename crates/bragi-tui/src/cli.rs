@@ -14,7 +14,12 @@ use crate::session::{Launch, Session};
 
 pub const USAGE: &str = "\
 usage:
-  bragi-tui [--home DIR] [--demo] [--root DIR]     the terminal app (F1 lists its keys)
+  bragi-tui [PATH] [--home DIR] [--demo] [--root DIR]  the terminal app (F1 lists its keys)
+                                                   with a PATH it opens code mode there: a folder is
+                                                   the root and its files the context; a file is
+                                                   opened in its git repository (or its folder).
+                                                   `bragi-tui .` works here; use ./link for a path
+                                                   named like a command, or --path PATH
       [--theme NAME|FILE.toml] [--mode dark|light|system]
                                                    its look (weirdnet-themes: bragi, the default,
                                                    tokyo-night, catppuccin, gruvbox, dracula, nord,
@@ -39,6 +44,8 @@ usage:
 pub struct Args {
     pub launch: Launch,
     pub root: Option<PathBuf>,
+    /// A path to open in code mode (`bragi-tui PATH`, `--path PATH`), as typed.
+    pub open: Option<String>,
     pub command: Cmd,
     pub theme: crate::theme::Choice,
 }
@@ -84,6 +91,12 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         match a.as_str() {
             "--home" => out.launch.home = Some(value("--home")?.into()),
             "--root" => out.root = Some(value("--root")?.into()),
+            "--path" => {
+                if out.open.is_some() {
+                    return Err("give one path to open".into());
+                }
+                out.open = Some(value("--path")?);
+            }
             "--demo" => out.launch.demo = true,
             "--theme" => out.theme.theme = Some(value("--theme")?),
             "--mode" => out.theme.mode = Some(value("--mode")?),
@@ -126,8 +139,19 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         Some("undo") if words.len() == 1 => Cmd::Undo { force },
         Some("tui") if words.len() == 1 => Cmd::Tui,
         None => Cmd::Tui,
+        // A lone word that isn't a command is a path to open (`bragi-tui .`, `bragi-tui ~/src/app`).
+        Some(w) if words.len() == 1 && out.open.is_none() => {
+            out.open = Some(w.to_string());
+            Cmd::Tui
+        }
         Some(w) => return Err(format!("unknown command {w}")),
     };
+    if out.open.is_some() && out.root.is_some() {
+        return Err("give a path or --root, not both".into());
+    }
+    if out.open.is_some() && out.command != Cmd::Tui {
+        return Err("a path opens the terminal app; it doesn't go with a command".into());
+    }
     Ok(out)
 }
 
@@ -168,6 +192,49 @@ pub fn run(args: Args) -> i32 {
             eprintln!("bragi-tui: {e}");
             1
         }
+    }
+}
+
+/// Where code mode starts: its root and, when a file was named, that file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Opened {
+    pub root: PathBuf,
+    /// Added to the context, relative to `root`; `.` for a folder.
+    pub context: PathBuf,
+    pub is_file: bool,
+}
+
+/// Resolves a path typed on the command line against `cwd`: `~`, `.`, `..` and symlinks are
+/// resolved. A folder is the root; a file's root is its git repository (the nearest folder with
+/// a `.git`) or else its folder.
+pub fn resolve_open(raw: &str, cwd: &std::path::Path) -> Result<Opened, String> {
+    if raw.trim().is_empty() {
+        return Err("the path is empty".into());
+    }
+    let typed = crate::code::expand(raw);
+    let full = if typed.is_absolute() { typed } else { cwd.join(typed) };
+    let path = full.canonicalize().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => format!("{raw} doesn't exist"),
+        _ => format!("can't open {raw}: {e}"),
+    })?;
+    if path.is_dir() {
+        return Ok(Opened { root: path, context: PathBuf::from("."), is_file: false });
+    }
+    let parent = path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
+    let root = parent.ancestors().find(|d| d.join(".git").exists()).map(PathBuf::from).unwrap_or(parent);
+    let context = path.strip_prefix(&root).map(PathBuf::from).unwrap_or_else(|_| path.clone());
+    Ok(Opened { root, context, is_file: true })
+}
+
+/// The folder code mode works in, and what to open there, for the terminal app.
+pub fn start(args: &Args) -> Result<(PathBuf, Option<Opened>), String> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    match &args.open {
+        Some(raw) => {
+            let o = resolve_open(raw, &cwd)?;
+            Ok((o.root.clone(), Some(o)))
+        }
+        None => Ok((root(args), None)),
     }
 }
 
@@ -403,8 +470,60 @@ mod tests {
         );
         assert!(p("code").is_err());
         assert!(p("--rewrite a.rs").is_err());
-        assert!(p("frob").is_err());
         assert!(p("--bogus").is_err());
         assert_eq!(p("--version").unwrap().command, Cmd::Version);
+    }
+
+    #[test]
+    fn a_lone_word_is_a_path_unless_it_is_a_command() {
+        assert_eq!(p(".").unwrap().open.as_deref(), Some("."));
+        assert_eq!(p("~/src/app --demo").unwrap().open.as_deref(), Some("~/src/app"));
+        assert_eq!(p("--path serve").unwrap().open.as_deref(), Some("serve"));
+        assert_eq!(p("./link").unwrap().open.as_deref(), Some("./link"));
+        assert_eq!(p("./link").unwrap().command, Cmd::Tui);
+        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false });
+        assert_eq!(p("status").unwrap().open, None);
+        assert_eq!(p("src").unwrap().command, Cmd::Tui);
+        assert!(p("a b").is_err());
+        assert!(p(". --root x").is_err());
+        assert!(p("--path a --path b").is_err());
+        assert!(p("--path a status").is_err());
+        assert_eq!(p("--root x").unwrap().open, None);
+    }
+
+    #[test]
+    fn resolves_the_path_to_open() {
+        let d = tempfile::tempdir().unwrap();
+        let base = d.path().canonicalize().unwrap();
+        std::fs::create_dir_all(base.join("repo/.git")).unwrap();
+        std::fs::create_dir_all(base.join("repo/src")).unwrap();
+        std::fs::create_dir_all(base.join("plain")).unwrap();
+        std::fs::write(base.join("repo/src/a.rs"), "fn a() {}").unwrap();
+        std::fs::write(base.join("plain/b.txt"), "b").unwrap();
+
+        // A folder is the root, however it is spelled.
+        for typed in [".", "./", "../repo", &base.join("repo").display().to_string()] {
+            let o = resolve_open(typed, &base.join("repo")).unwrap();
+            assert_eq!(
+                (o.root.as_path(), o.context.as_path(), o.is_file),
+                (base.join("repo").as_path(), std::path::Path::new("."), false),
+                "{typed}"
+            );
+        }
+        // A file is opened from its git root, or from its folder with none.
+        let o = resolve_open("repo/src/a.rs", &base).unwrap();
+        assert_eq!((o.root, o.context, o.is_file), (base.join("repo"), "src/a.rs".into(), true));
+        let o = resolve_open("plain/b.txt", &base).unwrap();
+        assert_eq!((o.root, o.context), (base.join("plain"), "b.txt".into()));
+        // Missing and empty paths say so.
+        assert_eq!(resolve_open("nope", &base).unwrap_err(), "nope doesn't exist");
+        assert!(resolve_open("", &base).is_err());
+    }
+
+    #[test]
+    fn a_leading_tilde_is_expanded_before_looking() {
+        // Whatever HOME is, `~/` is looked up there, not under the current folder.
+        let e = resolve_open("~/no-such-folder-for-the-bragi-tests", std::path::Path::new("/")).unwrap_err();
+        assert_eq!(e, "~/no-such-folder-for-the-bragi-tests doesn't exist");
     }
 }
