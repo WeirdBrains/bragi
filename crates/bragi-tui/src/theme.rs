@@ -337,7 +337,7 @@ pub fn get() -> &'static Theme {
         return t;
     }
     let mut w = THEME.write().unwrap_or_else(|e| e.into_inner());
-    *w.get_or_insert_with(|| Box::leak(Box::new(Theme::bragi_dark())))
+    w.get_or_insert_with(|| Box::leak(Box::new(Theme::bragi_dark())))
 }
 
 #[cfg(test)]

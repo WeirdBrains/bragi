@@ -527,11 +527,11 @@ impl App {
                 return self.themes.msg = Some(err.message);
             }
         }
-        if let Ok(f) = a.load(&name) {
-            if let Some(e) = &mut self.themes.edit {
-                e.orig = f.clone();
-                e.file = f;
-            }
+        if let Ok(f) = a.load(&name)
+            && let Some(e) = &mut self.themes.edit
+        {
+            e.orig = f.clone();
+            e.file = f;
         }
         self.reload_themes();
         // The chosen theme edited shows its new look once the screen closes.

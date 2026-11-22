@@ -39,6 +39,7 @@ pub(super) struct Editing {
     pub role: usize,
 }
 
+#[derive(Default)]
 pub(super) struct Themes {
     pub rows: Vec<ThemeRow>,
     pub sel: String,
@@ -48,21 +49,6 @@ pub(super) struct Themes {
     pub ask: Option<Ask>,
     pub msg: Option<String>,
     pub delete: Option<String>,
-}
-
-impl Default for Themes {
-    fn default() -> Self {
-        Self {
-            rows: Vec::new(),
-            sel: String::new(),
-            saved: Preference::default(),
-            mode: ModePref::default(),
-            edit: None,
-            ask: None,
-            msg: None,
-            delete: None,
-        }
-    }
 }
 
 /// `#abc` / `#aabbcc` (any case, `#` optional) as `#rrggbb`.
