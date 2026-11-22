@@ -141,7 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
             if (c.notice != null)
               Padding(
                 padding: const EdgeInsets.all(6),
-                child: Text(c.notice!, style: const TextStyle(color: BragiColors.error, fontSize: 12)),
+                child: Text(c.notice!, style: TextStyle(color: c.notice!.startsWith('Saved ') ? BragiColors.warm : BragiColors.error, fontSize: 12)),
               ),
             if (c.nodeSearchLine != null)
               Padding(

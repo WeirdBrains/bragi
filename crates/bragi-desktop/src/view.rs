@@ -1359,7 +1359,7 @@ impl BragiView {
             .when(self.settings_open, |d| d.child(self.settings(cx)))
             .when(!self.settings_open, |d| d.child(self.message_area(body, cx)))
             .children(self.undo_bar(cx))
-            .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
+            .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(if n.starts_with("Saved to ") { t.success } else { t.error })).child(n)))
             .children(self.state.node_search.line().map(|line| {
                 let color = match &self.state.node_search {
                     NodeSearch::Found { .. } => t.success,

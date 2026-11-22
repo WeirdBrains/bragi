@@ -31,7 +31,6 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 **What's left**:
 - A player for audio files (the card shows the file and saves it).
 - Files larger than a message takes (content roots).
-- The notice line still uses the error colour for "Saved to …".
 - The roadmap and Ymir's DESIGN.md were not updated.
 
 **What's next**: review of `feature/chat-files`, then LF-16.
