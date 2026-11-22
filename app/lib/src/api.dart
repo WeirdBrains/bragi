@@ -8,12 +8,19 @@ export 'rust/api/bragi.dart'
         ChatEventView,
         ChatStarted,
         ConversationView,
+        EndpointTestView,
+        EndpointView,
+        FolderView,
         LinkCheckView,
+        LinkView,
         MessageView,
         ModelView,
         PairView,
+        RouteView,
+        SessionView,
         StateView,
-        SummaryView;
+        SummaryView,
+        TreeRowView;
 
 abstract class BragiApi {
   Stream<rust.StateView> watchState();
@@ -37,6 +44,34 @@ abstract class BragiApi {
   Future<rust.ConversationView> conversation(String id);
   Future<void> paused();
   Future<void> resumed();
+  // Sessions and folders.
+  Future<rust.SessionView> createSession(String name, String? endpointId, String? model, String? folder);
+  Future<void> renameSession(String id, String name);
+  Future<void> moveSession(String id, String? folder);
+  Future<void> setSessionModel(String id, String? model);
+  Future<void> setSessionEndpoint(String id, String? endpointId);
+  Future<void> switchSession(String id);
+  Future<void> deleteSession(String id);
+  Future<rust.FolderView> createFolder(String name, String? parent);
+  Future<void> renameFolder(String id, String name);
+  Future<void> moveFolder(String id, String? parent);
+  Future<void> setFolderCollapsed(String id, bool collapsed);
+  Future<void> deleteFolder(String id);
+  // Endpoints and the fallback.
+  Future<rust.EndpointView> addEndpoint(String name, String url, String token);
+  Future<rust.EndpointView> updateEndpoint(String id, String? name, String? url, String? token);
+  Future<void> removeEndpoint(String id);
+  Future<void> setFallback(String? id);
+  Future<rust.EndpointTestView> testEndpoint(String? id, String url, String? token);
+  Future<rust.EndpointView> editEndpoint(String id, String name, String url, String? token, String? model, bool fallback);
+  Future<int> deleteEndpoint(String id, String rebind);
+
+  // Weirdnet links (node addresses).
+  Future<String> testLink(String address);
+  Future<rust.LinkView> addLink(String name, String address);
+  Future<void> renameLink(String address, String name);
+  Future<rust.LinkView> editLink(String address, String newAddress);
+  Future<int> deleteLink(String address);
 }
 
 class RustBragiApi implements BragiApi {
@@ -88,4 +123,55 @@ class RustBragiApi implements BragiApi {
   Future<void> paused() => rust.paused();
   @override
   Future<void> resumed() => rust.resumed();
+  @override
+  Future<rust.SessionView> createSession(String name, String? endpointId, String? model, String? folder) =>
+      rust.createSession(name: name, endpointId: endpointId, model: model, folder: folder);
+  @override
+  Future<void> renameSession(String id, String name) => rust.renameSession(id: id, name: name);
+  @override
+  Future<void> moveSession(String id, String? folder) => rust.moveSession(id: id, folder: folder);
+  @override
+  Future<void> setSessionModel(String id, String? model) => rust.setSessionModel(id: id, model: model);
+  @override
+  Future<void> setSessionEndpoint(String id, String? endpointId) => rust.setSessionEndpoint(id: id, endpointId: endpointId);
+  @override
+  Future<void> switchSession(String id) => rust.switchSession(id: id);
+  @override
+  Future<void> deleteSession(String id) => rust.deleteSession(id: id);
+  @override
+  Future<rust.FolderView> createFolder(String name, String? parent) => rust.createFolder(name: name, parent: parent);
+  @override
+  Future<void> renameFolder(String id, String name) => rust.renameFolder(id: id, name: name);
+  @override
+  Future<void> moveFolder(String id, String? parent) => rust.moveFolder(id: id, parent: parent);
+  @override
+  Future<void> setFolderCollapsed(String id, bool collapsed) => rust.setFolderCollapsed(id: id, collapsed: collapsed);
+  @override
+  Future<void> deleteFolder(String id) => rust.deleteFolder(id: id);
+  @override
+  Future<rust.EndpointView> addEndpoint(String name, String url, String token) => rust.addEndpoint(name: name, url: url, token: token);
+  @override
+  Future<rust.EndpointView> updateEndpoint(String id, String? name, String? url, String? token) =>
+      rust.updateEndpoint(id: id, name: name, url: url, token: token);
+  @override
+  Future<void> removeEndpoint(String id) => rust.removeEndpoint(id: id);
+  @override
+  Future<void> setFallback(String? id) => rust.setFallback(id: id);
+  @override
+  Future<rust.EndpointTestView> testEndpoint(String? id, String url, String? token) => rust.testEndpoint(id: id, url: url, token: token);
+  @override
+  Future<rust.EndpointView> editEndpoint(String id, String name, String url, String? token, String? model, bool fallback) =>
+      rust.editEndpoint(id: id, name: name, url: url, token: token, model: model, fallback: fallback);
+  @override
+  Future<int> deleteEndpoint(String id, String rebind) => rust.deleteEndpoint(id: id, rebind: rebind);
+  @override
+  Future<String> testLink(String address) => rust.testLink(address: address);
+  @override
+  Future<rust.LinkView> addLink(String name, String address) => rust.addLink(name: name, address: address);
+  @override
+  Future<void> renameLink(String address, String name) => rust.renameLink(address: address, name: name);
+  @override
+  Future<rust.LinkView> editLink(String address, String newAddress) => rust.editLink(address: address, newAddress: newAddress);
+  @override
+  Future<int> deleteLink(String address) => rust.deleteLink(address: address);
 }

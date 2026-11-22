@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use bragi_core::demo::DemoNode;
 use bragi_core::{
-    AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, ErrorKind, MessageState, ModelStatus,
-    PairState, Role, ToolState,
+    AppState, Attachment, ChatEvent, ChatHandle, Choice, Config, Conversation, ConversationSummary, Core, EndpointHealth, EndpointKind,
+    EndpointState, ErrorKind, Folder, MessageState, ModelInfo, ModelStatus, PairState, Role, RouteKind, Row, Session, Target, ToolState,
 };
 use flutter_rust_bridge::frb;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -76,8 +76,93 @@ pub struct StateView {
     pub online: bool,
     /// Inference nodes found among the user's devices.
     pub node_count: u32,
+    /// The open session's models (the pool's, the fallback's while no node answers, or its endpoint's).
     pub models: Vec<ModelView>,
     pub default_model: Option<String>,
+    /// Where the open session's next message goes.
+    pub route: RouteView,
+    pub endpoints: Vec<EndpointView>,
+    pub sessions: Vec<SessionView>,
+    pub folders: Vec<FolderView>,
+    pub active_session: String,
+    /// The session tree as drawn, depth first (a collapsed folder's insides left out).
+    pub tree: Vec<TreeRowView>,
+    /// The Weirdnet node addresses this device dials.
+    pub links: Vec<LinkView>,
+}
+
+/// A Weirdnet link: a node address this device dials. `fixed` ones (from the app's config) can
+/// only be renamed.
+#[derive(Debug, Clone)]
+pub struct LinkView {
+    pub address: String,
+    pub name: String,
+    pub peer_id: String,
+    pub connected: bool,
+    pub fixed: bool,
+}
+
+/// What a test connection to an endpoint found. `kind` is `ymir_bridge` or `openai`.
+#[derive(Debug, Clone)]
+pub struct EndpointTestView {
+    pub url: String,
+    pub kind: String,
+    pub models: Vec<String>,
+}
+
+/// `kind` is `weirdnet`, `fallback`, `endpoint` or `none`; `detail` is one line for the UI.
+#[derive(Debug, Clone)]
+pub struct RouteView {
+    pub kind: String,
+    pub endpoint: Option<String>,
+    pub detail: String,
+}
+
+/// An OpenAI-compatible endpoint. `kind` is `ymir_bridge` or `openai`; `health` is `unchecked`,
+/// `ok` or `failed` (why in `message`). The token is never here.
+#[derive(Debug, Clone)]
+pub struct EndpointView {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub kind: String,
+    pub health: String,
+    pub message: Option<String>,
+    pub models: Vec<String>,
+    pub fallback: bool,
+    /// The default model chosen for it (`None`: its first), and the one it uses now.
+    pub model: Option<String>,
+    pub default_model: Option<String>,
+    /// How many sessions send to it.
+    pub sessions: u32,
+}
+
+/// A session: `endpoint_id` is set when it sends to an endpoint, else it sends to Weirdnet.
+#[derive(Debug, Clone)]
+pub struct SessionView {
+    pub id: String,
+    pub name: String,
+    pub endpoint_id: Option<String>,
+    /// What it sends to, for the UI: `Weirdnet` or the endpoint's name.
+    pub target_name: String,
+    pub model: Option<String>,
+    pub folder: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FolderView {
+    pub id: String,
+    pub name: String,
+    pub parent: Option<String>,
+    pub collapsed: bool,
+}
+
+/// A row of the session tree: `kind` is `folder` or `session`.
+#[derive(Debug, Clone)]
+pub struct TreeRowView {
+    pub depth: u32,
+    pub kind: String,
+    pub id: String,
 }
 
 /// One [`ChatEvent`]: `kind` is `queued`, `started`, `delta`, `reasoning`, `resumed`, `usage`,
@@ -111,6 +196,9 @@ pub struct ChatEventView {
     pub ask: u64,
     pub tier: Option<String>,
     pub site: Option<String>,
+    /// `via`: the answer goes to the endpoint in `node`; `fallback` when it is the Weirdnet
+    /// session's fallback (why in `text`).
+    pub fallback: bool,
 }
 
 /// A text file attached to a message.
@@ -144,6 +232,8 @@ pub struct MessageView {
     pub tools: Vec<String>,
     /// The answer came from an agent task on a node.
     pub agent: bool,
+    /// The endpoint that answered, when it wasn't the Weirdnet pool.
+    pub via: Option<String>,
     pub at_ms: i64,
 }
 
@@ -236,26 +326,108 @@ fn pair_view(p: &PairState) -> PairView {
     v
 }
 
+fn model_view(m: &ModelInfo) -> ModelView {
+    ModelView {
+        id: m.id.clone(),
+        status: status_name(m.status),
+        replicas: m.replicas,
+        tokens_per_sec: m.tokens_per_sec.map(f64::from),
+        context: m.context,
+        nodes: m.nodes.len() as u32,
+        standin: m.standin.clone(),
+    }
+}
+
+fn endpoint_view(e: &EndpointState) -> EndpointView {
+    EndpointView {
+        id: e.id.clone(),
+        name: e.name.clone(),
+        url: e.url.clone(),
+        kind: match e.kind {
+            EndpointKind::YmirBridge => "ymir_bridge",
+            EndpointKind::OpenAi => "openai",
+        }
+        .into(),
+        health: match e.health {
+            EndpointHealth::Unchecked => "unchecked",
+            EndpointHealth::Ok => "ok",
+            EndpointHealth::Failed => "failed",
+        }
+        .into(),
+        message: e.message.clone(),
+        models: e.models.iter().map(|m| m.id.clone()).collect(),
+        fallback: e.fallback,
+        model: e.model.clone(),
+        default_model: e.default_model().map(str::to_string),
+        sessions: e.sessions as u32,
+    }
+}
+
+fn kind_name(k: EndpointKind) -> String {
+    match k {
+        EndpointKind::YmirBridge => "ymir_bridge",
+        EndpointKind::OpenAi => "openai",
+    }
+    .into()
+}
+
+fn session_view(s: &Session, endpoints: &[EndpointState]) -> SessionView {
+    let (endpoint_id, target_name) = match &s.target {
+        Target::Weirdnet => (None, "Weirdnet".to_string()),
+        Target::Endpoint { id } => {
+            (Some(id.clone()), endpoints.iter().find(|e| &e.id == id).map_or_else(|| "a removed endpoint".into(), |e| e.name.clone()))
+        }
+    };
+    SessionView { id: s.id.clone(), name: s.name.clone(), endpoint_id, target_name, model: s.model.clone(), folder: s.folder.clone() }
+}
+
+fn folder_view(f: &Folder) -> FolderView {
+    FolderView { id: f.id.clone(), name: f.name.clone(), parent: f.parent.clone(), collapsed: f.collapsed }
+}
+
 fn state_view(s: &AppState) -> StateView {
+    let route = s.route();
     StateView {
         pair: pair_view(&s.pair),
         online: s.online,
         node_count: s.catalog.nodes.len() as u32,
-        models: s
-            .catalog
-            .models
-            .iter()
-            .map(|m| ModelView {
-                id: m.id.clone(),
-                status: status_name(m.status),
-                replicas: m.replicas,
-                tokens_per_sec: m.tokens_per_sec.map(f64::from),
-                context: m.context,
-                nodes: m.nodes.len() as u32,
-                standin: m.standin.clone(),
+        models: s.models().iter().map(model_view).collect(),
+        default_model: s.default_model(),
+        route: RouteView {
+            kind: match route.kind {
+                RouteKind::Weirdnet => "weirdnet",
+                RouteKind::Fallback => "fallback",
+                RouteKind::Endpoint => "endpoint",
+                RouteKind::None => "none",
+            }
+            .into(),
+            endpoint: route.endpoint,
+            detail: route.detail,
+        },
+        endpoints: s.endpoints.iter().map(endpoint_view).collect(),
+        sessions: s.sessions.sessions.iter().map(|x| session_view(x, &s.endpoints)).collect(),
+        folders: s.sessions.folders.iter().map(folder_view).collect(),
+        active_session: s.session().id.clone(),
+        tree: s
+            .sessions
+            .rows()
+            .into_iter()
+            .map(|(depth, r)| match r {
+                Row::Folder(id) => TreeRowView { depth: depth as u32, kind: "folder".into(), id },
+                Row::Session(id) => TreeRowView { depth: depth as u32, kind: "session".into(), id },
             })
             .collect(),
-        default_model: s.catalog.default_model().map(str::to_string),
+        links: s
+            .links
+            .iter()
+            .map(|l| LinkView {
+                address: l.address.clone(),
+                name: l.name.clone(),
+                peer_id: l.peer_id.clone(),
+                connected: l.connected,
+                fixed: l.fixed,
+            })
+            .collect(),
     }
 }
 
@@ -331,6 +503,12 @@ fn event_view(e: ChatEvent) -> ChatEventView {
             v.kind = "notice".into();
             v.text = text;
         }
+        ChatEvent::Via { endpoint, fallback, reason } => {
+            v.kind = "via".into();
+            v.node = Some(endpoint);
+            v.fallback = fallback;
+            v.text = reason;
+        }
         ChatEvent::Error { kind, message, partial } => {
             v.kind = "error".into();
             v.error_kind = Some(error_kind_name(kind));
@@ -362,6 +540,7 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 attachments: m.attachments.iter().map(attachment_view).collect(),
                 tools: m.tools.clone(),
                 agent: m.agent,
+                via: m.via.clone(),
                 at_ms: m.at_ms,
             })
             .collect(),
@@ -633,4 +812,265 @@ pub fn conversation(id: String) -> Result<ConversationView, String> {
 
 pub fn delete_conversation(id: String) -> Result<(), String> {
     core()?.delete_conversation(&id).map_err(err)
+}
+
+// ---- sessions and folders ----------------------------------------------------------------------
+
+fn target(endpoint_id: Option<String>) -> Target {
+    match endpoint_id.filter(|e| !e.is_empty()) {
+        Some(id) => Target::Endpoint { id },
+        None => Target::Weirdnet,
+    }
+}
+
+/// A new session sending to `endpoint_id` (Weirdnet when none), asking `model` (its target's
+/// first when none), in `folder` (the top level when none).
+pub fn create_session(name: String, endpoint_id: Option<String>, model: Option<String>, folder: Option<String>) -> Result<SessionView, String> {
+    let core = core()?;
+    let s = core.create_session(&name, target(endpoint_id), model, folder).map_err(err)?;
+    Ok(session_view(&s, &core.state().endpoints))
+}
+
+pub fn rename_session(id: String, name: String) -> Result<(), String> {
+    core()?.rename_session(&id, &name).map_err(err)
+}
+
+/// Puts a session in `folder` (the top level when none).
+pub fn move_session(id: String, folder: Option<String>) -> Result<(), String> {
+    core()?.move_session(&id, folder).map_err(err)
+}
+
+pub fn set_session_model(id: String, model: Option<String>) -> Result<(), String> {
+    core()?.set_session_model(&id, model).map_err(err)
+}
+
+/// Where a session sends: `endpoint_id`, or Weirdnet when none.
+pub fn set_session_endpoint(id: String, endpoint_id: Option<String>) -> Result<(), String> {
+    core()?.set_session_target(&id, target(endpoint_id)).map_err(err)
+}
+
+pub fn switch_session(id: String) -> Result<(), String> {
+    core()?.switch_session(&id).map_err(err)
+}
+
+/// Deletes a session (not the Weirdnet one); its conversations move to the Weirdnet session.
+pub fn delete_session(id: String) -> Result<(), String> {
+    core()?.delete_session(&id).map_err(err)
+}
+
+pub fn create_folder(name: String, parent: Option<String>) -> Result<FolderView, String> {
+    core()?.create_folder(&name, parent).map(|f| folder_view(&f)).map_err(err)
+}
+
+pub fn rename_folder(id: String, name: String) -> Result<(), String> {
+    core()?.rename_folder(&id, &name).map_err(err)
+}
+
+pub fn move_folder(id: String, parent: Option<String>) -> Result<(), String> {
+    core()?.move_folder(&id, parent).map_err(err)
+}
+
+pub fn set_folder_collapsed(id: String, collapsed: bool) -> Result<(), String> {
+    core()?.set_folder_collapsed(&id, collapsed).map_err(err)
+}
+
+/// Deletes a folder; its sessions and folders move up to its parent. Ask the user first.
+pub fn delete_folder(id: String) -> Result<(), String> {
+    core()?.delete_folder(&id).map_err(err)
+}
+
+// ---- endpoints ---------------------------------------------------------------------------------
+
+/// Adds an endpoint once `url` answers `/v1/models` with `token` (kept in a private file, never
+/// shown again).
+pub async fn add_endpoint(name: String, url: String, token: String) -> Result<EndpointView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle()
+        .spawn(async move { c.add_endpoint(&name, &url, &token).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|e| endpoint_view(&e))
+        .map_err(err)
+}
+
+/// Changes an endpoint's name, URL or token (each when given; empty is "keep").
+pub async fn update_endpoint(id: String, name: Option<String>, url: Option<String>, token: Option<String>) -> Result<EndpointView, String> {
+    let core = core()?;
+    let c = core.clone();
+    let keep = |v: Option<String>| v.filter(|x| !x.trim().is_empty());
+    let (name, url, token) = (keep(name), keep(url), keep(token));
+    core.handle()
+        .spawn(async move { c.update_endpoint(&id, name, url, token).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|e| endpoint_view(&e))
+        .map_err(err)
+}
+
+/// A test connection to an endpoint: `url` with `token`, or with the saved token of endpoint `id`
+/// when no token is typed. Saves nothing.
+pub async fn test_endpoint(id: Option<String>, url: String, token: Option<String>) -> Result<EndpointTestView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle()
+        .spawn(async move { c.test_endpoint(id.as_deref(), &url, token.as_deref()).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|t| EndpointTestView { url: t.url, kind: kind_name(t.kind), models: t.models })
+        .map_err(err)
+}
+
+/// Saves the endpoint settings form: name, URL, a new token (`None` or empty keeps the saved
+/// one), the default model and the fallback switch. A changed URL or token is tested first.
+pub async fn edit_endpoint(
+    id: String,
+    name: String,
+    url: String,
+    token: Option<String>,
+    model: Option<String>,
+    fallback: bool,
+) -> Result<EndpointView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle()
+        .spawn(async move { c.edit_endpoint(&id, &name, &url, token, model, fallback).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|e| endpoint_view(&e))
+        .map_err(err)
+}
+
+/// Deletes an endpoint. Its sessions go to `rebind`: `unbound` (left pointing at nothing),
+/// `weirdnet`, or another endpoint's id. Conversations are never deleted. Returns how many
+/// sessions it had.
+pub fn delete_endpoint(id: String, rebind: String) -> Result<u32, String> {
+    let r = match rebind.as_str() {
+        "unbound" => bragi_core::Rebind::Unbound,
+        "weirdnet" => bragi_core::Rebind::To(Target::Weirdnet),
+        other => bragi_core::Rebind::To(Target::Endpoint { id: other.to_string() }),
+    };
+    core()?.delete_endpoint(&id, r).map(|n| n as u32).map_err(err)
+}
+
+/// A test connection to a Weirdnet node address (`…/p2p/PEER`); returns its peer id.
+pub async fn test_link(address: String) -> Result<String, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.test_link(&address).await }).await.map_err(|e| e.to_string())?.map_err(err)
+}
+
+/// Adds a node address after a test connection.
+pub async fn add_link(name: String, address: String) -> Result<LinkView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle()
+        .spawn(async move { c.add_link(&name, &address).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|l| LinkView { address: l.address, name: l.name, peer_id: l.peer_id, connected: l.connected, fixed: l.fixed })
+        .map_err(err)
+}
+
+pub fn rename_link(address: String, name: String) -> Result<(), String> {
+    core()?.rename_link(&address, &name).map_err(err)
+}
+
+/// Changes a link's address after a test connection to the new one.
+pub async fn edit_link(address: String, new_address: String) -> Result<LinkView, String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle()
+        .spawn(async move { c.edit_link(&address, &new_address).await })
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|l| LinkView { address: l.address, name: l.name, peer_id: l.peer_id, connected: l.connected, fixed: l.fixed })
+        .map_err(err)
+}
+
+/// Deletes a link (the address is forgotten). Returns how many sessions were bound to it (0).
+pub fn delete_link(address: String) -> Result<u32, String> {
+    core()?.delete_link(&address).map(|n| n as u32).map_err(err)
+}
+
+/// Demo only: starts another demo node (its own identity) on the memory transport and returns
+/// its address, for trying the link editor and its test connection.
+pub async fn start_demo_other_node() -> Result<String, String> {
+    let core = {
+        let s = slot().lock().unwrap_or_else(|e| e.into_inner());
+        let r = s.as_ref().ok_or("Bragi has not started")?;
+        if r._demo.is_none() {
+            return Err("not the demo profile".into());
+        }
+        r.core.clone()
+    };
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let dir = std::env::temp_dir().join(format!("bragi-demo-node-{}-{}", std::process::id(), N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)));
+    let node =
+        core.handle().spawn(async move { DemoNode::start(&dir, Duration::from_millis(10)).await }).await.map_err(|e| e.to_string())?.map_err(err)?;
+    let node = Arc::new(node);
+    let addr = node.address();
+    demo_nodes().lock().unwrap_or_else(|e| e.into_inner()).push(node);
+    Ok(addr)
+}
+
+fn demo_nodes() -> &'static Mutex<Vec<Arc<DemoNode>>> {
+    static NODES: OnceLock<Mutex<Vec<Arc<DemoNode>>>> = OnceLock::new();
+    NODES.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+pub fn remove_endpoint(id: String) -> Result<(), String> {
+    core()?.remove_endpoint(&id).map_err(err)
+}
+
+/// The Ymir bridge the Weirdnet session falls back to (none turns it off).
+pub fn set_fallback(id: Option<String>) -> Result<(), String> {
+    core()?.set_fallback(id.as_deref().filter(|i| !i.is_empty())).map_err(err)
+}
+
+/// Checks every endpoint now (Bragi also does it every 30 seconds).
+pub async fn check_endpoints() -> Result<(), String> {
+    let core = core()?;
+    let c = core.clone();
+    core.handle().spawn(async move { c.check_endpoints().await }).await.map_err(|e| e.to_string())
+}
+
+/// Demo only: starts a fake Ymir bridge on 127.0.0.1 and returns its URL; its token is
+/// `demo_bridge_token()`. `fail_after_words` breaks its next answer after that many words.
+pub async fn start_demo_bridge(fail_after_words: Option<u32>) -> Result<String, String> {
+    let core = {
+        let s = slot().lock().unwrap_or_else(|e| e.into_inner());
+        let r = s.as_ref().ok_or("Bragi has not started")?;
+        if r._demo.is_none() {
+            return Err("not the demo profile".into());
+        }
+        r.core.clone()
+    };
+    let b = core
+        .handle()
+        .spawn(bragi_core::demo_bridge::FakeBridge::start(
+            true,
+            bragi_core::demo_bridge::DEMO_TOKEN,
+            &[bragi_core::demo::WARM_MODEL],
+            Duration::from_millis(30),
+        ))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(err)?;
+    if let Some(w) = fail_after_words {
+        b.die_next_answer_after(w as usize);
+    }
+    let url = b.url();
+    demo_bridges().lock().unwrap_or_else(|e| e.into_inner()).push(b);
+    Ok(url)
+}
+
+#[frb(sync)]
+pub fn demo_bridge_token() -> String {
+    bragi_core::demo_bridge::DEMO_TOKEN.into()
+}
+
+fn demo_bridges() -> &'static Mutex<Vec<Arc<bragi_core::demo_bridge::FakeBridge>>> {
+    static B: OnceLock<Mutex<Vec<Arc<bragi_core::demo_bridge::FakeBridge>>>> = OnceLock::new();
+    B.get_or_init(Default::default)
 }

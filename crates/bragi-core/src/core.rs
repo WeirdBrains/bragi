@@ -19,11 +19,13 @@ use weirdnet_device_link::{HostNode, HostStatus, Pairing};
 use weirdnet_net::{Keypair, Multiaddr, NodeConfig, PeerHint, PeerId};
 
 use crate::attach::Attachment;
-use crate::catalog::CatalogView;
+use crate::catalog::{CatalogView, ModelInfo};
 use crate::chat::{ChatEvent, coalesce};
+use crate::endpoint::{Endpoint, EndpointHealth, EndpointKind, EndpointState, EndpointStore};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::history::{ChatMessage, Conversation, ConversationSummary, History, MessageState, Role, now_ms, title_for};
 use crate::identity::{Identity, LinkSettings, SYNC_TYPE, SyncNode};
+use crate::session::{DEFAULT_SESSION, Session, SessionStore, Sessions, Target};
 
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
 pub const SCHEME: &str = "weirdnet-bragi://";
@@ -142,6 +144,120 @@ pub struct AppState {
     pub catalog: CatalogView,
     /// The Weirdnet node is running.
     pub online: bool,
+    /// The configured OpenAI-compatible endpoints and how their last check went.
+    #[serde(default)]
+    pub endpoints: Vec<EndpointState>,
+    /// The sessions, their folders and the open one.
+    #[serde(default)]
+    pub sessions: Sessions,
+    /// The Weirdnet node addresses this device dials, with their names.
+    #[serde(default)]
+    pub links: Vec<crate::links::LinkState>,
+}
+
+/// Where the open session's next message goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RouteKind {
+    /// The Weirdnet pool.
+    Weirdnet,
+    /// No inference node is reachable: the Weirdnet session's fallback Ymir bridge.
+    Fallback,
+    /// The session's own endpoint.
+    Endpoint,
+    /// Nowhere yet (no node and no fallback, or the endpoint is gone).
+    None,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Route {
+    pub kind: RouteKind,
+    /// The endpoint's name, for `Fallback` and `Endpoint`.
+    pub endpoint: Option<String>,
+    /// One line for the UI.
+    pub detail: String,
+}
+
+impl AppState {
+    /// The open session.
+    pub fn session(&self) -> &Session {
+        self.sessions.active()
+    }
+
+    fn endpoint(&self, id: &str) -> Option<&EndpointState> {
+        self.endpoints.iter().find(|e| e.id == id)
+    }
+
+    /// The fallback endpoint, when one is set.
+    pub fn fallback(&self) -> Option<&EndpointState> {
+        self.endpoints.iter().find(|e| e.fallback)
+    }
+
+    /// Where the open session's next message goes.
+    pub fn route(&self) -> Route {
+        self.route_for(self.session())
+    }
+
+    pub fn route_for(&self, s: &Session) -> Route {
+        let r = |kind, endpoint: Option<&str>, detail: String| Route { kind, endpoint: endpoint.map(str::to_string), detail };
+        match &s.target {
+            Target::Endpoint { id } => match self.endpoint(id) {
+                None => r(RouteKind::None, None, "This session's endpoint was removed; pick another one for it.".into()),
+                Some(e) => {
+                    let detail = match e.health {
+                        EndpointHealth::Ok => format!("Sends to {} only", e.name),
+                        EndpointHealth::Unchecked => format!("Checking {}…", e.name),
+                        EndpointHealth::Failed => format!("{} is not answering: {}", e.name, e.message.clone().unwrap_or_default()),
+                    };
+                    r(RouteKind::Endpoint, Some(&e.name), detail)
+                }
+            },
+            Target::Weirdnet => {
+                let n = self.catalog.nodes.len();
+                if n > 0 {
+                    let fb = self.fallback().map(|f| format!(", {} as fallback", f.name)).unwrap_or_default();
+                    return r(RouteKind::Weirdnet, None, format!("Your Weirdnet · {n} inference node{}{fb}", if n == 1 { "" } else { "s" }));
+                }
+                match self.fallback() {
+                    Some(f) if f.health != EndpointHealth::Failed => {
+                        r(RouteKind::Fallback, Some(&f.name), format!("No inference node reachable · using the {} Ymir bridge", f.name))
+                    }
+                    Some(f) => r(
+                        RouteKind::None,
+                        Some(&f.name),
+                        format!("No inference node reachable, and the {} bridge is not answering: {}", f.name, f.message.clone().unwrap_or_default()),
+                    ),
+                    None => r(RouteKind::None, None, "Looking for your inference nodes…".into()),
+                }
+            }
+        }
+    }
+
+    /// The models the open session can use: the pool's, the fallback's while no node is
+    /// reachable, or its endpoint's.
+    pub fn models(&self) -> Vec<ModelInfo> {
+        self.models_for(self.session())
+    }
+
+    pub fn models_for(&self, s: &Session) -> Vec<ModelInfo> {
+        match &s.target {
+            Target::Endpoint { id } => self.endpoint(id).map(|e| e.models.clone()).unwrap_or_default(),
+            Target::Weirdnet if !self.catalog.models.is_empty() => self.catalog.models.clone(),
+            Target::Weirdnet => self.fallback().map(|f| f.models.clone()).unwrap_or_default(),
+        }
+    }
+
+    /// The model the open session asks for: its own pick when its target has it, else the first.
+    pub fn default_model(&self) -> Option<String> {
+        let s = self.session();
+        let models = self.models_for(s);
+        match (&s.model, &s.target) {
+            (Some(m), _) if models.is_empty() || models.iter().any(|x| &x.id == m) => Some(m.clone()),
+            (_, Target::Endpoint { id }) => self.endpoint(id).and_then(|e| e.default_model()).map(str::to_string),
+            (_, Target::Weirdnet) if self.catalog.models.is_empty() => self.fallback().and_then(|f| f.default_model()).map(str::to_string),
+            _ => models.first().map(|m| m.id.clone()),
+        }
+    }
 }
 
 /// A streaming answer.
@@ -183,6 +299,8 @@ pub(crate) struct Inner {
     pub(crate) history: Arc<History>,
     /// `cfg.peers`, and what [`Core::add_peer`] adds: where sync passes dial the other devices.
     pub(crate) peers: Arc<Mutex<Vec<String>>>,
+    /// The names of those addresses (`links.json`).
+    pub(crate) links: Mutex<crate::links::LinkNames>,
     pub(crate) state: watch::Sender<AppState>,
     pub(crate) net: Mutex<Option<Arc<Net>>>,
     pub(crate) offer: Mutex<Option<Arc<HostNode>>>,
@@ -190,6 +308,36 @@ pub(crate) struct Inner {
     pub(crate) requests: Mutex<HashMap<String, CancelToken>>,
     /// Approval cards waiting for an answer, by request id (agent mode).
     pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
+    pub(crate) endpoints: Mutex<EndpointStore>,
+    /// Each endpoint's last check: health, why it failed, its models.
+    pub(crate) health: Mutex<HashMap<String, (EndpointHealth, Option<String>, Vec<ModelInfo>)>>,
+    pub(crate) sessions: Mutex<SessionStore>,
+    pub(crate) http: reqwest::Client,
+}
+
+/// An endpoint ready to send to: its settings, token and last known models.
+pub(crate) struct Via {
+    endpoint: Endpoint,
+    token: String,
+    models: Vec<ModelInfo>,
+}
+
+/// Where one answer goes.
+pub(crate) enum Plan {
+    /// The pool, and the fallback bridge for when no node answers.
+    Weirdnet { net: Arc<Net>, fallback: Option<Via> },
+    /// One endpoint, only.
+    Endpoint(Via),
+}
+
+/// How one answer ended, whichever way it went.
+struct Outcome {
+    result: std::result::Result<Option<String>, CoreError>,
+    text: String,
+    node: Option<String>,
+    model: Option<String>,
+    flags: Flags,
+    via: Option<String>,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -295,10 +443,15 @@ impl Core {
             merge_peers(&mut known, load_peers(&cfg.dir));
         }
         let peers = Arc::new(Mutex::new(known));
+        let endpoints = EndpointStore::open(&cfg.dir);
+        let sessions = SessionStore::open(&cfg.dir);
+        let links = crate::links::LinkNames::open(&cfg.dir);
+        let http = crate::endpoint::client()?;
         let core = Core {
             inner: Arc::new(Inner {
                 cfg,
                 peers,
+                links: Mutex::new(links),
                 handle,
                 history,
                 state,
@@ -307,9 +460,31 @@ impl Core {
                 pairing: Mutex::new(None),
                 requests: Mutex::new(HashMap::new()),
                 cards: Mutex::new(HashMap::new()),
+                endpoints: Mutex::new(endpoints),
+                health: Mutex::new(HashMap::new()),
+                sessions: Mutex::new(sessions),
+                http,
             }),
             _runtime: runtime,
         };
+        core.publish_sessions();
+        core.publish_endpoints();
+        core.publish_links();
+        {
+            // Every endpoint is checked now and every ENDPOINT_CHECK_EVERY, so the shells can say
+            // which way a message will go before it is sent.
+            let weak = Arc::downgrade(&core.inner);
+            core.inner.handle.spawn(async move {
+                loop {
+                    let Some(inner) = weak.upgrade() else { return };
+                    let c = Core { inner, _runtime: None };
+                    c.check_endpoints().await;
+                    c.publish_links();
+                    drop(c);
+                    tokio::time::sleep(ENDPOINT_CHECK_EVERY).await;
+                }
+            });
+        }
         if Identity::exists(&core.identity_dir()) {
             let c = core.clone();
             core.inner.handle.spawn(async move {
@@ -391,6 +566,7 @@ impl Core {
         }));
         let (user, device) = (identity.user_id(), identity.our_cert().label);
         *lock(&self.inner.net) = Some(Arc::new(Net { identity, node, nodes, dialer, opts, tasks }));
+        self.publish_links();
         self.inner.state.send_modify(|s| {
             s.online = true;
             s.pair = PairState::Linked { user, device };
@@ -527,15 +703,6 @@ impl Core {
 
     // ---- chat ------------------------------------------------------------------------------
 
-    fn pick_model(&self, model: Option<String>) -> Result<String> {
-        match model {
-            Some(m) if !m.is_empty() => Ok(m),
-            _ => {
-                self.state().catalog.default_model().map(str::to_string).ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message()))
-            }
-        }
-    }
-
     /// Sends `prompt` in `conversation` (a new one when `None`) to `model` (the default when
     /// `None`), streaming the answer.
     pub fn send(&self, conversation: Option<&str>, prompt: &str, model: Option<String>) -> Result<ChatHandle> {
@@ -544,11 +711,81 @@ impl Core {
 
     /// [`send`](Self::send) with text files attached (see [`Attachment`]): the model gets each as
     /// a named block ahead of the prompt, and the message keeps them for later turns and other devices.
+    ///
+    /// It goes where the conversation's session sends (the open session for a new one): the
+    /// Weirdnet pool, with the fallback bridge when no node answers, or the session's endpoint only.
     pub fn send_with(&self, conversation: Option<&str>, prompt: &str, model: Option<String>, attachments: Vec<Attachment>) -> Result<ChatHandle> {
-        let net = self.net()?;
-        let model = self.pick_model(model)?;
+        let session = self.session_of(conversation)?;
+        let plan = self.plan_for(&session)?;
+        let model = self.model_for(&session, &plan, model)?;
         let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
-        Ok(self.run(net, id, Request::messages(messages).with_model(model), String::new()))
+        Ok(self.run(plan, id, Request::messages(messages).with_model(model), String::new()))
+    }
+
+    /// The session `conversation` belongs to (the open one for a new conversation).
+    pub(crate) fn session_of(&self, conversation: Option<&str>) -> Result<Session> {
+        let sessions = self.sessions();
+        Ok(match conversation {
+            Some(id) => {
+                let c = self.inner.history.load(id)?;
+                sessions.get(sessions.owner(c.session.as_deref())).cloned().unwrap_or_else(|| sessions.active().clone())
+            }
+            None => sessions.active().clone(),
+        })
+    }
+
+    /// An endpoint with its token, ready to send to.
+    fn via(&self, id: &str) -> Result<Via> {
+        let (endpoint, token) = {
+            let store = lock(&self.inner.endpoints);
+            let e = store
+                .get(id)
+                .cloned()
+                .ok_or_else(|| CoreError::new(ErrorKind::BadRequest, "this session's endpoint was removed; pick another one for it"))?;
+            let t = store.token(id)?;
+            (e, t)
+        };
+        let models = lock(&self.inner.health).get(id).map(|h| h.2.clone()).unwrap_or_default();
+        Ok(Via { endpoint, token, models })
+    }
+
+    pub(crate) fn plan_for(&self, session: &Session) -> Result<Plan> {
+        match &session.target {
+            Target::Endpoint { id } => Ok(Plan::Endpoint(self.via(id)?)),
+            Target::Weirdnet => {
+                let net = self.net()?;
+                let fallback = lock(&self.inner.endpoints).fallback().map(|e| e.id.clone());
+                let fallback = match fallback.map(|id| self.via(&id)) {
+                    Some(Ok(v)) => Some(v),
+                    Some(Err(e)) => {
+                        tracing::warn!("the fallback endpoint can't be used: {}", e.message);
+                        None
+                    }
+                    None => None,
+                };
+                Ok(Plan::Weirdnet { net, fallback })
+            }
+        }
+    }
+
+    /// The model to ask: the caller's, the session's, or the target's first.
+    fn model_for(&self, session: &Session, plan: &Plan, model: Option<String>) -> Result<String> {
+        if let Some(m) = model.filter(|m| !m.is_empty()).or_else(|| session.model.clone()) {
+            return Ok(m);
+        }
+        match plan {
+            Plan::Weirdnet { fallback, .. } => self
+                .state()
+                .catalog
+                .default_model()
+                .map(str::to_string)
+                .or_else(|| fallback.as_ref().and_then(|f| f.endpoint.pick_model(&f.models)))
+                .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message())),
+            Plan::Endpoint(v) => v
+                .endpoint
+                .pick_model(&v.models)
+                .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, format!("{} lists no models yet; check its URL and token", v.endpoint.name))),
+        }
     }
 
     /// Saves the user's message and an empty streaming answer in `conversation` (a new one when
@@ -568,7 +805,17 @@ impl Core {
         let now = now_ms();
         let mut c = match conversation {
             Some(id) => self.inner.history.load(id)?,
-            None => Conversation { id: random_id("c"), title: title_for(prompt), created_ms: now, updated_ms: now, messages: Vec::new() },
+            None => {
+                let session = self.sessions().active;
+                Conversation {
+                    id: random_id("c"),
+                    title: title_for(prompt),
+                    created_ms: now,
+                    updated_ms: now,
+                    messages: Vec::new(),
+                    session: (session != DEFAULT_SESSION).then_some(session),
+                }
+            }
         };
         c.messages.push(ChatMessage {
             id: String::new(),
@@ -583,6 +830,7 @@ impl Core {
             attachments,
             tools: Vec::new(),
             agent: false,
+            via: None,
             at_ms: now,
         });
         let messages = agent_messages(&c.messages);
@@ -599,6 +847,7 @@ impl Core {
             attachments: Vec::new(),
             tools: Vec::new(),
             agent: false,
+            via: None,
             at_ms: now,
         });
         c.updated_ms = now;
@@ -611,7 +860,8 @@ impl Core {
     /// (`Request::continuing`) and carries on from it; the new text is appended to it (offsets
     /// continue after what was shown). A node that can't continue a prefix is skipped.
     pub fn continue_answer(&self, conversation: &str, model: Option<String>) -> Result<ChatHandle> {
-        let net = self.net()?;
+        let session = self.session_of(Some(conversation))?;
+        let plan = self.plan_for(&session)?;
         let mut c = self.inner.history.load(conversation)?;
         if !c.continuable() {
             return Err(CoreError::new(ErrorKind::BadRequest, "the last answer finished; nothing to continue"));
@@ -620,7 +870,7 @@ impl Core {
         let last = &mut c.messages[n - 1];
         let model = match model.or_else(|| last.model.clone()) {
             Some(m) => m,
-            None => self.pick_model(None)?,
+            None => self.model_for(&session, &plan, None)?,
         };
         let shown = last.text.clone();
         last.state = MessageState::Streaming;
@@ -629,39 +879,152 @@ impl Core {
         let messages = agent_messages(&c.messages);
         self.inner.history.save(&c)?;
         // The partial answer is the last message: `continuing` moves it into the prefix.
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown))
+        Ok(self.run(plan, c.id, Request::messages(messages).with_model(model).continuing(), shown))
     }
 
-    fn run(&self, net: Arc<Net>, conversation: String, req: Request, shown: String) -> ChatHandle {
+    fn run(&self, plan: Plan, conversation: String, req: Request, shown: String) -> ChatHandle {
         let request_id = random_id("r");
         let cancel = CancelToken::new();
         lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
         let (out, events) = mpsc::unbounded_channel();
         let (core, rid, conv) = (self.clone(), request_id.clone(), conversation.clone());
         self.inner.handle.spawn(async move {
-            let order = |model: &str| core.nodes_for(model);
-            let (result, text) = stream(&net, &order, req, &out, &cancel, &shown).await;
-            let (state, node, model, last, flags) = match &result {
-                Ok(a) => (
-                    MessageState::Complete,
-                    Some(a.node.clone()),
-                    // A stand-in answered: the message stays the requested model's, flagged.
-                    Some(a.model.clone()).filter(|m| !m.is_empty() && a.meta.standin.is_none()),
-                    ChatEvent::Done { finish_reason: a.finish_reason.clone() },
-                    Flags::of(&a.meta),
-                ),
-                Err(i) => {
-                    let e = CoreError::from(&i.error);
-                    let state = if e.kind == ErrorKind::Cancelled { MessageState::Stopped } else { MessageState::Failed };
-                    (state, None, None, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() }, Flags::of(&i.partial.meta))
+            let model = req.model.clone();
+            let o = match plan {
+                Plan::Endpoint(v) => {
+                    let _ = out.send(ChatEvent::Via { endpoint: v.endpoint.name.clone(), fallback: false, reason: String::new() });
+                    core.endpoint_answer(&v, &conv, &shown, model, false, &out, &cancel).await
+                }
+                Plan::Weirdnet { net, fallback } => {
+                    let no_nodes = core.state().catalog.nodes.is_empty();
+                    match fallback {
+                        // Nothing to try on Weirdnet: straight to the bridge.
+                        Some(v) if no_nodes => {
+                            let reason = "No Weirdnet inference node is reachable".to_string();
+                            let _ = out.send(ChatEvent::Via { endpoint: v.endpoint.name.clone(), fallback: true, reason });
+                            core.endpoint_answer(&v, &conv, &shown, model, true, &out, &cancel).await
+                        }
+                        fallback => {
+                            let order = |model: &str| core.nodes_for(model);
+                            let (result, text) = stream(&net, &order, req, &out, &cancel, &shown).await;
+                            match (result, fallback) {
+                                // No node could answer, or the one answering went away: carry on
+                                // on the bridge from what was shown.
+                                (Err(i), Some(v)) if falls_back(&i.error) && !cancel.is_cancelled() => {
+                                    let reason = format!("Weirdnet couldn't finish ({})", i.error);
+                                    let _ = out.send(ChatEvent::Via { endpoint: v.endpoint.name.clone(), fallback: true, reason });
+                                    core.endpoint_answer(&v, &conv, &text, model, true, &out, &cancel).await
+                                }
+                                (Ok(a), _) => Outcome {
+                                    // A stand-in answered: the message stays the requested model's, flagged.
+                                    model: Some(a.model.clone()).filter(|m| !m.is_empty() && a.meta.standin.is_none()),
+                                    node: Some(a.node.clone()),
+                                    flags: Flags::of(&a.meta),
+                                    result: Ok(a.finish_reason.clone()),
+                                    text,
+                                    via: None,
+                                },
+                                (Err(i), _) => Outcome {
+                                    result: Err(CoreError::from(&i.error)),
+                                    flags: Flags::of(&i.partial.meta),
+                                    text,
+                                    node: None,
+                                    model: None,
+                                    via: None,
+                                },
+                            }
+                        }
+                    }
                 }
             };
-            core.finish(&conv, text, state, node, model, flags);
+            let (state, last) = match o.result {
+                Ok(finish_reason) => (MessageState::Complete, ChatEvent::Done { finish_reason }),
+                Err(e) => {
+                    let state = if e.kind == ErrorKind::Cancelled { MessageState::Stopped } else { MessageState::Failed };
+                    (state, ChatEvent::Error { kind: e.kind, message: e.message, partial: o.text.clone() })
+                }
+            };
+            core.finish(&conv, o.text, state, o.node, o.model, o.flags, o.via);
             // Over before the shell hears it: a `cancel` after the last event must say so.
             lock(&core.inner.requests).remove(&rid);
             let _ = out.send(last);
         });
         ChatHandle { request_id, conversation_id: conversation, events }
+    }
+
+    /// One answer from an endpoint: the conversation so far (with `shown` as a cut-off answer to
+    /// continue), streamed onto `out` from `shown`'s end. `fallback`: the Weirdnet session's
+    /// bridge, so a model it doesn't list is swapped for its first.
+    #[allow(clippy::too_many_arguments)]
+    async fn endpoint_answer(
+        &self,
+        v: &Via,
+        conversation: &str,
+        shown: &str,
+        model: Option<String>,
+        fallback: bool,
+        out: &mpsc::UnboundedSender<ChatEvent>,
+        cancel: &CancelToken,
+    ) -> Outcome {
+        let failed = |e: CoreError| Outcome {
+            result: Err(e),
+            text: shown.to_string(),
+            node: None,
+            model: None,
+            flags: Flags::none(),
+            via: Some(v.endpoint.name.clone()),
+        };
+        let c = match self.inner.history.load(conversation) {
+            Ok(c) => c,
+            Err(e) => return failed(e),
+        };
+        // Everything before the answer being written, then what of it was shown.
+        let upto = c.messages.len().saturating_sub(usize::from(c.messages.last().is_some_and(|m| m.role == Role::Assistant)));
+        let mut messages = crate::endpoint::openai_messages(&c.messages[..upto]);
+        let continuing = !shown.is_empty();
+        if continuing {
+            if v.endpoint.kind != EndpointKind::YmirBridge {
+                return failed(CoreError::new(ErrorKind::BadRequest, format!("{} can't continue a cut-off answer; ask again", v.endpoint.name)));
+            }
+            messages.push(serde_json::json!({"role": "assistant", "content": shown}));
+        }
+        let model = match model {
+            Some(m) if fallback && !v.models.is_empty() && !v.models.iter().any(|x| x.id == m) => v.endpoint.pick_model(&v.models),
+            m => m,
+        };
+        let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
+        let co = tokio::spawn(coalesce(rx, out.clone(), shown.chars().count() as u64));
+        let r = crate::endpoint::stream_chat(
+            &self.inner.http,
+            &v.endpoint.url,
+            &v.token,
+            &v.endpoint.name,
+            model.as_deref(),
+            messages,
+            continuing,
+            &tx,
+            cancel,
+        )
+        .await;
+        drop(tx);
+        let (streamed, _) = co.await.unwrap_or_default();
+        let text = format!("{shown}{streamed}");
+        match r {
+            Ok(end) => Outcome {
+                result: Ok(end.finish_reason),
+                text,
+                node: None,
+                model: Some(end.model).filter(|m| !m.is_empty() && end.standin.is_none()).or(model),
+                flags: Flags { cache_hit: end.cache_hit, standin: end.standin, resumes: u32::from(fallback && continuing) },
+                via: Some(v.endpoint.name.clone()),
+            },
+            Err(b) => {
+                if b.error.kind == ErrorKind::Unavailable || b.error.kind == ErrorKind::Refused {
+                    self.set_health(&v.endpoint.id, EndpointHealth::Failed, Some(b.error.message.clone()), None);
+                }
+                Outcome { result: Err(b.error), text, node: None, model, flags: Flags::none(), via: Some(v.endpoint.name.clone()) }
+            }
+        }
     }
 
     /// The nodes to ask for `model`, best first; every known node when the catalog doesn't list it.
@@ -671,7 +1034,17 @@ impl Core {
         if n.is_empty() { c.nodes.iter().map(|n| n.id.clone()).collect() } else { n }
     }
 
-    fn finish(&self, conversation: &str, text: String, state: MessageState, node: Option<String>, model: Option<String>, flags: Flags) {
+    #[allow(clippy::too_many_arguments)]
+    fn finish(
+        &self,
+        conversation: &str,
+        text: String,
+        state: MessageState,
+        node: Option<String>,
+        model: Option<String>,
+        flags: Flags,
+        via: Option<String>,
+    ) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
         if let Some(m) = c.messages.last_mut().filter(|m| m.role == Role::Assistant) {
             m.text = text;
@@ -685,6 +1058,7 @@ impl Core {
             m.cache_hit = flags.cache_hit;
             m.standin = flags.standin;
             m.resumes = flags.resumes;
+            m.via = via;
         }
         c.updated_ms = now_ms();
         if let Err(e) = self.inner.history.save(&c) {
@@ -705,7 +1079,21 @@ impl Core {
 
     // ---- history ---------------------------------------------------------------------------
 
+    /// The open session's conversations, newest first.
     pub fn conversations(&self, offset: usize, limit: usize) -> Result<Vec<ConversationSummary>> {
+        let active = self.sessions().active;
+        self.conversations_in(&active, offset, limit)
+    }
+
+    /// One session's conversations, newest first. The Weirdnet session also has history from
+    /// before sessions and from sessions this device doesn't have.
+    pub fn conversations_in(&self, session: &str, offset: usize, limit: usize) -> Result<Vec<ConversationSummary>> {
+        let sessions = self.sessions();
+        self.inner.history.page_where(offset, limit, |c| sessions.owner(c.session.as_deref()) == session)
+    }
+
+    /// Every conversation, whatever its session.
+    pub fn all_conversations(&self, offset: usize, limit: usize) -> Result<Vec<ConversationSummary>> {
         self.inner.history.page(offset, limit)
     }
 
@@ -774,6 +1162,7 @@ impl Core {
             }
             p.clone()
         };
+        self.publish_links();
         if self.inner.cfg.transport == Transport::Internet {
             let mut kept = load_peers(&self.inner.cfg.dir);
             merge_peers(&mut kept, all);
@@ -781,6 +1170,18 @@ impl Core {
             if let Err(e) = std::fs::create_dir_all(&self.inner.cfg.dir).and_then(|_| std::fs::write(self.inner.cfg.dir.join(PEERS_FILE), text)) {
                 tracing::warn!("saving node addresses: {e}");
             }
+        }
+    }
+
+    /// Writes the addresses this device dials (less the config's) to [`PEERS_FILE`], exactly:
+    /// what an edit or delete leaves (real network only).
+    pub(crate) fn save_peers(&self) {
+        if self.inner.cfg.transport != Transport::Internet {
+            return;
+        }
+        let text: String = lock(&self.inner.peers).iter().filter(|a| !self.inner.cfg.peers.contains(a)).map(|a| format!("{a}\n")).collect();
+        if let Err(e) = crate::endpoint::write_file(&self.inner.cfg.dir.join(PEERS_FILE), text.as_bytes(), false) {
+            tracing::warn!("saving node addresses: {e}");
         }
     }
 
@@ -797,7 +1198,7 @@ impl Core {
         };
         let me = net.node.peer_id().to_string();
         let others = net.identity.roster().active().filter(|c| c.peer_id != me).count();
-        let fix = "Bragi finds Ymir nodes on this local network, or at an address you give it: run `ymirctl pool addresses` on a Ymir node and paste one into Link a device.";
+        let fix = "Bragi finds Ymir nodes on this local network, or at an address you give it: run `ymirctl pool addresses` on a Ymir node and paste one into Link a device. Or add a Ymir bridge under Endpoints and make it the fallback.";
         match others {
             0 => format!("No inference node yet: this is the only device in your Weirdnet. Link a Ymir node first. {fix}"),
             n => format!(
@@ -866,7 +1267,26 @@ impl Flags {
     fn of(m: &weirdnet_agent::remote::infer::v2::Meta) -> Self {
         Flags { cache_hit: m.cache_hit, standin: m.standin.clone(), resumes: m.resumes.len() as u32 }
     }
+
+    fn none() -> Self {
+        Flags { cache_hit: false, standin: None, resumes: 0 }
+    }
 }
+
+/// Whether the fallback bridge should take over: no node could answer, or the one answering went
+/// away. Not for a stop, a refusal, a full pool or a bad request.
+fn falls_back(e: &RemoteError) -> bool {
+    match e {
+        RemoteError::Unavailable { message } => !message.starts_with("unknown model"),
+        RemoteError::Unreachable { .. } | RemoteError::Failed { .. } | RemoteError::Closed | RemoteError::Timeout | RemoteError::Stalled { .. } => {
+            true
+        }
+        _ => false,
+    }
+}
+
+/// How often every endpoint's `/v1/models` is checked.
+const ENDPOINT_CHECK_EVERY: Duration = Duration::from_secs(30);
 
 /// How often the pool is asked again after an attempt fails before any text, and the waits.
 const RETRY_WAITS: [Duration; 2] = [Duration::from_millis(400), Duration::from_millis(1200)];

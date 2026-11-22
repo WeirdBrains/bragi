@@ -63,6 +63,10 @@ pub struct ChatMessage {
     /// The answer came from an agent task on a node, not a plain model reply.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub agent: bool,
+    /// The endpoint that answered (its name) when it wasn't the Weirdnet pool: a session's own
+    /// endpoint, or the fallback.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
     pub at_ms: i64,
 }
 
@@ -78,6 +82,9 @@ pub struct Conversation {
     pub updated_ms: i64,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
+    /// The session it was started in (see [`crate::session`]); none for older history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -86,11 +93,19 @@ pub struct ConversationSummary {
     pub title: String,
     pub updated_ms: i64,
     pub messages: usize,
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 impl Conversation {
     pub fn summary(&self) -> ConversationSummary {
-        ConversationSummary { id: self.id.clone(), title: self.title.clone(), updated_ms: self.updated_ms, messages: self.messages.len() }
+        ConversationSummary {
+            id: self.id.clone(),
+            title: self.title.clone(),
+            updated_ms: self.updated_ms,
+            messages: self.messages.len(),
+            session: self.session.clone(),
+        }
     }
 
     /// The last message, if it is an assistant answer that was cut off.
@@ -165,6 +180,9 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if m.agent {
         ext.insert("agent".into(), true.into());
     }
+    if let Some(v) = &m.via {
+        ext.insert("via".into(), v.clone().into());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
@@ -184,6 +202,7 @@ fn from_stored(m: &Stored) -> ChatMessage {
         attachments: get("attachments").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         tools: get("tools").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         agent: get("agent").and_then(|v| v.as_bool()).unwrap_or(false),
+        via: get("via").and_then(|v| v.as_str()).map(str::to_string),
         at_ms: m.at_ms,
     }
 }
@@ -196,6 +215,7 @@ fn from_conversation(c: &StoredConversation) -> Conversation {
         created_ms: created,
         updated_ms: updated_ms(c),
         messages: c.messages.iter().map(from_stored).collect(),
+        session: c.meta.ext.get("session").and_then(|v| v.as_str()).map(str::to_string),
     }
 }
 
@@ -266,6 +286,14 @@ impl History {
         meta.deleted = false;
         meta.ext.insert("created_ms".into(), c.created_ms.into());
         meta.ext.insert("updated_ms".into(), c.updated_ms.into());
+        match &c.session {
+            Some(sid) => {
+                meta.ext.insert("session".into(), sid.clone().into());
+            }
+            None => {
+                meta.ext.remove("session");
+            }
+        }
         if current.is_none() || !before.same(&meta) {
             store.set_meta(&c.id, meta).map_err(storage)?;
         }
@@ -304,6 +332,11 @@ impl History {
     /// Newest first: `offset` and `limit` page through them.
     pub fn page(&self, offset: usize, limit: usize) -> Result<Vec<ConversationSummary>> {
         Ok(self.store()?.list().iter().map(|c| from_conversation(c).summary()).skip(offset).take(limit).collect())
+    }
+
+    /// [`page`](Self::page) over the conversations `keep` says yes to (one session's).
+    pub fn page_where(&self, offset: usize, limit: usize, keep: impl Fn(&ConversationSummary) -> bool) -> Result<Vec<ConversationSummary>> {
+        Ok(self.store()?.list().iter().map(|c| from_conversation(c).summary()).filter(|c| keep(c)).skip(offset).take(limit).collect())
     }
 
     /// Writes what was waiting for the first key (see [`ContextStore::flush`]).
@@ -345,11 +378,12 @@ mod tests {
                 attachments: Vec::new(),
                 tools: Vec::new(),
                 agent: false,
+                via: None,
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })
             .collect();
-        Conversation { id: id.into(), title: title_for(texts[0]), created_ms: 1000, updated_ms: 1000, messages }
+        Conversation { id: id.into(), title: title_for(texts[0]), created_ms: 1000, updated_ms: 1000, messages, session: None }
     }
 
     #[test]
@@ -372,6 +406,27 @@ mod tests {
         assert_eq!(h.page(0, 10).unwrap().len(), 2);
         assert_eq!(h.load("a1").unwrap_err().kind, ErrorKind::NotFound);
         assert_eq!(title_for(&"x".repeat(60)).chars().count(), 49);
+    }
+
+    #[test]
+    fn a_conversation_keeps_its_session_and_the_endpoint_that_answered() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_id, h) = linked(tmp.path());
+        let mut c = conv("s1", &["hi", "hello"]);
+        c.session = Some("s-work".into());
+        c.messages[1].via = Some("Home bridge".into());
+        h.save(&c).unwrap();
+        h.save(&conv("old", &["before sessions"])).unwrap();
+        let back = h.load("s1").unwrap();
+        assert_eq!(back.session.as_deref(), Some("s-work"));
+        assert_eq!(back.messages[1].via.as_deref(), Some("Home bridge"));
+        assert_eq!(h.load("old").unwrap().session, None);
+        let work = h.page_where(0, 10, |c| c.session.as_deref() == Some("s-work")).unwrap();
+        assert_eq!(work.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(), ["s1"]);
+        // Moving it back to no session drops the key.
+        c.session = None;
+        h.save(&c).unwrap();
+        assert_eq!(h.load("s1").unwrap().session, None);
     }
 
     #[test]

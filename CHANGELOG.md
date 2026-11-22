@@ -6,6 +6,14 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Sessions: each sends to your Weirdnet nodes or to one OpenAI-compatible endpoint, with its own model and history. Create, rename, switch, retarget and delete them; existing history becomes the default Weirdnet session.
+- Folders for sessions: nested, collapsible, moved by drag and drop or a Move action. Deleting a folder asks first and moves what is in it up a level.
+- Endpoints: add an OpenAI-compatible API by URL and token. Bragi checks it against `/v1/models`, tells a Ymir bridge from other APIs, and keeps the token in a private file in the data folder. Custom CAs and Tailscale certificates work through the system trust store.
+- Settings for endpoints and Weirdnet links: edit an endpoint's name, URL, token (replaced, never shown), default model and fallback, and delete it after a confirm that rebinds its sessions or leaves them unbound; rename a link, change its address, or delete it. Every edit is checked with a test connection first, and no delete removes history.
+- Ymir bridge fallback: the Weirdnet session uses a Ymir bridge when no inference node answers, and continues an answer there when it breaks off partway. The window shows which path a message takes, and each answer from an endpoint is marked with its name.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added

@@ -13,6 +13,13 @@ const _html = r'''
   <li><a href="${started}#link">Link Bragi to your Weirdnet</a></li>
   <li><a href="${started}#chat">Chat</a></li>
   </ul></li>
+<li><a href="${sessions}">Sessions, endpoints and the fallback</a>
+  <ul>
+  <li><a href="${sessions}#sessions">Sessions</a> and <a href="${sessions}#folders">folders</a></li>
+  <li><a href="${sessions}#endpoints">Endpoints</a></li>
+  <li><a href="${sessions}#fallback">The Ymir bridge fallback</a></li>
+  <li><a href="${sessions}#links">Weirdnet links</a></li>
+  </ul></li>
 <li><a href="${ymirGuide}">Ymir deployment guide</a>: set up the model cloud Bragi talks to, add a device, and connect Jan</li>
 <li><a href="${features}">Features</a>: what Bragi does today</li>
 </ul>
@@ -30,6 +37,7 @@ class DocsPage extends StatelessComponent {
       prose(
         _html
             .replaceAll(r'${started}', siteLink('/docs/guides/getting-started'))
+            .replaceAll(r'${sessions}', siteLink('/docs/guides/sessions'))
             .replaceAll(r'${features}', siteLink('/features'))
             .replaceAll(r'${ymirGuide}', '${ymirSiteUrl}docs/guides/deployment')
             .replaceAll(r'${ymirDocs}', '${ymirSiteUrl}docs'),

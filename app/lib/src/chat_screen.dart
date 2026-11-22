@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
 import 'controller.dart';
+import 'endpoints_screen.dart';
+import 'sessions.dart';
 import 'theme.dart';
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -60,13 +62,18 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     return Scaffold(
       appBar: AppBar(
-        title: Text(c.current?.title ?? 'Bragi', overflow: TextOverflow.ellipsis),
+        title: Text(c.current?.title ?? c.activeSession?.name ?? 'Bragi', overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
-          child: _Models(controller: c),
+          preferredSize: const Size.fromHeight(70),
+          child: Column(
+            children: [
+              _Models(controller: c),
+              _Route(controller: c),
+            ],
+          ),
         ),
       ),
       drawer: _History(controller: c, link: _link),
@@ -219,9 +226,15 @@ class _Models extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
     if (c.models.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text('Looking for your inference nodes…', style: TextStyle(color: BragiColors.textSecondary)),
+      return SizedBox(
+        height: 48,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Text(
+            c.route?.kind == 'endpoint' ? 'This endpoint lists no models yet' : 'Looking for your inference nodes…',
+            style: const TextStyle(color: BragiColors.textSecondary),
+          ),
+        ),
       );
     }
     return SizedBox(
@@ -265,6 +278,45 @@ class _Models extends StatelessWidget {
   }
 }
 
+/// Which way the open session's next message goes: Weirdnet, the fallback bridge, or its endpoint.
+class _Route extends StatelessWidget {
+  const _Route({required this.controller});
+
+  final BragiController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final r = controller.route;
+    if (r == null) return const SizedBox(height: 22);
+    final (icon, color) = switch (r.kind) {
+      'weirdnet' => (Icons.hub_outlined, BragiColors.warm),
+      'fallback' => (Icons.alt_route, BragiColors.busy),
+      'endpoint' => (Icons.link, BragiColors.link),
+      _ => (Icons.portable_wifi_off, BragiColors.textSecondary),
+    };
+    return SizedBox(
+      height: 22,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                '${controller.activeSession?.name ?? ''} · ${r.detail}',
+                key: const Key('route'),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: color),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _Bubble extends StatelessWidget {
   const _Bubble({required this.message, required this.streaming});
 
@@ -289,6 +341,7 @@ class _Bubble extends StatelessWidget {
       if (message.standin != null) 'stand-in ${message.standin}',
       if (message.resumes == 1) 'moved to another node' else if (message.resumes > 1) 'moved nodes ${message.resumes}×',
       if (message.agent) message.tools.isEmpty ? 'agent task' : 'agent task · used ${message.tools.join(', ')}',
+      if (message.via != null) 'via ${message.via}',
     ];
     final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(
@@ -347,13 +400,22 @@ class _History extends StatelessWidget {
                 Navigator.of(context).pop();
               },
             ),
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
-            ),
             Expanded(
               child: ListView(
                 children: [
+                  SessionsSection(controller: c, onOpened: () => Navigator.of(context).pop()),
+                  ListTile(
+                    key: const Key('endpoints'),
+                    dense: true,
+                    leading: const Icon(Icons.settings_ethernet, size: 18),
+                    title: const Text('Endpoints and fallback'),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => EndpointsScreen(controller: c))),
+                  ),
+                  const Divider(),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
+                    child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+                  ),
                   for (final s in c.conversations)
                     ListTile(
                       key: Key('conv-${s.id}'),

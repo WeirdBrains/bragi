@@ -186,6 +186,9 @@ impl Core {
         companion: Option<String>,
         attachments: Vec<Attachment>,
     ) -> Result<ChatHandle> {
+        if self.session_of(conversation)?.target != crate::session::Target::Weirdnet {
+            return Err(CoreError::new(ErrorKind::BadRequest, "agent tasks run on your Weirdnet nodes; open a Weirdnet session for them"));
+        }
         let net = self.net()?;
         let node = match node.filter(|n| !n.is_empty()) {
             Some(n) => n,

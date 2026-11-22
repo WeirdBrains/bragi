@@ -190,6 +190,150 @@ void main() {
     expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
   });
 
+  testWidgets('sessions in folders, an endpoint session, and the Weirdnet fallback', (tester) async {
+    tester.view.physicalSize = const Size(412, 915);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    // The demo from the first test is still running (starting it again is a no-op).
+    await tester.runAsync(() => rust.startDemo(dir: dir.path, label: 'Bragi test', acceptAfterMs: 200, wordDelayMs: 30));
+    final c = BragiController(const RustBragiApi());
+    await tester.runAsync(c.attach);
+    await tester.pumpWidget(BragiApp(controller: c));
+
+    Future<void> until(String what, bool Function() done) async {
+      for (var i = 0; i < 600; i++) {
+        if (done()) return;
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.pump();
+      }
+      fail('timed out waiting for $what');
+    }
+
+    Future<void> run(Future<void> Function() f) async {
+      await tester.runAsync(f);
+      await tester.pump();
+    }
+
+    bool shown(String key) => find.byKey(Key(key)).evaluate().isNotEmpty;
+
+    await until('the chat', () => c.linked && c.route?.kind == 'weirdnet');
+    expect(find.byKey(const Key('route')), findsOneWidget);
+    expect(c.activeSessionId, 'weirdnet');
+    final before = c.conversations.length;
+
+    // A fake Ymir bridge on 127.0.0.1, added as an endpoint: checked, told apart as a bridge.
+    final url = (await tester.runAsync(() => rust.startDemoBridge()))!;
+    await run(() => c.addEndpoint('Demo bridge', url, rust.demoBridgeToken()));
+    await until('the endpoint', () => c.endpoints.length == 1 && c.endpoints.single.health == 'ok');
+    final ep = c.endpoints.single;
+    expect(ep.kind, 'ymir_bridge');
+    expect(ep.models, ['gemma-4-e4b']);
+
+    // A folder with a session that sends to the bridge only.
+    await run(() => c.createFolder('Projects'));
+    await until('the folder', () => c.folders.length == 1);
+    final folder = c.folders.single;
+    await run(() => c.createSession('Bridge only', endpointId: ep.id, folder: folder.id));
+    await until('the session', () => c.sessions.length == 2);
+    final s = c.sessions.firstWhere((x) => x.name == 'Bridge only');
+    expect(s.targetName, 'Demo bridge');
+    expect(c.tree.map((r) => '${r.depth}:${r.kind}:${r.id}'), ['0:folder:${folder.id}', '1:session:${s.id}', '0:session:weirdnet']);
+
+    // The drawer shows the tree; a tap on the session opens it.
+    await tester.tap(find.byTooltip('Open navigation menu'));
+    await tester.pumpAndSettle();
+    expect(shown('folder-${folder.id}'), isTrue);
+    expect(shown('session-${s.id}'), isTrue);
+    await tester.tap(find.byKey(Key('session-${s.id}')));
+    await until('the session to open', () => c.activeSessionId == s.id && c.route?.kind == 'endpoint');
+    await tester.pumpAndSettle();
+    expect(c.conversations, isEmpty, reason: 'a new session starts with no history');
+    expect(find.textContaining('Sends to Demo bridge only'), findsOneWidget);
+
+    // Its messages go to the bridge, and say so.
+    const q = 'Which way did this go?';
+    await tester.enterText(find.byKey(const Key('prompt')), q);
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the answer', () => !c.streaming && c.messages.length == 2 && c.messages.last.state == 'complete');
+    final want = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: q)))!;
+    expect(c.messages.last.text, want);
+    expect(c.messages.last.via, 'Demo bridge');
+    expect(find.textContaining('via Demo bridge'), findsOneWidget);
+    expect(c.conversations, hasLength(1));
+
+    // Folding the folder hides the session; deleting the folder moves it up.
+    await run(() => c.toggleFolder(folder.id));
+    await until('the fold', () => c.tree.length == 2);
+    await run(() => c.deleteFolder(folder.id));
+    await until('the folder to go', () => c.folders.isEmpty);
+    expect(c.session(s.id)!.folder, isNull);
+
+    // Back in the Weirdnet session: its own history, and the bridge as its fallback.
+    await run(() => c.switchSession('weirdnet'));
+    await until('the Weirdnet session', () => c.activeSessionId == 'weirdnet');
+    expect(c.conversations, hasLength(before));
+    await run(() => c.setFallback(ep.id));
+    await until('the fallback', () => c.endpoints.single.fallback);
+    expect(c.route!.kind, 'weirdnet', reason: 'nodes are up, so Weirdnet first');
+    expect(c.route!.detail, contains('Demo bridge as fallback'));
+
+    // The endpoints screen shows it, without the token.
+    await run(() => c.renameSession(s.id, 'Bridge prompts'));
+    await until('the rename', () => c.session(s.id)!.name == 'Bridge prompts');
+    expect(c.endpoints.single.toString(), isNot(contains(rust.demoBridgeToken())));
+
+    // Settings: the endpoint is edited (its saved token is never shown) and tested.
+    await tester.tap(find.byKey(const Key('endpoints')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 session'), findsOneWidget);
+    await tester.tap(find.byKey(Key('endpoint-edit-${ep.id}')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const Key('edit-token'))).controller!.text, isEmpty);
+    await tester.enterText(find.byKey(const Key('edit-name')), 'Renamed bridge');
+    await tester.tap(find.byKey(const Key('edit-test')));
+    await until('the test', () => shown('edit-tested'));
+    expect(find.textContaining('Ymir bridge · 1 model'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('edit-save')));
+    await until('the save', () => c.endpoints.single.name == 'Renamed bridge' && !shown('edit-save'));
+    await tester.pumpAndSettle();
+    // A wrong token for a changed URL fails its test and changes nothing.
+    await run(() => c.editEndpoint(ep.id, name: 'Renamed bridge', url: c.endpoints.single.url, token: 'wrong-token-000000000000', fallback: true));
+    expect(c.notice, isNotNull);
+    expect(c.endpoints.single.name, 'Renamed bridge');
+
+    // Deleting it warns about its session and rebinds it to Weirdnet; the history stays.
+    final all = c.conversations.length;
+    await tester.tap(find.byKey(Key('endpoint-remove-${ep.id}')));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 session sends to it'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('rebind-weirdnet')));
+    await tester.tap(find.byKey(const Key('delete-endpoint-ok')));
+    await until('the endpoint to go', () => c.endpoints.isEmpty);
+    expect(c.session(s.id)!.endpointId, isNull);
+    expect(c.conversations.length, all);
+
+    // Links: another node's address is tested and added, renamed, then deleted after a confirm.
+    final addr = (await tester.runAsync(() => rust.startDemoOtherNode()))!;
+    await tester.enterText(find.byKey(const Key('link-name')), 'Other node');
+    await tester.enterText(find.byKey(const Key('link-address')), addr);
+    await tester.tap(find.byKey(const Key('link-add')));
+    await until('the link', () => c.links.any((l) => l.address == addr));
+    await tester.pumpAndSettle();
+    await run(() => c.renameLink(addr, 'Desk node'));
+    await until('the rename', () => c.links.any((l) => l.name == 'Desk node'));
+    final bogus = addr.replaceFirst(RegExp(r'^/memory/\d+'), '/memory/987654321');
+    await run(() => c.editLink(addr, bogus));
+    expect(c.notice, isNotNull, reason: 'an address where nothing answers is refused');
+    expect(c.links.any((l) => l.address == addr), isTrue);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(Key('link-delete-$addr')));
+    await tester.tap(find.byKey(Key('link-delete-$addr')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('delete-link-ok')));
+    await until('the link to go', () => !c.links.any((l) => l.address == addr));
+  });
+
   test('splice puts a delta at its offset', () {
     expect(splice('héllo world', 6, 'there'), 'héllo there');
     expect(splice('ab', 5, 'c'), 'abc');

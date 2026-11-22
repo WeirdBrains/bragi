@@ -53,6 +53,14 @@ pub enum ChatEvent {
     Done {
         finish_reason: Option<String>,
     },
+    /// The answer goes to an endpoint instead of the Weirdnet pool: the session's own
+    /// (`fallback` false), or the fallback Ymir bridge because no inference node answered or the
+    /// one answering went away (`reason` says which). Text keeps its offsets across the switch.
+    Via {
+        endpoint: String,
+        fallback: bool,
+        reason: String,
+    },
     /// Agent mode: a tool call on the node started or finished.
     Tool {
         call_id: String,

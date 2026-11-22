@@ -3,6 +3,7 @@ import 'package:jaspr/jaspr.dart';
 
 import '../components/layout.dart';
 import '../components/shots.dart';
+import '../site.dart';
 
 const _html = '''
 <h2 id="pairing">Pairing</h2>
@@ -19,6 +20,11 @@ on use). A multi-node catalog comes with the pool client (B2).</p>
 <strong>Continue</strong> picks the answer up again. A continued answer is exact on the demo node, but a real model may
 rephrase at the seam, because the continue request carries the partial answer plus an instruction. History is saved
 locally, one file per conversation, and survives a restart. Synced history is planned (B4).</p>
+<h2 id="sessions">Sessions and endpoints</h2>
+<p>Sessions in nested folders, each sending to your Weirdnet nodes or to one OpenAI-compatible endpoint, with its own
+model and history. A Ymir bridge can be the Weirdnet session's fallback: used only when no inference node answers, or
+to finish an answer that broke off. The app always shows which way a message goes. See
+<a href="@sessions@">Sessions, endpoints and the fallback</a>.</p>
 <h2 id="platforms">Desktop and phone</h2>
 <p>The desktop app (GPUI, Linux) and the phone app (Flutter, Android) share one Rust core, so they pair, list models,
 stream, stop and continue the same way. A shell that lags a milestone is treated as a bug. iOS, macOS and Windows are
@@ -39,7 +45,7 @@ class FeaturesPage extends StatelessComponent {
         title: 'Pair, pick a model, chat',
         lede: 'What Bragi does today, on both desktop and phone.',
       ),
-      prose(_html),
+      prose(_html.replaceAll('@sessions@', siteLink('/docs/guides/sessions'))),
       div(classes: 'wrap shots-wrap', [
         div(classes: 'shots', [
           shot('desktop-04-models.png', 'Bragi desktop model list', 'Models from your cloud, with status.'),

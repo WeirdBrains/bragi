@@ -15,6 +15,18 @@ Status: **B5 in progress (B1 and B2 done, B3 and B4 in progress)** (see "Bragi m
 inference node, streaming chat with stop and continue, and history that syncs between your devices, on Linux (GPUI) and
 Android (Flutter). Released: v0.1.0 for Linux, macOS, Windows, Android and iOS ([downloads](https://bragi.weirdbrains.com/download/)).
 
+### Sessions, endpoints and the fallback
+
+Sessions sit in nested folders and each sends to one target: your Weirdnet inference nodes, or one
+OpenAI-compatible endpoint (its `/v1` and a bearer token, checked against `/v1/models` when added).
+A Ymir bridge endpoint can be the Weirdnet session's fallback: used only when no inference node
+answers, or to finish an answer that broke off on Weirdnet. The window shows which way the next
+message goes. Tokens are kept in `secrets/<id>.token` (mode 0600) in the data folder and never
+logged; TLS uses the system trust store. Endpoints and Weirdnet links (the node addresses Bragi dials)
+can be edited and deleted in the same screen; edits are tested before they are saved, and deletes
+ask first and never remove history. See the
+[guide](https://bragi.weirdbrains.com/docs/guides/sessions/).
+
 ## Layout
 
 | Path | What |

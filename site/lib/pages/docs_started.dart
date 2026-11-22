@@ -54,6 +54,8 @@ of a headless Bragi against real Ymir nodes on one computer; it has not yet been
 </ul>
 <p>Phones are reachable only while the app is open, and Bragi needs the Ymir pool to be reachable over Weirdnet, either on
 the same network or through a relay.</p>
+<p>To send a session to another API, or to fall back to a Ymir bridge when no node answers, see
+<a href="${docs}/guides/sessions">Sessions, endpoints and the fallback</a>.</p>
 <p>More: <a href="${features}">Features</a>, the <a href="${roadmap}">roadmap</a>, and the
 <a href="${docs}">documentation index</a>. Bragi is a <a href="https://weirdbrains.com">Weird Brains</a> project.</p>
 ''';

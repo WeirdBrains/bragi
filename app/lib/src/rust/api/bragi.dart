@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `err`, `error_kind_name`, `event_view`, `message_state_name`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `demo_bridges`, `demo_nodes`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `folder_view`, `kind_name`, `message_state_name`, `model_view`, `pair_view`, `pending`, `session_view`, `slot`, `started`, `state_view`, `status_name`, `summary_view`, `target`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -169,6 +169,173 @@ Future<ConversationView> conversation({required String id}) =>
 Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
 
+/// A new session sending to `endpoint_id` (Weirdnet when none), asking `model` (its target's
+/// first when none), in `folder` (the top level when none).
+Future<SessionView> createSession({
+  required String name,
+  String? endpointId,
+  String? model,
+  String? folder,
+}) => RustLib.instance.api.crateApiBragiCreateSession(
+  name: name,
+  endpointId: endpointId,
+  model: model,
+  folder: folder,
+);
+
+Future<void> renameSession({required String id, required String name}) =>
+    RustLib.instance.api.crateApiBragiRenameSession(id: id, name: name);
+
+/// Puts a session in `folder` (the top level when none).
+Future<void> moveSession({required String id, String? folder}) =>
+    RustLib.instance.api.crateApiBragiMoveSession(id: id, folder: folder);
+
+Future<void> setSessionModel({required String id, String? model}) =>
+    RustLib.instance.api.crateApiBragiSetSessionModel(id: id, model: model);
+
+/// Where a session sends: `endpoint_id`, or Weirdnet when none.
+Future<void> setSessionEndpoint({required String id, String? endpointId}) =>
+    RustLib.instance.api.crateApiBragiSetSessionEndpoint(
+      id: id,
+      endpointId: endpointId,
+    );
+
+Future<void> switchSession({required String id}) =>
+    RustLib.instance.api.crateApiBragiSwitchSession(id: id);
+
+/// Deletes a session (not the Weirdnet one); its conversations move to the Weirdnet session.
+Future<void> deleteSession({required String id}) =>
+    RustLib.instance.api.crateApiBragiDeleteSession(id: id);
+
+Future<FolderView> createFolder({required String name, String? parent}) =>
+    RustLib.instance.api.crateApiBragiCreateFolder(name: name, parent: parent);
+
+Future<void> renameFolder({required String id, required String name}) =>
+    RustLib.instance.api.crateApiBragiRenameFolder(id: id, name: name);
+
+Future<void> moveFolder({required String id, String? parent}) =>
+    RustLib.instance.api.crateApiBragiMoveFolder(id: id, parent: parent);
+
+Future<void> setFolderCollapsed({
+  required String id,
+  required bool collapsed,
+}) => RustLib.instance.api.crateApiBragiSetFolderCollapsed(
+  id: id,
+  collapsed: collapsed,
+);
+
+/// Deletes a folder; its sessions and folders move up to its parent. Ask the user first.
+Future<void> deleteFolder({required String id}) =>
+    RustLib.instance.api.crateApiBragiDeleteFolder(id: id);
+
+/// Adds an endpoint once `url` answers `/v1/models` with `token` (kept in a private file, never
+/// shown again).
+Future<EndpointView> addEndpoint({
+  required String name,
+  required String url,
+  required String token,
+}) => RustLib.instance.api.crateApiBragiAddEndpoint(
+  name: name,
+  url: url,
+  token: token,
+);
+
+/// Changes an endpoint's name, URL or token (each when given; empty is "keep").
+Future<EndpointView> updateEndpoint({
+  required String id,
+  String? name,
+  String? url,
+  String? token,
+}) => RustLib.instance.api.crateApiBragiUpdateEndpoint(
+  id: id,
+  name: name,
+  url: url,
+  token: token,
+);
+
+/// A test connection to an endpoint: `url` with `token`, or with the saved token of endpoint `id`
+/// when no token is typed. Saves nothing.
+Future<EndpointTestView> testEndpoint({
+  String? id,
+  required String url,
+  String? token,
+}) => RustLib.instance.api.crateApiBragiTestEndpoint(
+  id: id,
+  url: url,
+  token: token,
+);
+
+/// Saves the endpoint settings form: name, URL, a new token (`None` or empty keeps the saved
+/// one), the default model and the fallback switch. A changed URL or token is tested first.
+Future<EndpointView> editEndpoint({
+  required String id,
+  required String name,
+  required String url,
+  String? token,
+  String? model,
+  required bool fallback,
+}) => RustLib.instance.api.crateApiBragiEditEndpoint(
+  id: id,
+  name: name,
+  url: url,
+  token: token,
+  model: model,
+  fallback: fallback,
+);
+
+/// Deletes an endpoint. Its sessions go to `rebind`: `unbound` (left pointing at nothing),
+/// `weirdnet`, or another endpoint's id. Conversations are never deleted. Returns how many
+/// sessions it had.
+Future<int> deleteEndpoint({required String id, required String rebind}) =>
+    RustLib.instance.api.crateApiBragiDeleteEndpoint(id: id, rebind: rebind);
+
+/// A test connection to a Weirdnet node address (`…/p2p/PEER`); returns its peer id.
+Future<String> testLink({required String address}) =>
+    RustLib.instance.api.crateApiBragiTestLink(address: address);
+
+/// Adds a node address after a test connection.
+Future<LinkView> addLink({required String name, required String address}) =>
+    RustLib.instance.api.crateApiBragiAddLink(name: name, address: address);
+
+Future<void> renameLink({required String address, required String name}) =>
+    RustLib.instance.api.crateApiBragiRenameLink(address: address, name: name);
+
+/// Changes a link's address after a test connection to the new one.
+Future<LinkView> editLink({
+  required String address,
+  required String newAddress,
+}) => RustLib.instance.api.crateApiBragiEditLink(
+  address: address,
+  newAddress: newAddress,
+);
+
+/// Deletes a link (the address is forgotten). Returns how many sessions were bound to it (0).
+Future<int> deleteLink({required String address}) =>
+    RustLib.instance.api.crateApiBragiDeleteLink(address: address);
+
+/// Demo only: starts another demo node (its own identity) on the memory transport and returns
+/// its address, for trying the link editor and its test connection.
+Future<String> startDemoOtherNode() =>
+    RustLib.instance.api.crateApiBragiStartDemoOtherNode();
+
+Future<void> removeEndpoint({required String id}) =>
+    RustLib.instance.api.crateApiBragiRemoveEndpoint(id: id);
+
+/// The Ymir bridge the Weirdnet session falls back to (none turns it off).
+Future<void> setFallback({String? id}) =>
+    RustLib.instance.api.crateApiBragiSetFallback(id: id);
+
+/// Checks every endpoint now (Bragi also does it every 30 seconds).
+Future<void> checkEndpoints() =>
+    RustLib.instance.api.crateApiBragiCheckEndpoints();
+
+/// Demo only: starts a fake Ymir bridge on 127.0.0.1 and returns its URL; its token is
+/// `demo_bridge_token()`. `fail_after_words` breaks its next answer after that many words.
+Future<String> startDemoBridge({int? failAfterWords}) => RustLib.instance.api
+    .crateApiBragiStartDemoBridge(failAfterWords: failAfterWords);
+
+String demoBridgeToken() => RustLib.instance.api.crateApiBragiDemoBridgeToken();
+
 /// A text file attached to a message.
 class AttachmentView {
   final String name;
@@ -226,6 +393,10 @@ class ChatEventView {
   final String? tier;
   final String? site;
 
+  /// `via`: the answer goes to the endpoint in `node`; `fallback` when it is the Weirdnet
+  /// session's fallback (why in `text`).
+  final bool fallback;
+
   const ChatEventView({
     required this.kind,
     required this.offset,
@@ -247,6 +418,7 @@ class ChatEventView {
     required this.ask,
     this.tier,
     this.site,
+    required this.fallback,
   });
 
   static Future<ChatEventView> default_() =>
@@ -273,7 +445,8 @@ class ChatEventView {
       toolState.hashCode ^
       ask.hashCode ^
       tier.hashCode ^
-      site.hashCode;
+      site.hashCode ^
+      fallback.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -299,7 +472,8 @@ class ChatEventView {
           toolState == other.toolState &&
           ask == other.ask &&
           tier == other.tier &&
-          site == other.site;
+          site == other.site &&
+          fallback == other.fallback;
 }
 
 class ChatStarted {
@@ -357,6 +531,124 @@ class ConversationView {
           continuable == other.continuable;
 }
 
+/// What a test connection to an endpoint found. `kind` is `ymir_bridge` or `openai`.
+class EndpointTestView {
+  final String url;
+  final String kind;
+  final List<String> models;
+
+  const EndpointTestView({
+    required this.url,
+    required this.kind,
+    required this.models,
+  });
+
+  @override
+  int get hashCode => url.hashCode ^ kind.hashCode ^ models.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EndpointTestView &&
+          runtimeType == other.runtimeType &&
+          url == other.url &&
+          kind == other.kind &&
+          models == other.models;
+}
+
+/// An OpenAI-compatible endpoint. `kind` is `ymir_bridge` or `openai`; `health` is `unchecked`,
+/// `ok` or `failed` (why in `message`). The token is never here.
+class EndpointView {
+  final String id;
+  final String name;
+  final String url;
+  final String kind;
+  final String health;
+  final String? message;
+  final List<String> models;
+  final bool fallback;
+
+  /// The default model chosen for it (`None`: its first), and the one it uses now.
+  final String? model;
+  final String? defaultModel;
+
+  /// How many sessions send to it.
+  final int sessions;
+
+  const EndpointView({
+    required this.id,
+    required this.name,
+    required this.url,
+    required this.kind,
+    required this.health,
+    this.message,
+    required this.models,
+    required this.fallback,
+    this.model,
+    this.defaultModel,
+    required this.sessions,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      url.hashCode ^
+      kind.hashCode ^
+      health.hashCode ^
+      message.hashCode ^
+      models.hashCode ^
+      fallback.hashCode ^
+      model.hashCode ^
+      defaultModel.hashCode ^
+      sessions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is EndpointView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          url == other.url &&
+          kind == other.kind &&
+          health == other.health &&
+          message == other.message &&
+          models == other.models &&
+          fallback == other.fallback &&
+          model == other.model &&
+          defaultModel == other.defaultModel &&
+          sessions == other.sessions;
+}
+
+class FolderView {
+  final String id;
+  final String name;
+  final String? parent;
+  final bool collapsed;
+
+  const FolderView({
+    required this.id,
+    required this.name,
+    this.parent,
+    required this.collapsed,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^ name.hashCode ^ parent.hashCode ^ collapsed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FolderView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          parent == other.parent &&
+          collapsed == other.collapsed;
+}
+
 class LinkCheckView {
   final String sas;
   final String device;
@@ -373,6 +665,43 @@ class LinkCheckView {
           runtimeType == other.runtimeType &&
           sas == other.sas &&
           device == other.device;
+}
+
+/// A Weirdnet link: a node address this device dials. `fixed` ones (from the app's config) can
+/// only be renamed.
+class LinkView {
+  final String address;
+  final String name;
+  final String peerId;
+  final bool connected;
+  final bool fixed;
+
+  const LinkView({
+    required this.address,
+    required this.name,
+    required this.peerId,
+    required this.connected,
+    required this.fixed,
+  });
+
+  @override
+  int get hashCode =>
+      address.hashCode ^
+      name.hashCode ^
+      peerId.hashCode ^
+      connected.hashCode ^
+      fixed.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is LinkView &&
+          runtimeType == other.runtimeType &&
+          address == other.address &&
+          name == other.name &&
+          peerId == other.peerId &&
+          connected == other.connected &&
+          fixed == other.fixed;
 }
 
 class MessageView {
@@ -396,6 +725,9 @@ class MessageView {
 
   /// The answer came from an agent task on a node.
   final bool agent;
+
+  /// The endpoint that answered, when it wasn't the Weirdnet pool.
+  final String? via;
   final PlatformInt64 atMs;
 
   const MessageView({
@@ -410,6 +742,7 @@ class MessageView {
     required this.attachments,
     required this.tools,
     required this.agent,
+    this.via,
     required this.atMs,
   });
 
@@ -426,6 +759,7 @@ class MessageView {
       attachments.hashCode ^
       tools.hashCode ^
       agent.hashCode ^
+      via.hashCode ^
       atMs.hashCode;
 
   @override
@@ -444,6 +778,7 @@ class MessageView {
           attachments == other.attachments &&
           tools == other.tools &&
           agent == other.agent &&
+          via == other.via &&
           atMs == other.atMs;
 }
 
@@ -544,14 +879,92 @@ class PairView {
           message == other.message;
 }
 
+/// `kind` is `weirdnet`, `fallback`, `endpoint` or `none`; `detail` is one line for the UI.
+class RouteView {
+  final String kind;
+  final String? endpoint;
+  final String detail;
+
+  const RouteView({required this.kind, this.endpoint, required this.detail});
+
+  @override
+  int get hashCode => kind.hashCode ^ endpoint.hashCode ^ detail.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RouteView &&
+          runtimeType == other.runtimeType &&
+          kind == other.kind &&
+          endpoint == other.endpoint &&
+          detail == other.detail;
+}
+
+/// A session: `endpoint_id` is set when it sends to an endpoint, else it sends to Weirdnet.
+class SessionView {
+  final String id;
+  final String name;
+  final String? endpointId;
+
+  /// What it sends to, for the UI: `Weirdnet` or the endpoint's name.
+  final String targetName;
+  final String? model;
+  final String? folder;
+
+  const SessionView({
+    required this.id,
+    required this.name,
+    this.endpointId,
+    required this.targetName,
+    this.model,
+    this.folder,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      endpointId.hashCode ^
+      targetName.hashCode ^
+      model.hashCode ^
+      folder.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is SessionView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          endpointId == other.endpointId &&
+          targetName == other.targetName &&
+          model == other.model &&
+          folder == other.folder;
+}
+
 class StateView {
   final PairView pair;
   final bool online;
 
   /// Inference nodes found among the user's devices.
   final int nodeCount;
+
+  /// The open session's models (the pool's, the fallback's while no node answers, or its endpoint's).
   final List<ModelView> models;
   final String? defaultModel;
+
+  /// Where the open session's next message goes.
+  final RouteView route;
+  final List<EndpointView> endpoints;
+  final List<SessionView> sessions;
+  final List<FolderView> folders;
+  final String activeSession;
+
+  /// The session tree as drawn, depth first (a collapsed folder's insides left out).
+  final List<TreeRowView> tree;
+
+  /// The Weirdnet node addresses this device dials.
+  final List<LinkView> links;
 
   const StateView({
     required this.pair,
@@ -559,6 +972,13 @@ class StateView {
     required this.nodeCount,
     required this.models,
     this.defaultModel,
+    required this.route,
+    required this.endpoints,
+    required this.sessions,
+    required this.folders,
+    required this.activeSession,
+    required this.tree,
+    required this.links,
   });
 
   @override
@@ -567,7 +987,14 @@ class StateView {
       online.hashCode ^
       nodeCount.hashCode ^
       models.hashCode ^
-      defaultModel.hashCode;
+      defaultModel.hashCode ^
+      route.hashCode ^
+      endpoints.hashCode ^
+      sessions.hashCode ^
+      folders.hashCode ^
+      activeSession.hashCode ^
+      tree.hashCode ^
+      links.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -578,7 +1005,14 @@ class StateView {
           online == other.online &&
           nodeCount == other.nodeCount &&
           models == other.models &&
-          defaultModel == other.defaultModel;
+          defaultModel == other.defaultModel &&
+          route == other.route &&
+          endpoints == other.endpoints &&
+          sessions == other.sessions &&
+          folders == other.folders &&
+          activeSession == other.activeSession &&
+          tree == other.tree &&
+          links == other.links;
 }
 
 class SummaryView {
@@ -603,4 +1037,29 @@ class SummaryView {
           id == other.id &&
           title == other.title &&
           updatedMs == other.updatedMs;
+}
+
+/// A row of the session tree: `kind` is `folder` or `session`.
+class TreeRowView {
+  final int depth;
+  final String kind;
+  final String id;
+
+  const TreeRowView({
+    required this.depth,
+    required this.kind,
+    required this.id,
+  });
+
+  @override
+  int get hashCode => depth.hashCode ^ kind.hashCode ^ id.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TreeRowView &&
+          runtimeType == other.runtimeType &&
+          depth == other.depth &&
+          kind == other.kind &&
+          id == other.id;
 }

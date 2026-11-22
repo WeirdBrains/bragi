@@ -19,6 +19,9 @@ use gpui::{
 use crate::text_input::{self, TextInput, TextInputEvent};
 use crate::theme::Theme;
 
+mod sessions;
+use sessions::NameEdit;
+
 actions!(bragi, [Quit, Stop]);
 
 /// The process exit code: 0 ok, 1 the scenario failed.
@@ -65,6 +68,34 @@ pub struct BragiView {
     notice: Option<String>,
     scroll: ScrollHandle,
     close_only: bool,
+    /// Sessions: the name box above the tree and what it does, the target of a session being
+    /// created, the picked row, the row being moved, and the folder waiting for "delete?".
+    name_input: Entity<TextInput>,
+    editing: Option<NameEdit>,
+    new_target: Option<String>,
+    picked: Option<bragi_core::Row>,
+    moving: Option<bragi_core::Row>,
+    confirm_folder: Option<String>,
+    /// The Endpoints panel and its add form (the token box is masked and cleared after use).
+    endpoints_open: bool,
+    ep_name: Entity<TextInput>,
+    ep_url: Entity<TextInput>,
+    ep_token: Entity<TextInput>,
+    ep_busy: bool,
+    /// Editing an endpoint: its id, the default model and fallback being chosen, the last test.
+    ep_editing: Option<String>,
+    ep_model: Option<String>,
+    ep_fallback: bool,
+    ep_tested: Option<String>,
+    /// An endpoint waiting for "delete?", and where its sessions go: `None` unbound, `Some(None)`
+    /// Weirdnet, `Some(Some(id))` another endpoint.
+    ep_delete: Option<(String, Option<Option<String>>)>,
+    /// The link form (a link's address while editing it), and the link waiting for "delete?".
+    link_name: Entity<TextInput>,
+    link_addr: Entity<TextInput>,
+    link_editing: Option<String>,
+    link_delete: Option<String>,
+    link_busy: bool,
     _tasks: Vec<Task<()>>,
 }
 
@@ -89,6 +120,28 @@ impl BragiView {
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("weirdnet-bragi:// code or node address", theme, cx));
         let attach_input = cx.new(|cx| TextInput::new("Path of a text file…", theme, cx));
+        let name_input = cx.new(|cx| TextInput::new("Name…", theme, cx));
+        let ep_name = cx.new(|cx| TextInput::new("ymir", theme, cx));
+        let ep_url = cx.new(|cx| TextInput::new("https://ymir.example.ts.net:9443/v1", theme, cx));
+        let ep_token = cx.new(|cx| TextInput::new("Bearer token", theme, cx).masked());
+        let link_name = cx.new(|cx| TextInput::new("Ymir node", theme, cx));
+        let link_addr = cx.new(|cx| TextInput::new("/ip4/…/tcp/4848/p2p/…", theme, cx));
+        cx.subscribe_in(&name_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+            TextInputEvent::Submit { .. } => this.commit_name(cx),
+            TextInputEvent::Cancel => this.cancel_edit(cx),
+            _ => {}
+        })
+        .detach();
+        cx.subscribe_in(&ep_token, window, |this, _, ev: &TextInputEvent, _, cx| {
+            if let TextInputEvent::Submit { .. } = ev {
+                if this.ep_editing.is_some() {
+                    this.save_endpoint(cx);
+                } else {
+                    this.add_endpoint(cx);
+                }
+            }
+        })
+        .detach();
         cx.subscribe_in(&attach_input, window, |this, _, ev: &TextInputEvent, _, cx| {
             if let TextInputEvent::Submit { .. } = ev {
                 this.attach_typed(cx);
@@ -136,13 +189,34 @@ impl BragiView {
             notice: None,
             scroll: ScrollHandle::new(),
             close_only: tiling_wm(),
+            name_input,
+            editing: None,
+            new_target: None,
+            picked: None,
+            moving: None,
+            confirm_folder: None,
+            endpoints_open: false,
+            ep_name,
+            ep_url,
+            ep_token,
+            ep_busy: false,
+            ep_editing: None,
+            ep_model: None,
+            ep_fallback: false,
+            ep_tested: None,
+            ep_delete: None,
+            link_name,
+            link_addr,
+            link_editing: None,
+            link_delete: None,
+            link_busy: false,
             _tasks: vec![follow],
         }
     }
 
     fn on_state(&mut self, s: AppState, cx: &mut Context<Self>) {
         if let Some(m) = &self.model
-            && !s.catalog.models.iter().any(|x| &x.id == m)
+            && !s.models().iter().any(|x| &x.id == m)
         {
             self.model = None;
         }
@@ -156,7 +230,7 @@ impl BragiView {
     }
 
     fn model(&self) -> Option<String> {
-        self.model.clone().or_else(|| self.state.catalog.default_model().map(str::to_string))
+        self.model.clone().or_else(|| self.state.default_model())
     }
 
     fn reload(&mut self) {
@@ -221,8 +295,12 @@ impl BragiView {
         cx.notify();
     }
 
+    /// Picks the open session's model (kept with the session).
     pub fn pick_model(&mut self, id: &str, cx: &mut Context<Self>) {
         self.model = Some(id.to_string());
+        if let Err(e) = self.core.set_session_model(&self.state.sessions.active.clone(), Some(id.to_string())) {
+            self.notice = Some(e.message);
+        }
         cx.notify();
     }
 
@@ -422,6 +500,12 @@ impl BragiView {
             ChatEvent::Approval { ask, summary, tier, .. } => {
                 self.card = Some(Card { request_id: request_id.to_string(), ask, summary, tier });
             }
+            ChatEvent::Via { endpoint, fallback, reason } => {
+                if fallback {
+                    self.notice = Some(format!("{reason} · continuing on {endpoint}"));
+                }
+                last.via = Some(endpoint);
+            }
             ChatEvent::Notice { text } => self.notice = Some(text),
             ChatEvent::Retry { attempt, .. } => self.notice = Some(format!("No node answered; trying again ({attempt})…")),
             ChatEvent::Error { kind, message, .. } if kind != bragi_core::ErrorKind::Cancelled => self.notice = Some(message),
@@ -608,6 +692,7 @@ impl BragiView {
             .border_r_1()
             .border_color(rgb(t.border))
             .child(self.button("new-chat", "+ New chat", false).on_click(cx.listener(|v, _, _, cx| v.new_chat(cx))))
+            .child(self.sessions_section(cx))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
             .child(list)
             .child(link_box)
@@ -628,10 +713,16 @@ impl BragiView {
             .overflow_x_scroll()
             .border_b_1()
             .border_color(rgb(t.border));
-        if self.state.catalog.models.is_empty() {
-            row = row.child(div().text_size(px(13.)).text_color(rgb(t.text_secondary)).child("Looking for your inference nodes…"));
+        let models = self.state.models();
+        if models.is_empty() {
+            let wait = if self.state.route().kind == bragi_core::RouteKind::Endpoint {
+                "This endpoint lists no models yet"
+            } else {
+                "Looking for your inference nodes…"
+            };
+            row = row.child(div().text_size(px(13.)).text_color(rgb(t.text_secondary)).child(wait));
         }
-        for m in &self.state.catalog.models {
+        for m in &models {
             let selected = picked.as_deref() == Some(m.id.as_str());
             let (dot, label) = match m.status {
                 ModelStatus::Warm => (0x4CD07D, "warm"),
@@ -640,7 +731,7 @@ impl BragiView {
                 ModelStatus::Loadable => (t.text_secondary, "loads on use"),
             };
             let speed = m.tokens_per_sec.map(|s| format!(" · {s:.0} tok/s")).unwrap_or_default();
-            let on = if self.state.catalog.nodes.len() > 1 {
+            let on = if self.state.catalog.nodes.len() > 1 && !m.nodes.is_empty() {
                 format!(" · {} of {} nodes", m.nodes.len(), self.state.catalog.nodes.len())
             } else {
                 String::new()
@@ -686,6 +777,7 @@ impl BragiView {
             m.standin.as_ref().map(|s| format!("stand-in {s}")),
             (m.resumes > 0).then(|| if m.resumes == 1 { "moved to another node".to_string() } else { format!("moved nodes {}×", m.resumes) }),
             m.agent.then(|| if m.tools.is_empty() { "agent task".to_string() } else { format!("agent task · used {}", m.tools.join(", ")) }),
+            m.via.as_ref().map(|v| format!("via {v}")),
         ]
         .into_iter()
         .flatten()
@@ -833,6 +925,7 @@ impl BragiView {
                     .child(self.button("deny", "Deny", false).on_click(cx.listener(|v, _, _, cx| v.answer_card(Choice::Deny, cx)))),
             );
         }
+        let main = if self.endpoints_open { self.endpoints_panel(cx).into_any_element() } else { body.into_any_element() };
         div()
             .flex()
             .flex_col()
@@ -840,7 +933,8 @@ impl BragiView {
             .min_w(px(0.))
             .overflow_hidden()
             .child(self.models(cx))
-            .child(body)
+            .child(self.route_line())
+            .child(main)
             .children(self.notice.clone().map(|n| div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(t.error)).child(n)))
             .children(any.then_some(above))
             .child(div().border_t_1().border_color(rgb(t.border)).child(bar))
@@ -1064,6 +1158,198 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("agent task");
     shot(cx, "18-agent-answer").await;
+    sessions_scenario(&this, cx, pause).await
+}
+
+/// Sessions, folders and endpoints, the steps the Flutter app's second test plays: a fake Ymir
+/// bridge on 127.0.0.1 is added as an endpoint, a session in a folder sends only to it, the
+/// folder folds and is deleted (its session moves up), and the Weirdnet session takes the bridge
+/// as its fallback.
+async fn sessions_scenario(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, pause: Duration) -> Result<(), String> {
+    use bragi_core::demo_bridge::{DEMO_TOKEN, FakeBridge};
+    use bragi_core::{DEFAULT_SESSION, EndpointHealth, EndpointKind, RouteKind, Row};
+    fn e(e: impl std::fmt::Display) -> String {
+        e.to_string()
+    }
+    let step = |name: &str| println!("bragi-scenario: {name}");
+    let shot = async |cx: &mut gpui::AsyncApp, name: &str| {
+        println!("bragi-scenario: screenshot {name}");
+        cx.background_executor().timer(pause).await;
+    };
+    let core = this.read_with(cx, |v, _| v.core.clone()).map_err(e)?;
+    let bridge = core
+        .handle()
+        .spawn(FakeBridge::start(true, DEMO_TOKEN, &[bragi_core::demo::WARM_MODEL], Duration::from_millis(30)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.message)?;
+    let before = this.read_with(cx, |v, _| v.conversations.len()).map_err(e)?;
+    this.update(cx, |v, cx| {
+        v.agent = false;
+        v.new_chat(cx);
+        v.toggle_endpoints(cx);
+        v.ep_name.update(cx, |i, cx| i.set_text("Demo bridge", cx));
+        v.ep_url.update(cx, |i, cx| i.set_text(&bridge.url(), cx));
+        v.ep_token.update(cx, |i, cx| i.set_text(DEMO_TOKEN, cx));
+    })
+    .map_err(e)?;
+    shot(cx, "19-endpoint-form").await;
+    this.update(cx, |v, cx| v.add_endpoint(cx)).map_err(e)?;
+    wait_for(this, cx, "the endpoint", |v| v.state.endpoints.len() == 1 && v.state.endpoints[0].health == EndpointHealth::Ok).await?;
+    let (ep, kind, token_left) = this
+        .read_with(cx, |v, cx| (v.state.endpoints[0].id.clone(), v.state.endpoints[0].kind, v.ep_token.read(cx).text().to_string()))
+        .map_err(e)?;
+    if kind != EndpointKind::YmirBridge || !token_left.is_empty() {
+        return Err(format!("the endpoint: {kind:?}, token box cleared: {}", token_left.is_empty()));
+    }
+    step("endpoint added");
+    shot(cx, "20-endpoint-added").await;
+
+    // A folder, and a session in it that sends to the bridge.
+    this.update(cx, |v, cx| {
+        v.toggle_endpoints(cx);
+        v.begin_edit(NameEdit::NewFolder { parent: None }, None, cx);
+        v.set_name("Projects", cx);
+        v.commit_name(cx);
+    })
+    .map_err(e)?;
+    wait_for(this, cx, "the folder", |v| v.state.sessions.folders.len() == 1).await?;
+    let folder = this.read_with(cx, |v, _| v.state.sessions.folders[0].id.clone()).map_err(e)?;
+    this.update(cx, |v, cx| {
+        v.begin_edit(NameEdit::NewSession { folder: Some(folder.clone()) }, None, cx);
+        v.set_name("Bridge only", cx);
+        v.cycle_target(cx);
+    })
+    .map_err(e)?;
+    shot(cx, "21-new-session").await;
+    this.update(cx, |v, cx| v.commit_name(cx)).map_err(e)?;
+    wait_for(this, cx, "the session to open", |v| v.state.sessions.active != DEFAULT_SESSION && v.state.route().kind == RouteKind::Endpoint).await?;
+    let session = this.read_with(cx, |v, _| v.state.sessions.active.clone()).map_err(e)?;
+    if !this
+        .read_with(cx, |v, _| v.conversations.is_empty() && v.state.sessions.get(&session).is_some_and(|s| s.folder.as_deref() == Some(&folder)))
+        .map_err(e)?
+    {
+        return Err("the new session is not empty, or not in its folder".into());
+    }
+    step("session in a folder");
+
+    let q = "Which way did this go?";
+    this.update(cx, |v, cx| v.set_prompt(q, cx)).map_err(e)?;
+    press_send(this, cx)?;
+    wait_for(this, cx, "the endpoint's answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete))
+        .await?;
+    let (text, via) = this.read_with(cx, |v, _| last_assistant(v).map(|m| (m.text, m.via)).unwrap_or_default()).map_err(e)?;
+    if via.as_deref() != Some("Demo bridge") || text != bragi_core::demo::answer_for(bragi_core::demo::WARM_MODEL, q) || bridge.chats() != 1 {
+        return Err(format!("the endpoint session: via {via:?}, {} chats, text {text:?}", bridge.chats()));
+    }
+    step("sent to the endpoint");
+    shot(cx, "22-via-endpoint").await;
+
+    // Fold the folder, then delete it after the question: its session moves to the top level.
+    this.update(cx, |v, cx| v.click_folder(&folder, cx)).map_err(e)?;
+    wait_for(this, cx, "the fold", |v| v.state.sessions.rows().len() == 2).await?;
+    this.update(cx, |v, cx| v.delete_picked(cx)).map_err(e)?;
+    shot(cx, "23-delete-folder").await;
+    this.update(cx, |v, cx| v.confirm_delete_folder(true, cx)).map_err(e)?;
+    wait_for(this, cx, "the folder to go", |v| {
+        v.state.sessions.folders.is_empty() && v.state.sessions.get(&session).is_some_and(|s| s.folder.is_none())
+    })
+    .await?;
+    step("folder deleted");
+
+    // Move mode: a new folder, and the session moved into it.
+    this.update(cx, |v, cx| {
+        v.picked = None;
+        v.begin_edit(NameEdit::NewFolder { parent: None }, None, cx);
+        v.set_name("Archive", cx);
+        v.commit_name(cx);
+    })
+    .map_err(e)?;
+    wait_for(this, cx, "the second folder", |v| v.state.sessions.folders.len() == 1).await?;
+    let archive = this.read_with(cx, |v, _| v.state.sessions.folders[0].id.clone()).map_err(e)?;
+    this.update(cx, |v, cx| {
+        v.picked = Some(Row::Session(session.clone()));
+        v.start_move(cx);
+        v.move_into(Some(archive.clone()), cx);
+    })
+    .map_err(e)?;
+    wait_for(this, cx, "the move", |v| v.state.sessions.get(&session).is_some_and(|s| s.folder.as_deref() == Some(&archive))).await?;
+    step("session moved");
+    shot(cx, "24-moved").await;
+
+    // Back in the Weirdnet session: its own history, and the bridge as its fallback.
+    this.update(cx, |v, cx| {
+        v.switch_session(DEFAULT_SESSION, cx);
+        v.set_fallback(Some(&ep), cx);
+    })
+    .map_err(e)?;
+    wait_for(this, cx, "the fallback", |v| v.conversations.len() == before && v.state.route().detail.contains("Demo bridge as fallback")).await?;
+    step("fallback set");
+    shot(cx, "25-fallback").await;
+
+    // Settings: the endpoint is edited (name; the token box starts empty), tested, and saved.
+    this.update(cx, |v, cx| {
+        v.toggle_endpoints(cx);
+        v.begin_edit_endpoint(&ep, cx);
+        v.ep_name.update(cx, |i, cx| i.set_text("Renamed bridge", cx));
+        v.test_endpoint(cx);
+    })
+    .map_err(e)?;
+    if !this.read_with(cx, |v, cx| v.ep_token.read(cx).text().is_empty()).map_err(e)? {
+        return Err("the edit form shows a token".into());
+    }
+    wait_for(this, cx, "the test connection", |v| v.ep_tested.is_some()).await?;
+    shot(cx, "26-edit-endpoint").await;
+    this.update(cx, |v, cx| v.save_endpoint(cx)).map_err(e)?;
+    wait_for(this, cx, "the save", |v| v.ep_editing.is_none() && v.state.endpoints.first().is_some_and(|x| x.name == "Renamed bridge")).await?;
+    step("endpoint edited");
+
+    // Deleting it asks first, says its session is bound, and rebinds it to Weirdnet.
+    this.update(cx, |v, cx| v.remove_endpoint(&ep, cx)).map_err(e)?;
+    shot(cx, "27-delete-endpoint").await;
+    this.update(cx, |v, cx| v.confirm_delete_endpoint(true, cx)).map_err(e)?;
+    wait_for(this, cx, "the endpoint to go", |v| {
+        v.state.endpoints.is_empty() && v.state.sessions.get(&session).is_some_and(|s| s.target == bragi_core::Target::Weirdnet)
+    })
+    .await?;
+    if this.read_with(cx, |v, _| v.core.conversations_in(&session, 0, 100).map(|c| c.len()).unwrap_or(0)).map_err(e)? != 1 {
+        return Err("the rebound session lost its conversation".into());
+    }
+    step("endpoint deleted, session rebound");
+
+    // Links: another node's address is tested and added, renamed, then deleted after a question.
+    let scratch = tempfile::tempdir().map_err(e)?;
+    let dir = scratch.path().to_path_buf();
+    let other = core
+        .handle()
+        .spawn(async move { bragi_core::demo::DemoNode::start(&dir, Duration::from_millis(10)).await })
+        .await
+        .map_err(e)?
+        .map_err(|e| e.message)?;
+    let addr = other.address();
+    this.update(cx, |v, cx| {
+        v.begin_edit_link(None, cx);
+        v.link_name.update(cx, |i, cx| i.set_text("Other node", cx));
+        v.link_addr.update(cx, |i, cx| i.set_text(&addr, cx));
+        v.save_link(cx);
+    })
+    .map_err(e)?;
+    wait_for(this, cx, "the link", |v| v.state.links.iter().any(|l| l.address == addr && l.name == "Other node")).await?;
+    this.update(cx, |v, cx| {
+        v.begin_edit_link(Some(&addr), cx);
+        v.link_name.update(cx, |i, cx| i.set_text("Desk node", cx));
+    })
+    .map_err(e)?;
+    shot(cx, "28-edit-link").await;
+    this.update(cx, |v, cx| v.save_link(cx)).map_err(e)?;
+    wait_for(this, cx, "the rename", |v| v.state.links.iter().any(|l| l.address == addr && l.name == "Desk node")).await?;
+    this.update(cx, |v, cx| v.delete_link(&addr, cx)).map_err(e)?;
+    shot(cx, "29-delete-link").await;
+    this.update(cx, |v, cx| v.confirm_delete_link(true, cx)).map_err(e)?;
+    wait_for(this, cx, "the link to go", |v| !v.state.links.iter().any(|l| l.address == addr)).await?;
+    step("link edited and deleted");
+    shot(cx, "30-links").await;
+    drop(other);
     Ok(())
 }
 

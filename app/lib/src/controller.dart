@@ -48,6 +48,19 @@ class BragiController extends ChangeNotifier {
   bool get streaming => requestId != null;
   bool get canContinue => !streaming && (current?.continuable ?? false);
   List<ModelView> get models => state?.models ?? const [];
+
+  // Sessions, folders and endpoints, as the core has them.
+  List<SessionView> get sessions => state?.sessions ?? const [];
+  List<FolderView> get folders => state?.folders ?? const [];
+  List<TreeRowView> get tree => state?.tree ?? const [];
+  List<EndpointView> get endpoints => state?.endpoints ?? const [];
+  RouteView? get route => state?.route;
+  String get activeSessionId => state?.activeSession ?? 'weirdnet';
+  SessionView? session(String id) => sessions.where((s) => s.id == id).firstOrNull;
+  FolderView? folder(String id) => folders.where((f) => f.id == id).firstOrNull;
+  EndpointView? endpoint(String id) => endpoints.where((e) => e.id == id).firstOrNull;
+  List<LinkView> get links => state?.links ?? const [];
+  SessionView? get activeSession => session(activeSessionId);
   String? get model => (_model != null && models.any((m) => m.id == _model)) ? _model : state?.defaultModel;
 
   Future<void> attach() async {
@@ -99,10 +112,68 @@ class BragiController extends ChangeNotifier {
   Future<void> confirmCode(bool matches) => _try(() => api.pairConfirm(matches));
   Future<void> cancelCode() => _try(() => api.pairCancel());
 
+  /// Picks the open session's model; the session keeps it.
   void pickModel(String id) {
     _model = id;
     notifyListeners();
+    unawaited(_try(() => api.setSessionModel(activeSessionId, id)));
   }
+
+  // ---- sessions and folders (each one core call; the state brings the result) ----
+
+  Future<void> createSession(String name, {String? endpointId, String? model, String? folder}) =>
+      _try(() async => api.createSession(name, endpointId, model, folder));
+  Future<void> renameSession(String id, String name) => _try(() => api.renameSession(id, name));
+  Future<void> moveSession(String id, String? folder) => _try(() => api.moveSession(id, folder));
+  Future<void> setSessionEndpoint(String id, String? endpointId) => _try(() => api.setSessionEndpoint(id, endpointId));
+  Future<void> deleteSession(String id) => _try(() => api.deleteSession(id));
+  Future<void> createFolder(String name, {String? parent}) => _try(() async => api.createFolder(name, parent));
+  Future<void> renameFolder(String id, String name) => _try(() => api.renameFolder(id, name));
+  Future<void> moveFolder(String id, String? parent) => _try(() => api.moveFolder(id, parent));
+  Future<void> toggleFolder(String id) => _try(() => api.setFolderCollapsed(id, !(folder(id)?.collapsed ?? false)));
+  Future<void> deleteFolder(String id) => _try(() => api.deleteFolder(id));
+
+  /// Opens a session: a new chat in it, its history in the list.
+  Future<void> switchSession(String id) async {
+    await _try(() => api.switchSession(id));
+    _model = null;
+    current = null;
+    messages = const [];
+    await _refresh();
+  }
+
+  // ---- endpoints ----
+
+  Future<void> addEndpoint(String name, String url, String token) => _try(() async => api.addEndpoint(name, url, token));
+  Future<void> updateEndpoint(String id, {String? name, String? url, String? token}) =>
+      _try(() async => api.updateEndpoint(id, name, url, token));
+  Future<void> removeEndpoint(String id) => _try(() => api.removeEndpoint(id));
+  Future<void> setFallback(String? id) => _try(() => api.setFallback(id));
+
+  /// Runs `f`, keeping its value; on failure the notice says why and the result is null.
+  Future<T?> _value<T>(Future<T> Function() f) async {
+    T? out;
+    await _try(() async => out = await f());
+    return out;
+  }
+
+  /// A test connection that saves nothing.
+  Future<EndpointTestView?> testEndpoint(String? id, String url, String? token) => _value(() => api.testEndpoint(id, url, token));
+
+  /// Saves the edit form; a changed URL or token is tested first. True when it saved.
+  Future<bool> editEndpoint(String id, {required String name, required String url, String? token, String? model, required bool fallback}) async =>
+      await _value(() => api.editEndpoint(id, name, url, token, model, fallback)) != null;
+
+  /// Deletes an endpoint; `rebind` is `unbound`, `weirdnet` or another endpoint's id.
+  Future<int?> deleteEndpoint(String id, String rebind) => _value(() => api.deleteEndpoint(id, rebind));
+
+  // ---- Weirdnet links ----
+
+  Future<String?> testLink(String address) => _value(() => api.testLink(address));
+  Future<bool> addLink(String name, String address) async => await _value(() => api.addLink(name, address)) != null;
+  Future<void> renameLink(String address, String name) => _try(() => api.renameLink(address, name));
+  Future<bool> editLink(String address, String newAddress) async => await _value(() => api.editLink(address, newAddress)) != null;
+  Future<int?> deleteLink(String address) => _value(() => api.deleteLink(address));
 
   void newChat() {
     current = null;
@@ -165,7 +236,7 @@ class BragiController extends ChangeNotifier {
   Future<void> continueAnswer() async {
     final c = current;
     if (c == null || streaming) return;
-    await _try(() async => _follow(await api.continueAnswer(c.id, _model)));
+    await _try(() async => _follow(await api.continueAnswer(c.id, null)));
   }
 
   void stop() {
@@ -214,7 +285,7 @@ class BragiController extends ChangeNotifier {
   void _apply(ChatEventView e) {
     if (messages.isEmpty || messages.last.role != 'assistant') return;
     final last = messages.last;
-    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes, List<String>? tools}) =>
+    MessageView with_({String? text, String? model, String? node, bool? cacheHit, String? standin, int? resumes, List<String>? tools, String? via}) =>
         MessageView(
           role: last.role,
           text: text ?? last.text,
@@ -227,6 +298,7 @@ class BragiController extends ChangeNotifier {
           attachments: last.attachments,
           tools: tools ?? last.tools,
           agent: last.agent,
+          via: via ?? last.via,
           atMs: last.atMs,
         );
     void replace(MessageView m) => messages = [...messages.take(messages.length - 1), m];
@@ -247,6 +319,9 @@ class BragiController extends ChangeNotifier {
         card = ApprovalCard(requestId: requestId!, ask: e.ask.toInt(), summary: e.text, tier: e.tier ?? 'other');
       case 'notice':
         notice = e.text;
+      case 'via':
+        replace(with_(via: e.node));
+        if (e.fallback) notice = '${e.text} · continuing on ${e.node}';
       case 'retry':
         notice = 'No node answered; trying again (${e.attempt})…';
       case 'error':
