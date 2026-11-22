@@ -2,6 +2,60 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-12 follow-up, the audio player on chat file cards (branch only)
+
+**What changed**
+- Rules both shells follow are in [`audio.rs`](crates/bragi-core/src/audio.rs) in `bragi-core`:
+  - `Deck`: one clip at a time, and it stops when the chat on screen changes.
+  - `clock`, `times`, `seek_ms` and `progress`: the time and the seek bar.
+  - `duration_ms`: the length of a WAV or MP3, read from its headers, so the total shows before a clip loads. [`ChatFile`](crates/bragi-core/src/files.rs) gains `duration_ms`.
+  - `decode`, behind the `decode` feature: WAV and MP3 to samples, with `symphonia` (pure Rust, `wav`, `pcm` and `mp3` only). Only the desktop enables the feature; the phone build doesn't carry it.
+  - The demo's `tone_wav` ([`demo.rs`](crates/bragi-core/src/demo.rs)).
+- GPUI desktop ([`audio.rs`](crates/bragi-desktop/src/audio.rs), [`view.rs`](crates/bragi-desktop/src/view.rs)): audio file cards get Play/Pause, a seek bar and the elapsed and total time.
+  - The approach is Mouser's player (`mouser-media`): `cpal` plays the decoded samples, and the callback's position is the clock. The output is resampled to the device rate with linear interpolation, and mono goes to every channel.
+  - With no sound device, or with `BRAGI_AUDIO=null`, a wall clock runs instead and nothing is heard. The headless scenario sets it ([`desktop-scenario.sh`](scripts/desktop-scenario.sh)).
+  - A file is decoded off the UI thread. The deck is checked on every render, so any way of leaving the chat stops the clip.
+- Flutter ([`audio.dart`](app/lib/src/audio.dart), [`controller.dart`](app/lib/src/controller.dart), [`chat_screen.dart`](app/lib/src/chat_screen.dart)): the same row, with Play/Pause, a `Slider` and the time from `bragi-core` (`audio_times`).
+  - Sound goes through `just_audio`, in the platform audio session from `audio_session` (`music()`): Android audio focus and the iOS `AVAudioSession`, so calls and other apps pause it.
+  - The demo build and the tests use a scripted player with no sound.
+  - The controller follows `Deck`'s rules: one clip, and it stops when `current` changes.
+- Bridge ([`bragi.rs`](crates/bragi-bridge/src/api/bragi.rs)): `FileView.duration_ms`, `audio_times`, `audio_seek_ms` and `demo_tone_wav`. Regenerated.
+- Packaging: the Linux desktop links ALSA now. libasound and alsa-lib are added to [`bragi.yaml`](packaging/nfpm/bragi.yaml), [`bragi-standalone.yaml`](packaging/nfpm/bragi-standalone.yaml), the [`PKGBUILD`](packaging/arch/bragi-bin/PKGBUILD) and [`package.nix`](packaging/nix/package.nix). The release workflow already installs `libasound2-dev`.
+- Mouser's player is not a library Bragi can take as it is. It decodes with an `ffmpeg` child process and is tied to Mouser's plugin views. Bragi reuses its approach (cpal output, the callback as the clock, a wall clock without a device) and its time format.
+  - A shared `cpal` output with a device clock and a wall-clock fallback is generic and could become a Weirdnet media crate that both apps use. No `weirdnet-*` crate was changed.
+
+**Commits** (on `feature/audio-player`, from `main` at `3de0499`):
+- [`a61f671`](https://github.com/WeirdBrains/bragi/commit/a61f671): core.
+- [`164d235`](https://github.com/WeirdBrains/bragi/commit/164d235): GPUI.
+- [`c0f6c21`](https://github.com/WeirdBrains/bragi/commit/c0f6c21): Flutter.
+- [`95d4aaf`](https://github.com/WeirdBrains/bragi/commit/95d4aaf): tests, and the scenario script honouring `TMPDIR`.
+- Then the commit that adds this entry.
+
+**Checks** (whole workspace):
+- `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` and the build.
+- New tests:
+  - core: the deck, the times and seek, lengths from WAV and MP3 headers, decoding a WAV;
+  - desktop: the wall-clock player plays, pauses, seeks and restarts at the end.
+- `flutter analyze`, and the Flutter tests in demo mode, all passing, `settings_test.dart` included (it is known to be flaky under load and failed once in an earlier run). The scenario now plays a clip, checks the time, seeks, pauses, switches clips and checks that the clip stops with the chat.
+- The headless desktop scenario on a virtual X server, in a clean environment with a throwaway home and no sound device. Screenshots 16d (two audio cards with their lengths), 16e (playing, after seeking to the middle) and 16f (paused).
+
+**How the checks ran**: Rust fmt, clippy, the tests and the build ran under the heavy-build lock. Later, another job held the lock with a stuck `flutter test`, and `/tmp` hit its quota. So `flutter analyze`, the Flutter tests and the headless scenario ran with nice and ionice but outside the lock, against the build that was already done (no Rust code changed after it), with `TMPDIR` on the scratch disk.
+
+**Not tested**:
+- Sound out of a real device, on desktop or phone.
+- A real phone's audio session: a call or another app interrupting.
+- MP3 playback (only MP3 header lengths are tested; the scenario plays WAV).
+- macOS and Windows output (cpal's CoreAudio and WASAPI hosts).
+
+**What's left**:
+- No volume control, and no choice of output device. Mouser has one in its preferences.
+- No background or lock-screen playback.
+- The whole clip is decoded into memory. That is at most about 120 MB of samples for a 10 MiB MP3.
+- Output latency is not subtracted from the shown time.
+- The Flutter seek bar drags; the desktop bar jumps on a click (48 steps) rather than dragging.
+
+**What's next**: review of `feature/audio-player`.
+
 ## 2026-11-21: LF-14, the VS Code and Cursor extension and `bragi serve` (branch only)
 
 **What changed**
