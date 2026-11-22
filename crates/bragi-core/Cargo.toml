@@ -31,6 +31,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 weirdnet-agent.workspace = true
+weirdnet-mcp = { version = "0.6", features = ["agent"] }
 weirdnet-backends.workspace = true
 weirdnet-model.workspace = true
 weirdnet-device-link.workspace = true

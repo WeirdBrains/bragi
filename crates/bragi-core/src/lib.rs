@@ -26,6 +26,7 @@ pub mod highlight;
 pub mod history;
 pub mod identity;
 pub mod markdown;
+pub mod mcp_servers;
 pub mod models;
 mod models_core;
 pub mod openai;

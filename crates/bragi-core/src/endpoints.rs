@@ -318,6 +318,39 @@ impl Endpoints {
         self.write_secrets(&m)
     }
 
+    /// A secret kept for another feature (an MCP server's token) under `name`: the keychain when a
+    /// shell opted in, else the sealed file. `None` removes it.
+    pub(crate) fn put_secret(&self, name: &str, value: Option<&str>) -> Result<()> {
+        let acct = format!("secret:{name}");
+        let store = lock(&self.keychain).clone();
+        if let Some(store) = &store {
+            match value {
+                Some(v) if store.set(&acct, v).is_ok() => return self.drop_sealed(&acct),
+                Some(_) => tracing::warn!("the OS keychain refused a secret; keeping it in the sealed file"),
+                None => {
+                    let _ = store.delete(&acct);
+                }
+            }
+        }
+        let mut m = self.read_secrets().unwrap_or_default();
+        match value {
+            Some(v) => m.insert(acct, v.to_string()),
+            None => m.remove(&acct),
+        };
+        self.write_secrets(&m)
+    }
+
+    /// Reads what [`put_secret`](Self::put_secret) stored.
+    pub(crate) fn get_secret(&self, name: &str) -> Result<Option<String>> {
+        let acct = format!("secret:{name}");
+        if let Some(store) = lock(&self.keychain).clone()
+            && let Some(v) = store.get(&acct)?
+        {
+            return Ok(Some(v));
+        }
+        Ok(self.read_secrets()?.remove(&acct))
+    }
+
     fn drop_sealed(&self, id: &str) -> Result<()> {
         let mut m = self.read_secrets().unwrap_or_default();
         if m.remove(id).is_some() {
