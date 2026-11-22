@@ -6,6 +6,12 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `bragi-tui`, Bragi in a terminal, locally or over SSH. It links with a code, QR code or node address, and has sessions in nested folders, OpenAI-compatible endpoints in Settings, and a picker for where chats go and the model. Chat streams with stop and continue, replies render as Markdown with highlighted code, and the Thinking section folds open. It takes text, image and audio attachments and shows node status. Keyboard shortcuts are listed on a help screen, and copying goes through OSC 52.
+- Code suggestions and rewrites in the terminal app. It takes files and folders as context (respecting `.gitignore`) and rewrites a file or line range. Each hunk of the diff (unified or side by side) can be accepted or rejected, the write can be undone, and `bragi-tui code` does the same from scripts.
+- `bragi-tui` ships in the Linux, macOS and Windows downloads, and as its own deb, rpm and Arch package without GUI libraries.
+
 ## [0.1.1] - 2026-11-21
 
 ### Added
