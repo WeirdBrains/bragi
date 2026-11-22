@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `form`, `message_state_name`, `mode_of`, `mode_str`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`, `target_of`, `target_view`, `test_view`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `form`, `message_state_name`, `mode_of`, `mode_str`, `pair_view`, `pending`, `slot`, `started`, `state_view`, `status_name`, `summary_view`, `target_of`, `target_view`, `test_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -195,6 +195,31 @@ Future<List<SummaryView>> conversations({
 
 Future<ConversationView> conversation({required String id}) =>
     RustLib.instance.api.crateApiBragiConversation(id: id);
+
+/// Every file in conversation `id`, oldest first.
+Future<List<FileView>> chatFiles({required String id}) =>
+    RustLib.instance.api.crateApiBragiChatFiles(id: id);
+
+/// A file's bytes: an image preview, or saving through the phone's share/save sheet.
+Future<Uint8List> fileBytes({
+  required String conversation,
+  required String file,
+}) => RustLib.instance.api.crateApiBragiFileBytes(
+  conversation: conversation,
+  file: file,
+);
+
+/// Saves a file at `dest` (a path a save dialog returned is replaced; a folder gets the file's
+/// name without replacing anything). Returns where it went.
+Future<String> saveFile({
+  required String conversation,
+  required String file,
+  required String dest,
+}) => RustLib.instance.api.crateApiBragiSaveFile(
+  conversation: conversation,
+  file: file,
+  dest: dest,
+);
 
 /// The quick reaction bar, in order.
 List<String> quickReactions() =>
@@ -697,6 +722,67 @@ class EndpointView {
           sessions == other.sessions;
 }
 
+/// A file in a chat, for its card: what was attached, or what an answer wrote.
+class FileView {
+  /// What `file_bytes` and `save_file` take.
+  final String id;
+  final String messageId;
+  final String name;
+
+  /// The path an answer gave it (`src/main.rs`), when it had one.
+  final String? path;
+  final String mime;
+  final BigInt size;
+
+  /// `text`, `image` or `audio`.
+  final String kind;
+
+  /// `attached` or `reply`.
+  final String origin;
+
+  /// A text file's first lines.
+  final String? preview;
+
+  const FileView({
+    required this.id,
+    required this.messageId,
+    required this.name,
+    this.path,
+    required this.mime,
+    required this.size,
+    required this.kind,
+    required this.origin,
+    this.preview,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      messageId.hashCode ^
+      name.hashCode ^
+      path.hashCode ^
+      mime.hashCode ^
+      size.hashCode ^
+      kind.hashCode ^
+      origin.hashCode ^
+      preview.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is FileView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          messageId == other.messageId &&
+          name == other.name &&
+          path == other.path &&
+          mime == other.mime &&
+          size == other.size &&
+          kind == other.kind &&
+          origin == other.origin &&
+          preview == other.preview;
+}
+
 class FolderView {
   final String id;
   final String name;
@@ -790,6 +876,9 @@ class MessageView {
   final int resumes;
   final List<AttachmentView> attachments;
 
+  /// The message's file cards: its attachments, then the files its answer wrote.
+  final List<FileView> files;
+
   /// Agent mode: the tools the task used, in order.
   final List<String> tools;
 
@@ -812,6 +901,7 @@ class MessageView {
     this.standin,
     required this.resumes,
     required this.attachments,
+    required this.files,
     required this.tools,
     required this.agent,
     required this.atMs,
@@ -833,6 +923,7 @@ class MessageView {
       standin.hashCode ^
       resumes.hashCode ^
       attachments.hashCode ^
+      files.hashCode ^
       tools.hashCode ^
       agent.hashCode ^
       atMs.hashCode;
@@ -856,6 +947,7 @@ class MessageView {
           standin == other.standin &&
           resumes == other.resumes &&
           attachments == other.attachments &&
+          files == other.files &&
           tools == other.tools &&
           agent == other.agent &&
           atMs == other.atMs;

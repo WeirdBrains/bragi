@@ -149,7 +149,24 @@ void main() {
     expect(last().text, contains('I read sample-notes.md (3 lines)'));
     expect(c.messages.first.attachments.single.name, 'sample-notes.md');
     expect(c.attachments, isEmpty, reason: 'the chip went with the message');
-    expect(find.textContaining('attached: sample-notes.md'), findsOneWidget);
+    // LF-12: the attachment is a file card, and the answer's named code block is one too, saved from its card.
+    final note = c.messages.first.files.single;
+    expect((note.name, note.kind, note.origin), ('sample-notes.md', 'text', 'attached'));
+    expect(shown('file-${note.id}'), isTrue);
+    expect(find.textContaining('text/markdown'), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('prompt')), 'Write hello world as a file');
+    await tester.tap(find.byKey(const Key('send')));
+    await until('the file answer', () => !c.streaming && c.messages.length == 4 && last().state == 'complete');
+    final made = last().files.single;
+    expect((made.name, made.kind, made.origin, made.mime), ('hello.py', 'text', 'reply', 'text/x-python'));
+    expect(made.preview, 'print("Hello from your own cloud")');
+    await tester.ensureVisible(find.byKey(Key('save-${made.id}')));
+    await tester.pump();
+    await tester.tap(find.byKey(Key('save-${made.id}')));
+    await until('the saved notice', () => c.notice?.startsWith('Saved hello.py to ') ?? false);
+    final saved = File(c.notice!.substring('Saved hello.py to '.length));
+    expect(saved.readAsStringSync(), 'print("Hello from your own cloud")\n');
+    saved.parent.deleteSync(recursive: true);
     // A binary file is refused in the core's words.
     c.attachFile('pic.png', [0x89, 0x50, 0x00, 0x01]);
     expect(c.notice, contains('not a text file'));

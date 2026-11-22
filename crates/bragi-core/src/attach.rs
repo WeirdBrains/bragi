@@ -95,7 +95,7 @@ fn bad(msg: impl Into<String>) -> CoreError {
 }
 
 /// A file name that is safe to show and to put in a prompt: no directories, no control characters.
-fn clean_name(name: &str) -> String {
+pub(crate) fn clean_name(name: &str) -> String {
     let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
     let s: String = base.chars().filter(|c| !c.is_control()).take(80).collect();
     if s.trim().is_empty() { "attachment".into() } else { s }

@@ -16,6 +16,7 @@ mod core;
 pub mod demo;
 pub mod endpoints;
 pub mod error;
+pub mod files;
 pub mod highlight;
 pub mod history;
 pub mod identity;
@@ -37,6 +38,7 @@ pub use crate::core::{
 };
 pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
 pub use crate::error::{CoreError, ErrorKind, Result};
+pub use crate::files::{ChatFile, FileKind, FileOrigin};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};
 pub use crate::openai::TestReport;
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};

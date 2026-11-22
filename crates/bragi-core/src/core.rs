@@ -854,6 +854,29 @@ impl Core {
         self.inner.history.load(id)
     }
 
+    // ---- files in a chat -------------------------------------------------------------------
+
+    /// Every file in conversation `id`, oldest first: what was attached and what answers wrote
+    /// (see [`crate::files`]). [`crate::files::describe`] gives one message's.
+    pub fn files(&self, id: &str) -> Result<Vec<crate::files::ChatFile>> {
+        Ok(crate::files::all(&self.inner.history.load(id)?))
+    }
+
+    /// File `file` (a [`crate::files::ChatFile::id`]) of conversation `id`, and its bytes: for
+    /// an image preview, or a shell that saves through the OS (a share sheet, a picker that
+    /// takes bytes).
+    pub fn file_bytes(&self, id: &str, file: &str) -> Result<(crate::files::ChatFile, Vec<u8>)> {
+        crate::files::bytes(&self.inner.history.load(id)?, file)
+    }
+
+    /// Saves file `file` of conversation `id` at `dest`: a path a save dialog returned is
+    /// replaced; a folder gets the file's name, with ` (2)`, ` (3)`, … added rather than
+    /// replacing anything. Returns where it went.
+    pub fn save_file(&self, id: &str, file: &str, dest: &std::path::Path) -> Result<PathBuf> {
+        let (card, bytes) = self.file_bytes(id, file)?;
+        crate::files::save(&card.name, &bytes, dest)
+    }
+
     /// Toggles `emoji` on a message of a conversation: added if absent, removed if present.
     /// Returns the message's reactions afterwards. Saved to history (so it syncs) and sent to
     /// [`Core::reaction_events`]; the next turn's context carries it as a short note.

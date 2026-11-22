@@ -132,7 +132,18 @@ fn split_attachments(prompt: &str) -> (Vec<(String, usize)>, &str) {
     (files, rest)
 }
 
+/// Asking the demo for a file (a prompt containing this) gets an answer with a named code block,
+/// which the shells show as a file card.
+pub const FILE_TRIGGER: &str = "as a file";
+
+/// The file the demo writes for [`FILE_TRIGGER`].
+pub const DEMO_FILE: (&str, &str) = ("hello.py", "print(\"Hello from your own cloud\")\n");
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
+    if prompt.contains(FILE_TRIGGER) {
+        let (name, body) = DEMO_FILE;
+        return format!("{model} here. Here it is:\n\n```python {name}\n{body}```\n\nSave it from the card under this answer.");
+    }
     if prompt.contains("Markdown") {
         return format!("{model} here. 2 + 2 equals **4**.\n\n{MARKDOWN_SAMPLE}");
     }

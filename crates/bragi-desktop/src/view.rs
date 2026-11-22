@@ -3,20 +3,21 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use bragi_core::demo::{DemoNode, Faults};
+use bragi_core::files::{FileKind, FileOrigin};
 use bragi_core::{
-    AppState, Attachment, ChatEvent, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState, ModelStatus,
-    NodeSearch, PairState, Role, Transport,
+    AppState, Attachment, ChatEvent, ChatFile, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState,
+    ModelStatus, NodeSearch, PairState, Role, Transport,
 };
 use gpui::{
-    App, Bounds, Context, Entity, Focusable, KeyBinding, MouseButton, ScrollHandle, SharedString, Task, WeakEntity, Window, WindowBounds,
-    WindowDecorations, WindowOptions, actions, div, prelude::*, px, rgb, size,
+    App, Bounds, Context, Entity, Focusable, Image, ImageFormat, KeyBinding, MouseButton, ObjectFit, ScrollHandle, SharedString, Task, WeakEntity,
+    Window, WindowBounds, WindowDecorations, WindowOptions, actions, div, img, prelude::*, px, rgb, size,
 };
 
 use crate::markdown;
@@ -58,6 +59,8 @@ struct Card {
 
 /// A reply's text, whether it was parsed while streaming, and its parsed Markdown.
 type ParsedReply = (String, bool, Rc<bragi_core::markdown::Document>);
+/// A message's file cards and what they were read from (its text and attachment lengths).
+type FileCards = ((usize, usize), Rc<Vec<ChatFile>>);
 
 pub struct BragiView {
     core: Core,
@@ -99,6 +102,11 @@ pub struct BragiView {
     copied_block: Option<SharedString>,
     /// Each shown reply's parsed Markdown, by message key, kept until its text changes.
     markdown: RefCell<HashMap<String, ParsedReply>>,
+    /// Each shown message's file cards, by `<conversation>/<message id>`, kept until its text
+    /// changes, and the image previews, by `<conversation>/<file id>` (`None`: not a picture
+    /// this toolkit draws).
+    files: RefCell<HashMap<String, FileCards>>,
+    previews: RefCell<HashMap<String, Option<Arc<Image>>>>,
     /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
     /// all history wants, the last delete while it can be undone, and the Settings view.
     confirm: Option<delete::Confirm>,
@@ -190,6 +198,8 @@ impl BragiView {
             mono: markdown::pick_mono(&cx.text_system().all_font_names()),
             copied_block: None,
             markdown: RefCell::default(),
+            files: RefCell::default(),
+            previews: RefCell::default(),
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -418,6 +428,36 @@ impl BragiView {
     }
 
     /// Adds the file named in the path box to the next message.
+    /// Save on a file card: the system save dialog, starting in Downloads.
+    pub fn save_file(&mut self, file: &ChatFile, cx: &mut Context<Self>) {
+        let Some(conv) = self.current.as_ref().map(|c| c.id.clone()) else { return };
+        let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+        let dir = [home.join("Downloads"), home].into_iter().find(|d| d.is_dir()).unwrap_or_else(|| PathBuf::from("."));
+        let rx = cx.prompt_for_new_path(&dir, Some(&file.name));
+        let id = file.id.clone();
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            let picked = rx.await;
+            let _ = this.update(cx, |v, cx| {
+                match picked {
+                    Ok(Ok(Some(dest))) => v.save_file_to(&conv, &id, &dest, cx),
+                    Ok(Err(e)) => v.notice = Some(format!("No save dialog could open ({e}).")),
+                    _ => {}
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Saves file `id` of conversation `conv` at `dest` (a file path, or a folder) and says where.
+    pub fn save_file_to(&mut self, conv: &str, id: &str, dest: &Path, cx: &mut Context<Self>) {
+        self.notice = Some(match self.core.save_file(conv, id, dest) {
+            Ok(at) => format!("Saved to {}", at.display()),
+            Err(e) => e.message,
+        });
+        cx.notify();
+    }
+
     pub fn attach_typed(&mut self, cx: &mut Context<Self>) {
         let path = self.attach_input.read(cx).text().trim().to_string();
         self.attach_path(&path, cx);
@@ -969,7 +1009,7 @@ impl BragiView {
             (None, false) if m.role == Role::Assistant => Some(flags.join(" · ")),
             (meta, _) => meta,
         };
-        let _ = cx;
+        let files = self.message_files(m);
         div().flex().flex_row().when(mine, |d| d.justify_end()).child(
             div()
                 .flex()
@@ -982,19 +1022,112 @@ impl BragiView {
                 .rounded(px(12.))
                 .bg(rgb(if mine { t.selection } else { t.surface }))
                 .children(meta.map(|s| div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(s)))
-                .children(m.attachments.iter().map(|a| {
-                    div()
-                        .px(px(8.))
-                        .py(px(3.))
-                        .rounded(px(6.))
-                        .bg(rgb(t.surface_variant))
-                        .text_size(px(12.))
-                        .text_color(rgb(t.text_secondary))
-                        .child(format!("attached: {}", a.label()))
-                }))
+                .children(
+                    files
+                        .is_empty()
+                        .then(|| {
+                            m.attachments.iter().map(|a| {
+                                div()
+                                    .px(px(8.))
+                                    .py(px(3.))
+                                    .rounded(px(6.))
+                                    .bg(rgb(t.surface_variant))
+                                    .text_size(px(12.))
+                                    .text_color(rgb(t.text_secondary))
+                                    .child(format!("attached: {}", a.label()))
+                            })
+                        })
+                        .into_iter()
+                        .flatten(),
+                )
                 .children(self.thinking(i, m, cx))
-                .child(self.message_text(i, m, cx)),
+                .child(self.message_text(i, m, cx))
+                .children(files.iter().map(|f| self.file_card(m, f, cx))),
         )
+    }
+
+    /// Message `m`'s file cards (none while it streams or isn't saved).
+    fn message_files(&self, m: &ChatMessage) -> Rc<Vec<ChatFile>> {
+        if m.id.is_empty() || m.state == MessageState::Streaming {
+            return Rc::default();
+        }
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let key = format!("{conv}/{}", m.id);
+        let stamp = (m.text.len(), m.attachments.len());
+        let mut cache = self.files.borrow_mut();
+        if let Some((s, f)) = cache.get(&key)
+            && *s == stamp
+        {
+            return f.clone();
+        }
+        let f = Rc::new(bragi_core::files::describe(m));
+        cache.insert(key, (stamp, f.clone()));
+        f
+    }
+
+    /// A picture file's preview, decoded once.
+    fn preview(&self, m: &ChatMessage, f: &ChatFile) -> Option<Arc<Image>> {
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        self.previews
+            .borrow_mut()
+            .entry(format!("{conv}/{}", f.id))
+            .or_insert_with(|| {
+                let format = ImageFormat::from_mime_type(&f.mime)?;
+                let (_, bytes) = bragi_core::files::message_bytes(m, &f.id).ok()?;
+                Some(Arc::new(Image::from_bytes(format, bytes)))
+            })
+            .clone()
+    }
+
+    /// A file in the chat: its name, type and size, a preview (the first lines of a text file,
+    /// or the picture), and Save.
+    fn file_card(&self, m: &ChatMessage, f: &ChatFile, cx: &mut Context<Self>) -> gpui::Div {
+        let t = self.theme;
+        let icon = match f.kind {
+            FileKind::Text => "▤",
+            FileKind::Image => "▣",
+            FileKind::Audio => "♪",
+        };
+        let from = if f.origin == FileOrigin::Reply { "from the answer" } else { "attached" };
+        let line = format!("{} · {} · {from}", f.mime, bragi_core::files::human_size(f.size));
+        let file = f.clone();
+        let head = div()
+            .flex()
+            .flex_row()
+            .gap(px(8.))
+            .items_center()
+            .child(div().text_size(px(16.)).text_color(rgb(t.text_secondary)).child(icon))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .child(div().text_size(px(13.)).text_color(rgb(t.text_primary)).child(f.path.clone().unwrap_or_else(|| f.name.clone())))
+                    .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(line)),
+            )
+            .child(
+                self.button(SharedString::from(format!("save-{}", f.id)), "Save", false)
+                    .on_click(cx.listener(move |v, _, _, cx| v.save_file(&file, cx))),
+            );
+        let preview = if f.kind == FileKind::Image { self.preview(m, f) } else { None };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .mt(px(4.))
+            .p(px(8.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(rgb(t.border))
+            .bg(rgb(t.background))
+            .child(head)
+            .children(
+                f.preview
+                    .clone()
+                    .map(|p| div().font_family(self.mono.clone()).text_size(px(12.)).line_height(px(17.)).text_color(rgb(t.text_secondary)).child(p)),
+            )
+            .children(preview.map(|i| img(i).max_w(px(320.)).max_h(px(220.)).object_fit(ObjectFit::Contain)))
     }
 
     /// The message list, filling the space between the header and the composer: a scrollbar on
@@ -1454,6 +1587,66 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     step("attachment");
     shot(cx, "16-attachment-answer").await;
     let _ = std::fs::remove_file(&notes);
+
+    // LF-12: files in a chat. The text file is a card on its message; a picture is a card with
+    // its preview; a file an answer writes is a card that saves.
+    let cards = this
+        .read_with(cx, |v, _| v.current.as_ref().map(|c| bragi_core::files::describe(&c.messages[0]).len()).unwrap_or(0))
+        .map_err(|e| e.to_string())?;
+    if cards != 1 {
+        return Err(format!("the attached file has {cards} cards"));
+    }
+    let chart = std::env::temp_dir().join(format!("bragi-scenario-chart-{}.png", std::process::id()));
+    std::fs::write(&chart, include_bytes!("../assets/demo-chart.png")).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.attach_path(&chart.display().to_string(), cx);
+        v.set_prompt("What does this chart show?", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the image chip", |v| v.attachments.len() == 1).await?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let _ = std::fs::remove_file(&chart);
+    // One frame draws the card, which decodes the preview.
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    let (text, preview) = this
+        .read_with(cx, |v, _| {
+            let c = v.current.as_ref();
+            let id = c.and_then(|c| bragi_core::files::describe(&c.messages[0]).first().map(|f| format!("{}/{}", c.id, f.id)));
+            let preview = id.is_some_and(|id| v.previews.borrow().get(&id).is_some_and(|p| p.is_some()));
+            (last_assistant(v).map(|m| m.text).unwrap_or_default(), preview)
+        })
+        .map_err(|e| e.to_string())?;
+    if !text.contains("I can see 1 image(s)") || !preview {
+        return Err(format!("the image: answer {text:?}, preview {preview}"));
+    }
+    step("image card");
+    shot(cx, "16b-image-card").await;
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.set_prompt(&format!("Write hello world {}", bragi_core::demo::FILE_TRIGGER), cx)
+    })
+    .map_err(|e| e.to_string())?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the file card", |v| {
+        v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete && bragi_core::files::describe(&m).len() == 1)
+    })
+    .await?;
+    let saved = tempfile::tempdir().map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        let conv = v.current.as_ref().map(|c| c.id.clone()).unwrap_or_default();
+        let id = last_assistant(v).and_then(|m| bragi_core::files::describe(&m).first().map(|f| f.id.clone())).unwrap_or_default();
+        v.save_file_to(&conv, &id, saved.path(), cx)
+    })
+    .map_err(|e| e.to_string())?;
+    let (name, body) = bragi_core::demo::DEMO_FILE;
+    let got = std::fs::read_to_string(saved.path().join(name)).map_err(|e| format!("the saved file: {e}"))?;
+    if got != body {
+        return Err(format!("the saved file is wrong: {got:?}"));
+    }
+    step("reply file saved");
+    shot(cx, "16c-reply-file").await;
 
     this.update(cx, |v, cx| {
         v.new_chat(cx);
