@@ -1073,8 +1073,8 @@ fn draw_link(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
                 // The code itself copies when clicked.
                 let from = lines.len();
                 push(&mut lines, link, t.accent());
-                for i in from..lines.len() {
-                    copy_marks.push(Mark { line: i, col: 0, w: lines[i].width() as u16, action: Action::Copy(link.clone()) });
+                for (i, line) in lines.iter().enumerate().skip(from) {
+                    copy_marks.push(Mark { line: i, col: 0, w: line.width() as u16, action: Action::Copy(link.clone()) });
                 }
                 lines.push(Line::raw(""));
                 if qr_area.is_none()
