@@ -6,7 +6,7 @@
 //! dimmed view; notices show as toasts in the top right.
 
 use bragi_core::code::{HunkLine, LineTag};
-use bragi_core::{MessageState, ModelStatus, PairState, Role};
+use bragi_core::{MessageState, ModePref, ModelStatus, PairState, Role};
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -82,12 +82,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if area.width < MIN_SIZE.0 || area.height < MIN_SIZE.1 {
         return too_small(f, area);
     }
-    let modal = matches!(app.view, View::Link | View::Models | View::Settings | View::Status | View::Help);
+    let modal = matches!(app.view, View::Link | View::Models | View::Settings | View::Themes | View::Status | View::Help);
     // What's under a window: the screen it was opened from.
     let base = match app.view {
         View::Link => View::Chat,
-        View::Models | View::Settings | View::Status | View::Help if app.back == View::Code => View::Code,
-        View::Models | View::Settings | View::Status | View::Help => View::Chat,
+        View::Models | View::Settings | View::Themes | View::Status | View::Help if app.back == View::Code => View::Code,
+        View::Models | View::Settings | View::Themes | View::Status | View::Help => View::Chat,
         v => v,
     };
     let input_h = match base {
@@ -128,6 +128,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             View::Status => draw_status(f, app, body),
             View::Models => draw_models(f, app, body),
             View::Settings => draw_settings(f, app, body),
+            View::Themes => draw_themes(f, app, body),
             _ => draw_help(f, app, body),
         }
     }
@@ -270,6 +271,7 @@ fn view_name(v: View) -> &'static str {
         View::Status => "Status",
         View::Models => "Models",
         View::Settings => "Settings",
+        View::Themes => "Theme",
         View::Help => "Help",
     }
 }
@@ -283,6 +285,7 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
         (View::Code, "Code", "^E"),
         (View::Status, "Status", "^T"),
         (View::Settings, "Settings", "^P"),
+        (View::Themes, "Theme", "^G"),
         (View::Link, "Link", "^L"),
     ];
     let wide = area.width >= 100;
@@ -331,6 +334,22 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
         View::Settings => {
             &[("a", "add"), ("e", "edit"), ("Space", "on/off"), ("m", "mode"), ("t", "test"), ("J/K", "order"), ("d", "delete"), ("Esc", "back")]
         }
+        View::Themes if app.themes.prompt.is_some() => &[("Enter", "ok"), ("Esc", "cancel")],
+        View::Themes if app.themes.confirm.is_some() => &[("y", "yes"), ("any", "no")],
+        View::Themes if app.themes.edit.as_ref().is_some_and(|e| e.hex.is_some()) => &[("#rrggbb", "live"), ("Enter", "keep"), ("Esc", "undo")],
+        View::Themes if app.themes.edit.is_some() => {
+            &[("↑↓", "role"), ("Enter", "colour"), ("[ ]", "palette"), ("Tab", "dark/light"), ("u", "undo"), ("s", "save"), ("Esc", "back")]
+        }
+        View::Themes => &[
+            ("↑↓", "preview"),
+            ("Enter", "use"),
+            ("m", "mode"),
+            ("e", "edit"),
+            ("n/d", "new/copy"),
+            ("x", "delete"),
+            ("i/E", "import/export"),
+            ("Esc", "back"),
+        ],
         View::Help => &[("↑↓", "scroll"), ("Esc", "back")],
     }
 }
@@ -1521,4 +1540,191 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
             f.render_widget(Paragraph::new(lines.into_iter().take(inner.height as usize).collect::<Vec<_>>()), inner);
         }
     }
+}
+
+// ---- the Theme screen ----
+
+/// A role's colour as the terminal gets it now.
+fn swatch_color(hex: &str) -> Color {
+    match weirdnet_themes::parse_hex(hex) {
+        Some(c) => weirdnet_themes::to_color(c, th().depth),
+        None => Color::Reset,
+    }
+}
+
+fn draw_themes(f: &mut Frame, app: &mut App, area: Rect) {
+    let t = th();
+    let st = &app.themes;
+    let right = if st.edit.is_some() { "Editing" } else { "Pick a theme: moving previews it" };
+    let inner = window(f, area, 104, 29, "Theme", right);
+    if inner.height < 8 || inner.width < 40 {
+        return;
+    }
+    let [main, foot] = Layout::vertical([Constraint::Min(4), Constraint::Length(2)]).areas(inner);
+    let left_w = 34.min(main.width / 2);
+    let [left, _gap, right] = Layout::horizontal([Constraint::Length(left_w), Constraint::Length(2), Constraint::Min(10)]).areas(main);
+    let mut cursor: Option<(u16, u16)> = None;
+
+    if let Some(e) = &st.edit {
+        draw_theme_roles(f, e, left);
+        draw_theme_side(f, app, right, true);
+    } else {
+        let h = left.height.saturating_sub(2) as usize;
+        let first = st.sel.saturating_sub(h.saturating_sub(1));
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        for (i, r) in st.rows.iter().enumerate().skip(first).take(h) {
+            let sel = i == st.sel;
+            let base = if sel { t.selection() } else { Style::new() };
+            let lead = if sel { Span::styled(format!("{} ", t.icons.bar), t.accent()) } else { Span::raw("  ") };
+            let on = if r.name == st.saved.theme { t.icons.on } else { t.icons.off };
+            let tag = match (r.builtin, r.user_file, &r.error) {
+                (_, _, Some(_)) => " broken",
+                (true, true, _) => " edited",
+                (true, false, _) => "",
+                (false, _, _) => " yours",
+            };
+            let mut spans = vec![
+                lead,
+                Span::styled(format!("{on} "), base.fg(if r.name == st.saved.theme { t.success } else { t.dim })),
+                Span::styled(r.display_name.clone(), base.add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    tag.to_string(),
+                    if sel {
+                        base
+                    } else if r.error.is_some() {
+                        t.fg(t.error)
+                    } else {
+                        t.dim()
+                    },
+                ),
+            ];
+            let used = line_width(&spans);
+            if sel && used < left.width as usize {
+                spans.push(Span::styled(" ".repeat(left.width as usize - used), base));
+            }
+            lines.push(Line::from(spans));
+        }
+        f.render_widget(Paragraph::new(lines), Rect { height: left.height.saturating_sub(2), ..left });
+        let mode = |m: ModePref, name: &str| {
+            if st.mode == m { Span::styled(format!(" {name} "), t.pill(t.bg, t.accent)) } else { Span::styled(format!(" {name} "), t.muted()) }
+        };
+        let mode_line = Line::from(vec![
+            Span::styled("Mode ", t.dim()),
+            mode(ModePref::Dark, "dark"),
+            mode(ModePref::Light, "light"),
+            mode(ModePref::System, "system"),
+        ]);
+        f.render_widget(Paragraph::new(mode_line), Rect { y: left.y + left.height.saturating_sub(1), height: 1, ..left });
+        draw_theme_side(f, app, right, false);
+    }
+
+    // The footer: a prompt, a question or what the last action said.
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    if let Some((ask, ed)) = &st.prompt {
+        lines.push(Line::from(vec![Span::styled(format!("{}: ", ask.label()), t.bold_accent()), Span::styled(ed.text().to_string(), t.text())]));
+        let x = foot.x
+            + (width(ask.label()) + 2 + ed.text()[..ed.text().char_indices().nth(ed.cursor()).map_or(ed.text().len(), |(i, _)| i)].chars().count())
+                as u16;
+        cursor = Some((x.min(foot.x + foot.width.saturating_sub(1)), foot.y));
+    }
+    if let Some(m) = &st.msg {
+        lines.push(Line::styled(clip(m, foot.width as usize), if st.confirm.is_some() { t.fg(t.warning) } else { t.muted() }));
+    }
+    f.render_widget(Paragraph::new(lines), foot);
+    if let Some((x, y)) = cursor {
+        f.set_cursor_position((x, y));
+    }
+}
+
+/// The role list of the editor: a swatch, the role, its colour.
+fn draw_theme_roles(f: &mut Frame, e: &crate::app::EditState, area: Rect) {
+    let t = th();
+    let pal = bragi_core::Appearance::palette_of(&e.file, e.variant);
+    let roles = bragi_core::appearance::roles();
+    let h = area.height.saturating_sub(1) as usize;
+    let first = e.sel.saturating_sub(h.saturating_sub(1));
+    let head = Line::from(vec![
+        Span::styled(format!("{} ", e.name), t.bold_accent()),
+        Span::styled(format!("· {}{}", e.variant.name(), if e.dirty() { " · unsaved" } else { "" }), t.muted()),
+    ]);
+    f.render_widget(Paragraph::new(head), Rect { height: 1, ..area });
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (i, r) in roles.iter().enumerate().skip(first).take(h) {
+        let sel = i == e.sel;
+        let base = if sel { t.selection() } else { Style::new() };
+        let hex = pal.get(r).unwrap_or("?").to_string();
+        let derived = e.stored(r).is_none();
+        let hexbox = match (&e.hex, sel) {
+            (Some(h), true) => h.text().to_string(),
+            _ => hex.clone(),
+        };
+        let bad = sel && e.hex.as_ref().is_some_and(|h| crate::app::parse_hex(h.text()).is_none());
+        let mut spans = vec![
+            if sel { Span::styled(format!("{} ", t.icons.bar), t.accent()) } else { Span::raw("  ") },
+            Span::styled(if t.color() { "██" } else { "[]" }, Style::new().fg(swatch_color(&hex))),
+            Span::styled(format!(" {r:<13}"), base),
+            Span::styled(format!("{hexbox:<8}"), if bad { base.fg(t.error) } else { base }),
+            Span::styled(if derived { " auto" } else { "" }.to_string(), if sel { base } else { t.dim() }),
+        ];
+        let used = line_width(&spans);
+        if sel && used < area.width as usize {
+            spans.push(Span::styled(" ".repeat(area.width as usize - used), base));
+        }
+        lines.push(Line::from(spans));
+    }
+    f.render_widget(Paragraph::new(lines), Rect { y: area.y + 1, height: area.height.saturating_sub(1), ..area });
+}
+
+/// A sample of the screen in the colours being previewed (the window already is), the role
+/// under the cursor in editing, and the contrast notes.
+fn draw_theme_side(f: &mut Frame, app: &App, area: Rect, editing: bool) {
+    let t = th();
+    let st = &app.themes;
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let name = match &st.edit {
+        Some(e) => e.name.clone(),
+        None => st.selected().map(|r| r.display_name.clone()).unwrap_or_default(),
+    };
+    lines.push(Line::from(vec![
+        Span::styled(format!(" {} Bragi ", t.icons.brand), t.pill(t.bg, t.accent)),
+        Span::raw(" "),
+        Span::styled(format!(" {name} "), t.bold_accent().bg(t.raised)),
+        Span::styled(format!(" {} ", t.variant.name()), t.muted().bg(t.surface)),
+    ]));
+    lines.push(Line::raw(""));
+    lines.push(Line::from(vec![Span::styled(format!("{} ", t.icons.user), t.bold_accent()), Span::styled("How do I undo a rebase?", t.text())]));
+    lines.push(Line::from(vec![
+        Span::styled(format!("{} ", t.icons.bot), t.fg(t.header)),
+        Span::styled("Use ", t.text()),
+        Span::styled("git reflog", Style::new().fg(t.fg).bg(t.code_bg)),
+        Span::styled(", then ", t.text()),
+        Span::styled("reset", Style::new().fg(t.link).add_modifier(Modifier::UNDERLINED)),
+        Span::styled(".", t.text()),
+    ]));
+    lines.push(Line::styled("  secondary text · a hint", t.muted()));
+    lines.push(Line::styled("  timestamps and placeholders", t.dim()));
+    lines.push(Line::from(vec![Span::styled("  ", Style::new()), Span::styled(" selected row ", t.selection())]));
+    lines.push(Line::raw(""));
+    lines.push(Line::styled("  fn main() {", Style::new().fg(t.fg).bg(t.code_bg)));
+    lines.push(Line::styled(format!("  {} let ok = true;", "+"), Style::new().fg(t.add).bg(t.add_bg)));
+    lines.push(Line::styled(format!("  {} let ok = false;", "-"), Style::new().fg(t.remove).bg(t.remove_bg)));
+    lines.push(Line::raw(""));
+    lines.push(Line::from(vec![
+        Span::styled(format!("{} ok  ", t.icons.check), t.fg(t.success)),
+        Span::styled(format!("{} warn  ", t.icons.warn), t.fg(t.warning)),
+        Span::styled(format!("{} error  ", t.icons.cross), t.fg(t.error)),
+        Span::styled(format!("{} info", t.icons.bullet), t.fg(t.info)),
+    ]));
+    if editing && let Some(e) = &st.edit {
+        lines.push(Line::raw(""));
+        let role = e.role();
+        lines.push(Line::from(vec![
+            Span::styled(role.to_string(), t.bold_accent()),
+            Span::styled(format!("  {}", bragi_core::appearance::role_label(role)), t.muted()),
+        ]));
+        for w in weirdnet_themes::contrast_warnings(e.file.variant(e.variant)).into_iter().take(2) {
+            lines.push(Line::styled(clip(&format!("{} {w}", t.icons.warn), area.width as usize), t.fg(t.warning)));
+        }
+    }
+    f.render_widget(Paragraph::new(lines), area);
 }

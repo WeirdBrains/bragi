@@ -1123,6 +1123,7 @@ dependencies = [
  "weirdnet-model",
  "weirdnet-net",
  "weirdnet-sync",
+ "weirdnet-themes",
 ]
 
 [[package]]
@@ -1140,6 +1141,7 @@ dependencies = [
  "tokio",
  "unicode-segmentation",
  "weirdnet-text",
+ "weirdnet-themes",
 ]
 
 [[package]]
@@ -10066,10 +10068,11 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-themes"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fd16e15b6f43067f6d2246b30a633476b5756fa23959ca4ef91d4ce59236db2"
+checksum = "fc817bfc1ecd26cd28dee406c6a40f0ffd1fa240a521dc2014243883ae69c0d8"
 dependencies = [
+ "dirs",
  "ratatui",
  "serde",
  "thiserror 2.0.21",

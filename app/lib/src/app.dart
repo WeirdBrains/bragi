@@ -19,6 +19,7 @@ class _BragiAppState extends State<BragiApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.controller.appearance.systemDark = WidgetsBinding.instance.platformDispatcher.platformBrightness == Brightness.dark;
   }
 
   @override
@@ -29,6 +30,11 @@ class _BragiAppState extends State<BragiApp> with WidgetsBindingObserver {
 
   // Mobile lifecycle: the node pauses in the background and resumes in the foreground.
   @override
+  void didChangePlatformBrightness() {
+    widget.controller.appearance.platformBrightness(View.of(context).platformDispatcher.platformBrightness == Brightness.dark);
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
     final api = widget.controller.api;
     if (s == AppLifecycleState.paused) api.paused().ignore();
@@ -37,15 +43,16 @@ class _BragiAppState extends State<BragiApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Bragi',
-      debugShowCheckedModeBanner: false,
-      theme: bragiTheme(),
-      home: ListenableBuilder(
-        listenable: widget.controller,
-        builder: (_, _) => widget.controller.linked
-            ? ChatScreen(controller: widget.controller)
-            : PairingScreen(controller: widget.controller),
+    return ListenableBuilder(
+      listenable: widget.controller.appearance,
+      builder: (context, _) => MaterialApp(
+        title: 'Bragi',
+        debugShowCheckedModeBanner: false,
+        theme: bragiTheme(),
+        home: ListenableBuilder(
+          listenable: widget.controller,
+          builder: (_, _) => widget.controller.linked ? ChatScreen(controller: widget.controller) : PairingScreen(controller: widget.controller),
+        ),
       ),
     );
   }

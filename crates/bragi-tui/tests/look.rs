@@ -27,7 +27,7 @@ fn screen(app: &mut App, w: u16, h: u16) -> (String, ratatui::buffer::Buffer) {
 
 #[test]
 fn no_colour_ascii_narrow_and_tiny() {
-    let file = theme::load("bragi").unwrap();
+    let file = weirdnet_themes::builtin("bragi").unwrap();
     theme::init(Theme::new(&file, weirdnet_themes::Variant::Dark, Depth::None, false));
     let session = Session::demo(None).expect("the demo");
     let dir = tempfile::tempdir().unwrap();

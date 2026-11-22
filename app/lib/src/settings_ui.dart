@@ -11,7 +11,7 @@ import 'theme.dart';
 
 Widget _heading(String text) => Padding(
   padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-  child: Text(text, style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+  child: Text(text, style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
 );
 
 class SettingsScreen extends StatelessWidget {
@@ -31,7 +31,7 @@ class SettingsScreen extends StatelessWidget {
             key: const Key('settings-list'),
             children: [
               _heading('OPENAI-COMPATIBLE ENDPOINTS'),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   'Any server that speaks the OpenAI chat API. "Fallback" endpoints answer only when the Weirdnet pool can’t, in this order; "Alongside" ones can be picked for a chat next to the pool. API keys are stored sealed on this device and are never synced.',
@@ -39,7 +39,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               if (c.endpoints.isEmpty)
-                const ListTile(key: Key('no-endpoints'), dense: true, title: Text('No endpoints yet.', style: TextStyle(color: BragiColors.textSecondary))),
+                ListTile(key: Key('no-endpoints'), dense: true, title: Text('No endpoints yet.', style: TextStyle(color: BragiColors.textSecondary))),
               for (var i = 0; i < c.endpoints.length; i++) _EndpointTile(controller: c, index: i),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -54,7 +54,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               _heading('WEIRDNET LINKS'),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(
                   'Node addresses this device dials (from `ymirctl pool addresses`).',
@@ -62,7 +62,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               if (c.links.isEmpty)
-                const ListTile(key: Key('no-links'), dense: true, title: Text('No links yet.', style: TextStyle(color: BragiColors.textSecondary))),
+                ListTile(key: Key('no-links'), dense: true, title: Text('No links yet.', style: TextStyle(color: BragiColors.textSecondary))),
               for (var i = 0; i < c.links.length; i++) _LinkTile(controller: c, index: i),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -318,7 +318,7 @@ class _EndpointDialogState extends State<_EndpointDialog> {
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(_error!, key: const Key('ep-error'), style: const TextStyle(color: BragiColors.error)),
+                  child: Text(_error!, key: const Key('ep-error'), style: TextStyle(color: BragiColors.error)),
                 ),
             ],
           ),
@@ -504,7 +504,7 @@ class _LinkDialogState extends State<_LinkDialog> {
             controller: _address,
             decoration: const InputDecoration(labelText: 'Node address', hintText: '/ip4/…/tcp/…/p2p/…'),
           ),
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, key: const Key('link-error'), style: const TextStyle(color: BragiColors.error))),
+          if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, key: const Key('link-error'), style: TextStyle(color: BragiColors.error))),
         ],
       ),
       actions: [

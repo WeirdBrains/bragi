@@ -77,7 +77,7 @@ class PairingScreen extends StatelessWidget {
                 padding: const EdgeInsets.all(24),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   ...children,
-                  if (c.notice != null) Text(c.notice!, style: const TextStyle(color: BragiColors.error)),
+                  if (c.notice != null) Text(c.notice!, style: TextStyle(color: BragiColors.error)),
                 ]),
               ),
             ),

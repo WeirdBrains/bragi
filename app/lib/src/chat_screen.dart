@@ -14,6 +14,7 @@ import 'delete_ui.dart';
 import 'sessions_ui.dart';
 import 'models_ui.dart';
 import 'settings_ui.dart';
+import 'theme_ui.dart';
 import 'theme.dart';
 import 'rust/api/bragi.dart' as rust;
 
@@ -104,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             Expanded(
               child: c.messages.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Text('Ask your own cloud something.', style: TextStyle(color: BragiColors.textSecondary)),
                     )
                   // Replies stay selectable; each reply's copy button gives its raw Markdown.
@@ -179,7 +180,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             Container(
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: BragiColors.border)),
               ),
               padding: const EdgeInsets.fromLTRB(4, 8, 10, 8),
@@ -264,7 +265,7 @@ class _Card extends StatelessWidget {
           Text(card.summary, style: const TextStyle(fontSize: 14)),
           Text(
             'the node asks to ${card.tier} · only you can say yes',
-            style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+            style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
           ),
           const SizedBox(height: 8),
           Wrap(
@@ -290,7 +291,7 @@ class _Models extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = controller;
     if (c.models.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(12),
         child: Text('Looking for your inference nodes…', style: TextStyle(color: BragiColors.textSecondary)),
       );
@@ -383,14 +384,14 @@ class _Bubble extends StatelessWidget {
                 child: Text(
                   'attached: ${_attachmentLabel(a)}',
                   key: const Key('bubble-attachment'),
-                  style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                  style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
                 ),
               ),
             if (line != null && line.isNotEmpty)
               Text(
                 line,
                 key: const Key('bubble-meta'),
-                style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+                style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
               ),
             if (!mine && message.reasoning.trim().isNotEmpty) _Thinking(message: message, streaming: streaming, controller: controller),
             if (mine || message.text.isEmpty)
@@ -515,7 +516,7 @@ class _FileCard extends StatelessWidget {
                     Text(f.path ?? f.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
                     Text(
                       '${f.mime} · ${humanSize(f.size.toInt())} · $from',
-                      style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+                      style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
                     ),
                   ],
                 ),
@@ -535,7 +536,7 @@ class _FileCard extends StatelessWidget {
                 f.preview!,
                 maxLines: 8,
                 overflow: TextOverflow.fade,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: BragiColors.textSecondary),
+                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: BragiColors.textSecondary),
               ),
             ),
           if (f.kind == 'audio') _AudioRow(controller: controller, file: f),
@@ -601,7 +602,7 @@ class _AudioRow extends StatelessWidget {
           Text(
             rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
             key: Key('time-${f.id}'),
-            style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+            style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
           ),
         ],
       ),
@@ -674,7 +675,7 @@ class _ThinkingState extends State<_Thinking> {
             onTap: () => setState(() => _flipped = !_flipped),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text('${open ? '▾' : '▸'} $title', style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+              child: Text('${open ? '▾' : '▸'} $title', style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
             ),
           ),
           if (open)
@@ -682,9 +683,9 @@ class _ThinkingState extends State<_Thinking> {
               key: const Key('thinking-text'),
               margin: const EdgeInsets.only(top: 4),
               padding: const EdgeInsets.only(left: 10),
-              decoration: const BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 2))),
+              decoration: BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 2))),
               child: DefaultTextStyle.merge(
-                style: const TextStyle(color: BragiColors.textSecondary),
+                style: TextStyle(color: BragiColors.textSecondary),
                 child: MarkdownView(key: const Key('thinking-markdown'), doc: widget.controller.markdown(widget.message.reasoning.trim(), now)),
               ),
             ),
@@ -717,7 +718,7 @@ class _History extends StatelessWidget {
                 Navigator.of(context).pop();
               },
             ),
-            const Padding(
+            Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
             ),
@@ -733,6 +734,17 @@ class _History extends StatelessWidget {
                 final nav = Navigator.of(context);
                 nav.pop();
                 nav.push(MaterialPageRoute<void>(builder: (_) => ModelsScreen(controller: c)));
+              },
+            ),
+            ListTile(
+              key: const Key('theme'),
+              dense: true,
+              leading: const Icon(Icons.palette_outlined),
+              title: const Text('Theme'),
+              onTap: () {
+                final nav = Navigator.of(context);
+                nav.pop();
+                nav.push(MaterialPageRoute<void>(builder: (_) => ThemeScreen(appearance: c.appearance)));
               },
             ),
             ListTile(
@@ -768,7 +780,7 @@ class _History extends StatelessWidget {
                   : Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        const Text('LINK A DEVICE', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+                        Text('LINK A DEVICE', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
                         const SizedBox(height: 6),
                         TextField(
                           key: const Key('link-code'),

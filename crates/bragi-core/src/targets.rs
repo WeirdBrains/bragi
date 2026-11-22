@@ -119,6 +119,11 @@ impl Core {
         self.inner.endpoints.use_keychain(store);
     }
 
+    /// The look: the chosen theme and mode, and the user's themes under this device's data.
+    pub fn appearance(&self) -> crate::appearance::Appearance {
+        crate::appearance::Appearance::open(&self.inner.cfg.dir)
+    }
+
     pub fn endpoints(&self) -> Vec<EndpointView> {
         self.inner.endpoints.views()
     }

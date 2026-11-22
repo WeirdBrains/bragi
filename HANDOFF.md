@@ -2,6 +2,19 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-33, theme switcher and editor in every front end (branch `feature/theme-editor`)
+
+**What changed**
+- [`crates/bragi-core/src/appearance.rs`](crates/bragi-core/src/appearance.rs): one `Appearance` API on weirdnet-themes 0.2.0 (list, preference with light/dark/system mode, palette, edit roles, duplicate, rename, delete, reset, import, export). The choice is saved in `appearance.json` in Bragi's data dir; user themes use the weirdnet TOML format, so they work across front ends and other Weirdnet apps.
+- Terminal: [`themes_screen.rs`](crates/bragi-tui/src/app/themes_screen.rs), opened with F7 or Ctrl+G and listed in the header menu. Live preview, role editor with hex input. The theme module now uses the crate's `ColorDepth`, `builtin("bragi")` and roles; `BRAGI_THEME` and the old loader are gone.
+- Desktop (GPUI): [`view/themes.rs`](crates/bragi-desktop/src/view/themes.rs), a Themes screen from the menu with the same actions and live preview.
+- Flutter (Android/iOS): [`theme_ui.dart`](app/lib/src/theme_ui.dart), [`appearance.dart`](app/lib/src/appearance.dart), Theme entry in the drawer; bridge functions in [`api/bragi.rs`](crates/bragi-bridge/src/api/bragi.rs). `BragiColors` is now dynamic, so `const` was removed from widgets that read it.
+- VS Code extension: no change; it follows the editor's own theme.
+
+**Checks**: see the final report of this branch; widget tests in [`tests/themes.rs`](crates/bragi-tui/tests/themes.rs) and [`app/test/theme_test.dart`](app/test/theme_test.dart).
+
+**Left**: screenshots in `~/.bragi-theme-shots/` (desktop and Flutter not yet captured); desktop has no automated UI test beyond `Theme::from_palette`.
+
 ## 2026-11-22: LF-40, the extension does what Bragi does (branch `feature/extension-parity`)
 
 **What changed**

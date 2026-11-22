@@ -1352,3 +1352,165 @@ pub fn follow_models(run_id: String, sink: StreamSink<ModelsEventView>) -> Resul
 pub async fn models_remove(peer: String, id: String, confirmed: bool) -> Result<u64, String> {
     core()?.models_remove(&peer, &id, confirmed).await
 }
+
+// ---- themes (LF-33) ----------------------------------------------------------------------------
+//
+// The look is `bragi_core::Appearance`'s (weirdnet-themes' format, shared with the desktop and
+// terminal apps). The app paints a palette and calls these to switch, edit, duplicate, rename,
+// delete, reset, import and export.
+
+#[derive(Debug, Clone)]
+pub struct ThemeRowView {
+    pub name: String,
+    pub display_name: String,
+    pub builtin: bool,
+    /// A user theme, or a built-in the user has edited.
+    pub user_file: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThemePrefView {
+    pub theme: String,
+    /// `light`, `dark` or `system`.
+    pub mode: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoleColorView {
+    pub role: String,
+    /// `#rrggbb`.
+    pub hex: String,
+}
+
+/// Every role of one variant as `#rrggbb`, in editor order.
+#[derive(Debug, Clone)]
+pub struct PaletteView {
+    pub theme: String,
+    pub dark: bool,
+    pub roles: Vec<RoleColorView>,
+    pub raised: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoleInfoView {
+    pub role: String,
+    pub label: String,
+    /// Optional roles are derived from the others until set, and can be cleared back.
+    pub optional: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct RoleEdit {
+    pub role: String,
+    /// `#rgb` / `#rrggbb`, or empty to clear an optional role.
+    pub value: String,
+}
+
+fn palette_view(p: bragi_core::Palette) -> PaletteView {
+    PaletteView {
+        theme: p.theme.clone(),
+        dark: p.is_dark(),
+        raised: p.raised.clone(),
+        roles: p.roles.into_iter().map(|(role, hex)| RoleColorView { role, hex }).collect(),
+    }
+}
+
+fn variant_of(dark: bool) -> bragi_core::appearance::Variant {
+    if dark { bragi_core::appearance::Variant::Dark } else { bragi_core::appearance::Variant::Light }
+}
+
+fn pref_view(p: bragi_core::Preference) -> ThemePrefView {
+    ThemePrefView { theme: p.theme, mode: p.mode.name().into() }
+}
+
+pub fn themes() -> Result<Vec<ThemeRowView>, String> {
+    let rows = core()?.appearance().rows().map_err(err)?;
+    Ok(rows
+        .into_iter()
+        .map(|r| ThemeRowView { name: r.name, display_name: r.display_name, builtin: r.builtin, user_file: r.user_file, error: r.error })
+        .collect())
+}
+
+/// The roles an editor lists, in order.
+#[frb(sync)]
+pub fn theme_roles() -> Vec<RoleInfoView> {
+    bragi_core::appearance::roles()
+        .into_iter()
+        .map(|r| RoleInfoView { role: r.into(), label: bragi_core::appearance::role_label(r).into(), optional: is_optional_role(r) })
+        .collect()
+}
+
+fn is_optional_role(role: &str) -> bool {
+    ["surface", "code_bg", "diff_add_bg", "diff_remove_bg", "link", "dim"].contains(&role)
+}
+
+#[frb(sync)]
+pub fn theme_preference() -> Result<ThemePrefView, String> {
+    Ok(pref_view(core()?.appearance().preference()))
+}
+
+pub fn set_theme_preference(theme: String, mode: String) -> Result<ThemePrefView, String> {
+    let a = core()?.appearance();
+    let mode = bragi_core::ModePref::parse(&mode).ok_or_else(|| format!("mode is light, dark or system, not {mode}"))?;
+    let p = bragi_core::Preference { theme, mode };
+    a.set_preference(&p).map_err(err)?;
+    Ok(pref_view(p))
+}
+
+/// The palette to draw with now; `system_dark` is the platform's brightness, for system mode.
+#[frb(sync)]
+pub fn current_palette(system_dark: Option<bool>) -> Result<PaletteView, String> {
+    Ok(palette_view(core()?.appearance().palette_with_system(system_dark)))
+}
+
+/// `name`'s palette in the dark or light variant (the picker's previews and the editor).
+#[frb(sync)]
+pub fn theme_palette(name: String, dark: bool) -> Result<PaletteView, String> {
+    core()?.appearance().palette_for(&name, variant_of(dark)).map(palette_view).map_err(err)
+}
+
+/// The theme to edit when `name` is asked for: itself, or a copy of a built-in.
+pub fn theme_editable(name: String) -> Result<String, String> {
+    core()?.appearance().editable(&name).map_err(err)
+}
+
+/// Sets roles of one variant together (all or nothing) and returns the new palette.
+pub fn theme_apply(name: String, dark: bool, edits: Vec<RoleEdit>) -> Result<PaletteView, String> {
+    let a = core()?.appearance();
+    let edits: Vec<(String, String)> = edits.into_iter().map(|e| (e.role, e.value)).collect();
+    a.apply(&name, variant_of(dark), &edits).map_err(err)?;
+    a.palette_for(&name, variant_of(dark)).map(palette_view).map_err(err)
+}
+
+pub fn theme_duplicate(name: String, as_name: Option<String>) -> Result<String, String> {
+    core()?.appearance().duplicate(&name, as_name.as_deref()).map_err(err)
+}
+
+pub fn theme_rename(from: String, to: String) -> Result<(), String> {
+    core()?.appearance().rename(&from, &to).map_err(err)
+}
+
+/// Deletes a user theme or a built-in's edits.
+pub fn theme_delete(name: String) -> Result<(), String> {
+    core()?.appearance().delete(&name).map_err(err)
+}
+
+/// Puts a built-in back as it ships.
+pub fn theme_reset(name: String) -> Result<(), String> {
+    core()?.appearance().reset(&name).map_err(err)
+}
+
+pub fn theme_export_text(name: String) -> Result<String, String> {
+    core()?.appearance().export_text(&name).map_err(err)
+}
+
+/// Imports a theme file's text; a name already taken gets a number.
+pub fn theme_import_text(text: String, as_name: Option<String>) -> Result<String, String> {
+    core()?.appearance().import_text(&text, as_name.as_deref()).map_err(err)
+}
+
+/// Contrast notes for one variant (text on background and the like).
+pub fn theme_warnings(name: String, dark: bool) -> Result<Vec<String>, String> {
+    core()?.appearance().warnings(&name, variant_of(dark)).map_err(err)
+}

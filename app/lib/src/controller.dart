@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'appearance.dart';
 import 'audio.dart';
 
 /// Puts [delta] at [offset] (characters, as the core counts them), replacing what follows.
@@ -35,6 +36,9 @@ class BragiController extends ChangeNotifier {
   BragiController(this.api, {ClipBackend Function()? audio}) : _newAudio = audio ?? ClipBackend.create;
 
   final BragiApi api;
+
+  /// The look: the chosen theme and the palette the widgets paint with.
+  late final AppearanceController appearance = AppearanceController(api);
   StateView? state;
   List<SummaryView> conversations = const [];
   ConversationView? current;
@@ -92,6 +96,7 @@ class BragiController extends ChangeNotifier {
   String? get model => (_model != null && models.any((m) => m.id == _model)) ? _model : state?.defaultModel;
 
   Future<void> attach() async {
+    await appearance.load();
     _watch = api.watchState().listen((s) {
       final wasLinked = linked;
       state = s;

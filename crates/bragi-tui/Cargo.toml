@@ -23,8 +23,8 @@ tempfile.workspace = true
 tokio.workspace = true
 unicode-width = "0.2"
 # The look: theme files, light/dark and colour depth. Without the default
-# `terminal-background` feature (an OSC 11 query on the tty while the app owns it).
-weirdnet-themes = { version = "0.1.1", default-features = false, features = ["ratatui"] }
+# `terminal-background` feature (an OSC 11 query on the tty while the app owns it): off here.
+weirdnet-themes = { workspace = true, features = ["ratatui"] }
 
 [lints]
 workspace = true

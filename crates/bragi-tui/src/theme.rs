@@ -1,34 +1,21 @@
-//! The terminal app's look, from `weirdnet-themes`: a theme file (Bragi's own palette by
-//! default, or any of the crate's built-ins or a `.toml` in its format), a light or dark
-//! variant, and the terminal's colour depth, mapped to ratatui styles.
+//! The terminal app's look, from `weirdnet-themes` 0.2: a theme (a built-in, one of the user's
+//! themes under Bragi's data dir, or any `.toml` in its format), a light or dark variant, and the
+//! terminal's colour depth, mapped to ratatui styles. The choice is saved with the rest of
+//! Bragi's settings ([`bragi_core::Appearance`]) and changed live from the Theme screen.
 //!
-//! What the crate doesn't cover yet is filled in here:
-//! - `NO_COLOR` (no colour at all, only bold, reverse and the like);
-//! - an override for the depth (`BRAGI_TUI_COLOR`), since `ColorDepth::detect` can't tell a
-//!   truecolor tmux;
-//! - in 16 colours, the terminal's own background and text instead of the nearest ANSI colour;
-//! - surfaces, code and diff backgrounds and a link colour: read from the theme's palette when
-//!   it has them (`surface`, `raised`, `code_bg`, `dim`, `link`, `diff_add_bg`,
-//!   `diff_remove_bg`, `shadow`), else blended from its roles;
-//! - Unicode or ASCII icons.
+//! What the crate leaves to the app:
+//! - the depth override `BRAGI_TUI_COLOR` (an explicit choice beats `NO_COLOR`);
+//! - `raised` and `shadow`, extra palette entries read by name, else blended from the roles;
+//! - Unicode or ASCII icons, and the styles themselves.
 
-use std::sync::OnceLock;
+use std::sync::RwLock;
 
+use bragi_core::{Appearance, ModePref};
 use ratatui::style::{Color, Modifier, Style};
-use weirdnet_themes::{ColorDepth, ThemeFile, Variant, VariantDef};
+use weirdnet_themes::{ColorDepth, ThemeFile, Variant, VariantDef, mix, to_bg_color, to_color};
 
-/// Bragi's palette (BRAND.md) as a weirdnet-themes file.
-pub const BRAGI_THEME: &str = include_str!("../themes/bragi.toml");
-
-/// How much colour the terminal gets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Depth {
-    TrueColor,
-    Ansi256,
-    Ansi16,
-    /// `NO_COLOR`: text attributes only.
-    None,
-}
+/// How much colour the terminal gets (`ColorDepth::None` is `NO_COLOR`: text attributes only).
+pub type Depth = ColorDepth;
 
 type Rgb = (u8, u8, u8);
 
@@ -146,30 +133,20 @@ pub struct Theme {
     pub remove_bg: Color,
 }
 
-fn mix(a: Rgb, b: Rgb, t: f32) -> Rgb {
-    let m = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round().clamp(0.0, 255.0) as u8;
-    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
-}
-
 impl Theme {
     /// `file`'s `variant` at `depth`.
     pub fn new(file: &ThemeFile, variant: Variant, depth: Depth, unicode: bool) -> Self {
         let v: &VariantDef = file.variant(variant);
-        let role = |r: &str| v.resolve(r).unwrap_or((128, 128, 128));
+        let role = |r: &str| v.color(r).unwrap_or((128, 128, 128));
         let extra = |name: &str| v.palette.get(name).and_then(|h| weirdnet_themes::parse_hex(h));
         let (bg, fg, muted) = (role("bg"), role("fg"), role("muted"));
         let (up, down) = (role("up"), role("down"));
-        let surface = extra("surface").unwrap_or_else(|| mix(bg, fg, 0.05));
+        let surface = role("surface");
         let raised = extra("raised").unwrap_or_else(|| mix(bg, fg, 0.11));
-        // The terminal's own colours stand in for backgrounds and body text below truecolor
-        // and 256 colours (the nearest of 16 ANSI colours is rarely the theme's).
-        let paint = |c: Rgb| match depth {
-            Depth::TrueColor => weirdnet_themes::to_color(c, ColorDepth::TrueColor),
-            Depth::Ansi256 => weirdnet_themes::to_color(c, ColorDepth::Ansi256),
-            Depth::Ansi16 => weirdnet_themes::to_color(c, ColorDepth::Ansi16),
-            Depth::None => Color::Reset,
-        };
-        let ground = |c: Rgb| if matches!(depth, Depth::Ansi16 | Depth::None) { Color::Reset } else { paint(c) };
+        // The terminal's own colours stand in for backgrounds and body text in 16 colours and
+        // with none (`to_bg_color`): the nearest of 16 ANSI colours is rarely the theme's.
+        let paint = |c: Rgb| to_color(c, depth);
+        let ground = |c: Rgb| to_bg_color(c, depth);
         Self {
             name: file.meta.name.clone(),
             variant,
@@ -177,38 +154,38 @@ impl Theme {
             icons: if unicode { UNICODE } else { ASCII },
             bg: ground(bg),
             surface: ground(surface),
-            raised: if depth == Depth::Ansi16 { Color::Indexed(8) } else { ground(raised) },
-            code_bg: ground(extra("code_bg").unwrap_or(surface)),
+            raised: if depth == ColorDepth::Ansi16 { Color::Indexed(8) } else { ground(raised) },
+            code_bg: ground(role("code_bg")),
             shadow: ground(extra("shadow").unwrap_or_else(|| mix(bg, (0, 0, 0), 0.5))),
             fg: ground(fg),
             muted: paint(muted),
-            dim: paint(extra("dim").unwrap_or_else(|| mix(muted, bg, 0.35))),
-            faint: paint(mix(extra("dim").unwrap_or_else(|| mix(muted, bg, 0.35)), bg, 0.45)),
+            dim: paint(role("dim")),
+            faint: paint(mix(role("dim"), bg, 0.45)),
             border: paint(role("border")),
             border_focus: paint(role("border_focus")),
             selection_bg: paint(role("selection_bg")),
             selection_fg: paint(role("selection_fg")),
             accent: paint(role("accent")),
             header: paint(role("header")),
-            link: paint(extra("link").unwrap_or_else(|| role("info"))),
+            link: paint(role("link")),
             success: paint(role("success")),
             warning: paint(role("warning")),
             error: paint(role("error")),
             info: paint(role("info")),
             add: paint(up),
             remove: paint(down),
-            add_bg: ground(extra("diff_add_bg").unwrap_or_else(|| mix(bg, up, 0.16))),
-            remove_bg: ground(extra("diff_remove_bg").unwrap_or_else(|| mix(bg, down, 0.16))),
+            add_bg: ground(role("diff_add_bg")),
+            remove_bg: ground(role("diff_remove_bg")),
         }
     }
 
     /// Bragi's dark theme in truecolor: what tests and screenshots draw with.
     pub fn bragi_dark() -> Self {
-        Self::new(&ThemeFile::parse(BRAGI_THEME).expect("the Bragi theme parses"), Variant::Dark, Depth::TrueColor, true)
+        Self::new(&weirdnet_themes::builtin("bragi").expect("the Bragi theme ships with the crate"), Variant::Dark, ColorDepth::TrueColor, true)
     }
 
     pub fn color(&self) -> bool {
-        self.depth != Depth::None
+        self.depth != ColorDepth::None
     }
 
     // ---- styles ----
@@ -277,27 +254,26 @@ impl Theme {
     }
 }
 
-/// How the theme is chosen: `--theme` / `BRAGI_TUI_THEME` (a built-in name or a `.toml` path),
-/// `--mode` / `BRAGI_TUI_MODE` (`dark`, the default, `light`, or `system`), `NO_COLOR`,
-/// `BRAGI_TUI_COLOR` (`truecolor`, `256`, `16`, `none`) and `BRAGI_TUI_ASCII`.
+/// How the theme is chosen for this run, over the saved choice: `--theme` / `BRAGI_TUI_THEME`
+/// (a theme name or a `.toml` path), `--mode` / `BRAGI_TUI_MODE` (`dark`, `light` or `system`),
+/// `BRAGI_TUI_COLOR` (`truecolor`, `256`, `16`, `none`; beats `NO_COLOR`), `NO_COLOR` and
+/// `BRAGI_TUI_ASCII`.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Choice {
     pub theme: Option<String>,
     pub mode: Option<String>,
 }
 
-/// Loads a theme by name: `bragi`, one of weirdnet-themes' built-ins, or a `.toml` file.
-pub fn load(name: &str) -> Result<ThemeFile, String> {
-    if name == "bragi" {
-        return ThemeFile::parse(BRAGI_THEME).map_err(|e| e.to_string());
-    }
+/// Loads a theme by name (the user's themes first, then the crate's built-ins) or from a
+/// `.toml` file.
+pub fn load(name: &str, appearance: &Appearance) -> Result<ThemeFile, String> {
     if name.ends_with(".toml") {
         let text = std::fs::read_to_string(name).map_err(|e| format!("{name}: {e}"))?;
         return ThemeFile::parse(&text).map_err(|e| format!("{name}: {e}"));
     }
-    weirdnet_themes::builtin(name).ok_or_else(|| {
-        let names: Vec<&str> = std::iter::once("bragi").chain(weirdnet_themes::BUILTINS.iter().map(|(n, _)| *n)).collect();
-        format!("no theme called {name} (there are {}; or give a .toml path)", names.join(", "))
+    appearance.load(name).map_err(|e| {
+        let names: Vec<String> = appearance.rows().unwrap_or_default().into_iter().map(|r| r.name).collect();
+        format!("no theme called {name}: {} (there are {}; or give a .toml path)", e.message, names.join(", "))
     })
 }
 
@@ -305,23 +281,10 @@ fn env(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|v| !v.is_empty())
 }
 
-/// The depth from the environment.
-pub fn depth_from_env() -> Depth {
-    if env("NO_COLOR").is_some() {
-        return Depth::None;
-    }
-    match env("BRAGI_TUI_COLOR").as_deref() {
-        Some("none" | "off" | "0") => return Depth::None,
-        Some("16") => return Depth::Ansi16,
-        Some("256") => return Depth::Ansi256,
-        Some("truecolor" | "24bit" | "24") => return Depth::TrueColor,
-        _ => {}
-    }
-    match ColorDepth::detect() {
-        ColorDepth::TrueColor => Depth::TrueColor,
-        ColorDepth::Ansi256 => Depth::Ansi256,
-        ColorDepth::Ansi16 => Depth::Ansi16,
-    }
+/// The depth from the environment: `BRAGI_TUI_COLOR` when it parses, else `NO_COLOR`,
+/// `COLORTERM` and `TERM`.
+pub fn depth_from_env() -> ColorDepth {
+    ColorDepth::detect_with(env("BRAGI_TUI_COLOR").as_deref())
 }
 
 /// Unicode unless asked for ASCII or the locale isn't UTF-8.
@@ -336,63 +299,114 @@ pub fn unicode_from_env() -> bool {
     })
 }
 
-/// The theme for this run.
-pub fn resolve(choice: &Choice) -> Result<Theme, String> {
-    let name = choice.theme.clone().or_else(|| env("BRAGI_TUI_THEME")).unwrap_or_else(|| "bragi".into());
-    let file = load(&name)?;
-    let variant = match choice.mode.clone().or_else(|| env("BRAGI_TUI_MODE")).as_deref() {
-        None | Some("dark") => Variant::Dark,
-        Some("light") => Variant::Light,
-        // Asks the OS (the portal on Linux): only when the user picks it.
-        Some("system") => weirdnet_themes::resolve_variant(weirdnet_themes::Mode::System),
-        Some(m) => return Err(format!("--mode is dark, light or system, not {m}")),
+/// The theme for this run: the flags, then the environment, then what is saved.
+pub fn resolve(choice: &Choice, appearance: &Appearance) -> Result<Theme, String> {
+    let saved = appearance.preference();
+    let name = choice.theme.clone().or_else(|| env("BRAGI_TUI_THEME")).unwrap_or_else(|| saved.theme.clone());
+    let file = match load(&name, appearance) {
+        Ok(f) => f,
+        // A saved theme that no longer loads falls back to Bragi; a typed one is an error.
+        Err(_) if choice.theme.is_none() && env("BRAGI_TUI_THEME").is_none() => appearance.current().0,
+        Err(e) => return Err(e),
     };
-    Ok(Theme::new(&file, variant, depth_from_env(), unicode_from_env()))
+    let mode = match choice.mode.clone().or_else(|| env("BRAGI_TUI_MODE")) {
+        None => saved.mode,
+        Some(m) => ModePref::parse(&m).ok_or_else(|| format!("--mode is dark, light or system, not {m}"))?,
+    };
+    Ok(Theme::new(&file, mode.variant(), depth_from_env(), unicode_from_env()))
 }
 
-static THEME: OnceLock<Theme> = OnceLock::new();
+/// The look of `name` in `mode` as the terminal draws it now (the Theme screen's preview and
+/// its switching).
+pub fn build(file: &ThemeFile, mode: ModePref) -> Theme {
+    Theme::new(file, mode.variant(), depth_from_env(), unicode_from_env())
+}
 
-/// Sets the theme for the run (first call wins).
+static THEME: RwLock<Option<&'static Theme>> = RwLock::new(None);
+
+/// Sets the theme (the run's first, or a switch from the Theme screen). The old one is leaked:
+/// a few hundred bytes per change, and `get` hands out `&'static` borrows to the drawing code.
 pub fn init(t: Theme) {
-    let _ = THEME.set(t);
+    let leaked: &'static Theme = Box::leak(Box::new(t));
+    *THEME.write().unwrap_or_else(|e| e.into_inner()) = Some(leaked);
 }
 
 /// The run's theme: Bragi dark in truecolor until [`init`] says otherwise.
 pub fn get() -> &'static Theme {
-    THEME.get_or_init(Theme::bragi_dark)
+    if let Some(t) = *THEME.read().unwrap_or_else(|e| e.into_inner()) {
+        return t;
+    }
+    let mut w = THEME.write().unwrap_or_else(|e| e.into_inner());
+    *w.get_or_insert_with(|| Box::leak(Box::new(Theme::bragi_dark())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn bragi() -> ThemeFile {
+        weirdnet_themes::builtin("bragi").unwrap()
+    }
+
     #[test]
     fn bragi_theme_is_valid_readable_and_maps_every_depth() {
-        let f = ThemeFile::parse(BRAGI_THEME).unwrap();
+        let f = bragi();
         for v in [Variant::Dark, Variant::Light] {
             let d = f.variant(v);
             assert!(weirdnet_themes::contrast(d.resolve("fg").unwrap(), d.resolve("bg").unwrap()) >= weirdnet_themes::MIN_CONTRAST);
             assert!(weirdnet_themes::contrast_warnings(d).is_empty(), "{v:?}: {:?}", weirdnet_themes::contrast_warnings(d));
         }
-        let t = Theme::new(&f, Variant::Dark, Depth::TrueColor, true);
+        let t = Theme::new(&f, Variant::Dark, ColorDepth::TrueColor, true);
         assert_eq!(t.accent, Color::Rgb(0xf5, 0xb8, 0x3d));
         assert_eq!(t.bg, Color::Rgb(0x14, 0x16, 0x1b));
-        assert!(matches!(Theme::new(&f, Variant::Dark, Depth::Ansi256, true).accent, Color::Indexed(_)));
-        let t16 = Theme::new(&f, Variant::Dark, Depth::Ansi16, false);
+        assert!(matches!(Theme::new(&f, Variant::Dark, ColorDepth::Ansi256, true).accent, Color::Indexed(_)));
+        let t16 = Theme::new(&f, Variant::Dark, ColorDepth::Ansi16, false);
         assert_eq!((t16.bg, t16.fg), (Color::Reset, Color::Reset));
         assert_eq!(t16.icons.open, "v");
-        let none = Theme::new(&f, Variant::Light, Depth::None, true);
+        let none = Theme::new(&f, Variant::Light, ColorDepth::None, true);
         assert_eq!(none.accent, Color::Reset);
         assert!(none.selection().add_modifier.contains(Modifier::REVERSED));
     }
 
     #[test]
-    fn other_themes_get_the_extra_colours_blended() {
+    fn every_builtin_gets_distinct_surfaces_and_diff_backgrounds() {
         for (name, _) in weirdnet_themes::BUILTINS {
-            let t = Theme::new(&load(name).unwrap(), Variant::Dark, Depth::TrueColor, true);
+            let t = Theme::new(&weirdnet_themes::builtin(name).unwrap(), Variant::Dark, ColorDepth::TrueColor, true);
             assert_ne!(t.surface, t.bg, "{name}");
             assert_ne!(t.add_bg, t.remove_bg, "{name}");
         }
-        assert!(load("nope").unwrap_err().contains("bragi"));
+    }
+
+    #[test]
+    fn the_saved_choice_is_used_and_flags_beat_it() {
+        let d = tempfile::tempdir().unwrap();
+        let a = Appearance::open(d.path());
+        a.set_theme("nord").unwrap();
+        a.set_mode(ModePref::Light).unwrap();
+        // The environment may carry BRAGI_TUI_* in a developer's shell; these assertions only
+        // look at the parts the flags decide.
+        let t = resolve(&Choice { theme: None, mode: Some("dark".into()) }, &a).unwrap();
+        assert_eq!(t.variant, Variant::Dark);
+        let t = resolve(&Choice { theme: Some("gruvbox".into()), mode: Some("light".into()) }, &a).unwrap();
+        assert_eq!((t.name.as_str(), t.variant), ("gruvbox", Variant::Light));
+        assert!(resolve(&Choice { theme: Some("nope".into()), mode: Some("dark".into()) }, &a).unwrap_err().contains("bragi"));
+        assert!(resolve(&Choice { theme: None, mode: Some("blue".into()) }, &a).is_err());
+    }
+
+    #[test]
+    fn an_explicit_depth_beats_no_color() {
+        assert_eq!(ColorDepth::detect_with(Some("256")), ColorDepth::Ansi256);
+        assert_eq!(ColorDepth::detect_with(Some("none")), ColorDepth::None);
+    }
+
+    #[test]
+    fn switching_swaps_what_get_returns() {
+        let a = Theme::bragi_dark();
+        init(a.clone());
+        assert_eq!(get().name, "bragi");
+        let nord = Theme::new(&weirdnet_themes::builtin("nord").unwrap(), Variant::Dark, ColorDepth::TrueColor, true);
+        init(nord);
+        assert_eq!(get().name, "nord");
+        init(a);
     }
 }

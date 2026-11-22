@@ -30,6 +30,7 @@ mod models;
 mod models_scenario;
 mod react;
 mod settings_scenario;
+mod themes;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 
@@ -123,6 +124,11 @@ pub struct BragiView {
     confirm_input: Entity<TextInput>,
     deleted: Option<bragi_core::Deleted>,
     settings_open: bool,
+    /// The Theme screen (see `themes`) and its name/path and hex boxes.
+    themes_open: bool,
+    themes: themes::Themes,
+    theme_input: Entity<TextInput>,
+    hex_input: Entity<TextInput>,
     /// The Models screen (see `models`).
     models_open: bool,
     models: models::Models,
@@ -151,7 +157,7 @@ fn splice(text: &mut String, offset: u64, delta: &str) {
 
 impl BragiView {
     fn new(core: Core, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let theme = Theme::default();
+        let theme = Theme::from_palette(&core.appearance().palette());
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
         let attach_input = cx.new(|cx| TextInput::new("Path of a text, image or audio file…", theme, cx));
@@ -205,6 +211,20 @@ impl BragiView {
             }
         })
         .detach();
+        let theme_input = cx.new(|cx| TextInput::new("Name or path", theme, cx));
+        cx.subscribe_in(&theme_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
+            TextInputEvent::Submit { .. } => this.theme_ask_submit(cx),
+            TextInputEvent::Cancel => this.theme_ask_cancel(cx),
+            _ => {}
+        })
+        .detach();
+        let hex_input = cx.new(|cx| TextInput::new("#rrggbb", theme, cx));
+        cx.subscribe_in(&hex_input, window, |this, _, ev: &TextInputEvent, _, cx| {
+            if let TextInputEvent::Changed = ev {
+                this.hex_changed(cx);
+            }
+        })
+        .detach();
         let mut this = Self {
             core,
             theme,
@@ -244,6 +264,10 @@ impl BragiView {
             confirm_input,
             deleted: None,
             settings_open: false,
+            themes_open: false,
+            themes: themes::Themes::default(),
+            theme_input,
+            hex_input,
             models_open: false,
             models: models::Models { serve: true, ..Default::default() },
             models_query,
@@ -364,6 +388,7 @@ impl BragiView {
         self.current = None;
         self.settings_open = false;
         self.models_open = false;
+        self.themes_open = false;
         cx.notify();
     }
 
@@ -371,6 +396,7 @@ impl BragiView {
         self.current = self.core.conversation(id).ok();
         self.settings_open = false;
         self.models_open = false;
+        self.themes_open = false;
         self.jump_to_latest();
         cx.notify();
     }
@@ -984,6 +1010,7 @@ impl BragiView {
             .child(list)
             .child(link_box)
             .child(self.button("open-models", "Models", self.models_open).on_click(cx.listener(|v, _, _, cx| v.toggle_models(cx))))
+            .child(self.button("open-themes", "Theme", self.themes_open).on_click(cx.listener(|v, _, _, cx| v.toggle_themes(cx))))
             .child(self.button("open-settings", "Settings", self.settings_open).on_click(cx.listener(|v, _, _, cx| v.toggle_settings(cx))))
     }
 
@@ -1522,8 +1549,9 @@ impl BragiView {
             .when(!self.models_open, |d| d.child(self.models(cx)))
             .children(if self.models_open { None } else { self.target_bar(cx) })
             .when(self.settings_open, |d| d.child(self.settings(cx)))
+            .when(self.themes_open, |d| d.child(self.themes_screen(cx)))
             .when(self.models_open, |d| d.child(self.models_screen(cx)))
-            .when(!self.settings_open && !self.models_open, |d| d.child(self.message_area(body, cx)))
+            .when(!self.settings_open && !self.models_open && !self.themes_open, |d| d.child(self.message_area(body, cx)))
             .children(self.undo_bar(cx))
             .children(self.notice.clone().filter(|_| !self.models_open).map(|n| {
                 div().px(px(16.)).py(px(6.)).text_size(px(12.)).text_color(rgb(if n.starts_with("Saved to ") { t.success } else { t.error })).child(n)

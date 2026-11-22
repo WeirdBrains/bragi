@@ -60,7 +60,7 @@ class _MarkdownViewState extends State<MarkdownView> {
     super.dispose();
   }
 
-  static const _base = TextStyle(fontSize: 15, height: 1.4, color: BragiColors.textPrimary);
+  static TextStyle get _base => TextStyle(fontSize: 15, height: 1.4, color: BragiColors.textPrimary);
 
   TextSpan _spans(List<dynamic> spans, TextStyle style) {
     return TextSpan(
@@ -109,7 +109,7 @@ class _MarkdownViewState extends State<MarkdownView> {
       case 'quote':
         return Container(
           padding: const EdgeInsets.only(left: 10),
-          decoration: const BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 3))),
+          decoration: BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 3))),
           child: _column(b['blocks'] as List, muted: true),
         );
       case 'list':
@@ -127,8 +127,8 @@ class _MarkdownViewState extends State<MarkdownView> {
                     SizedBox(
                       width: 24,
                       child: switch (item['checked']) {
-                        true => const Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.check_box, size: 16, color: BragiColors.accent)),
-                        false => const Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.check_box_outline_blank, size: 16, color: BragiColors.textSecondary)),
+                        true => Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.check_box, size: 16, color: BragiColors.accent)),
+                        false => Padding(padding: EdgeInsets.only(top: 3), child: Icon(Icons.check_box_outline_blank, size: 16, color: BragiColors.textSecondary)),
                         _ => Text(start != null ? '${start + n}.' : '•', style: base.copyWith(color: BragiColors.textSecondary)),
                       },
                     ),
@@ -156,7 +156,7 @@ class _MarkdownViewState extends State<MarkdownView> {
             border: TableBorder.all(color: BragiColors.border, borderRadius: BorderRadius.circular(6)),
             children: [
               TableRow(
-                decoration: const BoxDecoration(color: BragiColors.surfaceVariant),
+                decoration: BoxDecoration(color: BragiColors.surfaceVariant),
                 children: [for (final (c, h) in head.indexed) cell(h as List, c, bold: true)],
               ),
               for (final r in rows)
@@ -165,7 +165,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           ),
         );
       case 'rule':
-        return const Divider(color: BragiColors.border, height: 12);
+        return Divider(color: BragiColors.border, height: 12);
       default:
         return const SizedBox.shrink();
     }
@@ -191,7 +191,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         if (_hover != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
-            child: Text(_hover!, key: const Key('link-hover'), style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary), overflow: TextOverflow.ellipsis),
+            child: Text(_hover!, key: const Key('link-hover'), style: TextStyle(fontSize: 11, color: BragiColors.textSecondary), overflow: TextOverflow.ellipsis),
           ),
       ],
     );
@@ -222,7 +222,7 @@ class _CodeState extends State<_Code> {
 
   @override
   Widget build(BuildContext context) {
-    const style = TextStyle(fontFamily: _mono, fontFamilyFallback: _monoFallback, fontSize: 13, height: 1.45, color: BragiColors.textPrimary);
+    final style = TextStyle(fontFamily: _mono, fontFamilyFallback: _monoFallback, fontSize: 13, height: 1.45, color: BragiColors.textPrimary);
     return Container(
       decoration: BoxDecoration(
         color: BragiColors.background,
@@ -234,10 +234,10 @@ class _CodeState extends State<_Code> {
         children: [
           Container(
             padding: const EdgeInsets.only(left: 10),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: BragiColors.border))),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: BragiColors.border))),
             child: Row(
               children: [
-                Expanded(child: Text(widget.lang ?? 'text', style: const TextStyle(fontSize: 11, color: BragiColors.textSecondary))),
+                Expanded(child: Text(widget.lang ?? 'text', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary))),
                 TextButton(
                   key: const Key('code-copy'),
                   onPressed: _copy,

@@ -23,13 +23,6 @@ fn main() -> ExitCode {
     if args.command != Cmd::Tui {
         return ExitCode::from(cli::run(args) as u8);
     }
-    match bragi_tui::theme::resolve(&args.theme) {
-        Ok(t) => bragi_tui::theme::init(t),
-        Err(e) => {
-            eprintln!("bragi-tui: {e}");
-            return ExitCode::from(2);
-        }
-    }
     let session = match Session::open(&args.launch) {
         Ok(s) => s,
         Err(e) => {
@@ -37,6 +30,13 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    match bragi_tui::theme::resolve(&args.theme, &session.core.appearance()) {
+        Ok(t) => bragi_tui::theme::init(t),
+        Err(e) => {
+            eprintln!("bragi-tui: {e}");
+            return ExitCode::from(2);
+        }
+    }
     let (root, opened) = match cli::start(&args) {
         Ok(r) => r,
         Err(e) => {
