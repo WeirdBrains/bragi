@@ -448,3 +448,8 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 **What's left:** iOS Keychain and Android Keystore.
 
 **What's next:** LF-12.
+
+## 2026-11-22: LF-37 MCP client design
+
+- Design for adding outside MCP servers: [docs/design/mcp-client.md](docs/design/mcp-client.md). weirdnet-mcp 0.6.1 already has a usable client (feature `client`, `agent`); no weirdnet blocker. Wish list for the Weirdnet Lead is in the design.
+- Branch `feature/mcp-client` (not merged; build in progress).
