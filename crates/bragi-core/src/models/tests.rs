@@ -218,9 +218,17 @@ async fn cancel_stops_the_pull_and_keeps_the_partial_file() {
     assert!(!rest.iter().any(|e| matches!(e, ModelsEvent::Done)));
     // Nothing complete is listed; pulling again finishes it.
     assert!(f.mgr.overview().await.iter().all(|n| n.models.is_empty()));
-    let mut again = PullSpec::new("o/slow", PullTarget::Node("peer-big".into()));
-    again.model = Some("slow-Q4_0".into());
-    let ev = pull(&f, again).await;
+    // The node may take a moment to drop the cancelled pull; retry while it says so.
+    let mut ev = Vec::new();
+    for _ in 0..100 {
+        let mut again = PullSpec::new("o/slow", PullTarget::Node("peer-big".into()));
+        again.model = Some("slow-Q4_0".into());
+        ev = pull(&f, again).await;
+        if !format!("{ev:?}").contains("already pulling") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert!(ev.iter().any(|e| matches!(e, ModelsEvent::NodeDone { result: Ok(_), .. })), "{ev:?}");
 }
 
