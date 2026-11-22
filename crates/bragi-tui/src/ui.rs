@@ -63,7 +63,6 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
 
 /// Code mode's lines and keys.
 pub const CODE_HELP: &[(&str, &str)] = &[
-    ("f · Ctrl-F · /files", "the file picker: a tree of the folder to add files from"),
     ("/add PATH…", "add files or folders as context (.gitignore is respected)"),
     ("/drop PATH|N", "remove one from the context"),
     ("/clear · /root DIR", "empty the context · work in another folder"),
@@ -73,10 +72,11 @@ pub const CODE_HELP: &[(&str, &str)] = &[
     ("y · n · Space", "accept · reject · toggle the hunk (review)"),
     ("a · r", "accept all · reject all"),
     ("v", "unified or side-by-side diff"),
+    ("w, Enter", "write the accepted hunks (undo with /undo)"),
+    ("f · Ctrl-F · /files", "the file picker: a tree of the folder to add files from"),
     ("Picker: ↑↓ j k · → l · ← h", "move · open a folder · shut it or go up"),
     ("Picker: Space · Enter", "add or take out a file (a folder: all its files) · open: add a file and close"),
     ("Picker: / · Ctrl-U · c", "type to filter (fuzzy) · clear the filter · empty the context"),
-    ("w, Enter", "write the accepted hunks (undo with /undo)"),
 ];
 
 pub fn draw(f: &mut Frame, app: &mut App) {
