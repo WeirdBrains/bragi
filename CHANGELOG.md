@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- See and save the files in a chat, on desktop and phone. Each file attached to a message (text, image or audio) and each file an answer writes (a code block that names its file, such as ```` ```python hello.py ````, or an embedded image) gets a card under its message with its name, type and size, a preview (the first lines of a text file, or the picture), and Save. On desktop, Save opens the system save dialog. On the phone, it opens the system save sheet.
+
 ## [0.1.1] - 2026-11-21
 
 ### Added

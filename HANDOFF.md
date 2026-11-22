@@ -2,6 +2,40 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-12, files in a chat: view and save (branch only)
+
+**What changed**
+- [`files.rs`](crates/bragi-core/src/files.rs) in `bragi-core` lists a chat's files as `ChatFile` cards, each with id, message, name, path, media type, size, kind (text, image or audio), origin and a text preview:
+  - every attachment ([`attach.rs`](crates/bragi-core/src/attach.rs)): text, plus the images and audio from LF-18, whose bytes are the inline base64;
+  - every file an answer wrote: a fenced code block that names its file (in the info string, as in ```` ```rust src/main.rs ```` or `title="a.py"`, or on the line just before the fence, as in `**src/main.rs**`), or a Markdown image with a `data:` URL. When a name repeats, the last block wins.
+- A card's id is `<message id>#a<n>` or `<message id>#r<n>`, so deleting other messages does not change it.
+- `Core::files`, `Core::file_bytes` and `Core::save_file` in [`core.rs`](crates/bragi-core/src/core.rs). A save writes atomically, through a temp file and a rename. Saving to a picked path replaces that file. Saving into a folder adds ` (2)`, ` (3)` and so on instead of replacing anything.
+- Nothing new is stored. The cards are read from the message as it is, so they sync with it and work for older records.
+- Bridge ([`bragi.rs`](crates/bragi-bridge/src/api/bragi.rs)): `FileView`, `MessageView.files`, `chat_files`, `file_bytes` and `save_file`. `flutter_rust_bridge_codegen generate` was re-run.
+- Phone and Flutter desktop ([`chat_screen.dart`](app/lib/src/chat_screen.dart), [`controller.dart`](app/lib/src/controller.dart)): file cards under the message, with an icon, name or path, type, size, origin, text preview, image preview (`Image.memory`) and Save.
+  - On Android and iOS, Save hands the bytes to the system save sheet. On a computer, the dialog returns a path and the core writes the file.
+  - The demo build saves into a temp folder.
+- GPUI desktop ([`view.rs`](crates/bragi-desktop/src/view.rs)): the same cards, with a decoded image preview (cached) and Save. Save opens the system save dialog, starting in Downloads.
+- Demo: a prompt with "as a file" ([`demo.rs`](crates/bragi-core/src/demo.rs), `FILE_TRIGGER`) gets an answer with a named `hello.py` block. The desktop scenario attaches [`demo-chart.png`](crates/bragi-desktop/assets/demo-chart.png).
+
+**Commits**: [`173750f`](https://github.com/WeirdBrains/bragi/commit/173750f) (the feature, on `feature/chat-files`, from `main` at `431ea3c`), then the commit that adds this entry.
+
+**Checks** (whole workspace):
+- `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test` and the build.
+- Tests: the unit tests in `files.rs` (named blocks, a repeated name, data-URL images, cards by message id, save rules) and `tests/breadth.rs` `the_files_in_a_chat_are_listed_and_saved`.
+- `flutter analyze`, and the Flutter scenario test in demo mode: the attachment card, the reply card, and Save writing `hello.py` with the right content.
+- The headless desktop scenario on a virtual X server, in a clean environment with a throwaway profile. Screenshots 16b (image card with preview) and 16c (reply file card, saved).
+
+**Not tested**: a real phone and its save sheet; the real save dialogs on desktop (the scenarios save to a folder directly); two devices syncing; a real model's answers.
+
+**What's left**:
+- A player for audio files (the card shows the file and saves it).
+- Files larger than a message takes (content roots).
+- The notice line still uses the error colour for "Saved to …".
+- The roadmap and Ymir's DESIGN.md were not updated.
+
+**What's next**: review of `feature/chat-files`, then LF-16.
+
 ## 2026-11-21: LF-18, Weirdnet 0.5 and image and audio attachments (branch only)
 
 **What changed**
