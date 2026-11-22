@@ -14,7 +14,7 @@ use crate::session::{Launch, Session};
 
 pub const USAGE: &str = "\
 usage:
-  bragi-tui [PATH] [--home DIR] [--demo] [--root DIR]  the terminal app (F1 lists its keys)
+  bragi-tui [PATH] [--home DIR] [--demo] [--no-serve] [--root DIR]  the terminal app (F1 lists its keys)
                                                    with a PATH it opens code mode there: a folder is
                                                    the root and its files the context; a file is
                                                    opened in its git repository (or its folder).
@@ -24,6 +24,8 @@ usage:
                                                    selected (or BRAGI_TUI_MOUSE=0; F7 toggles it in
                                                    the app; Shift-drag selects while it is on)
       [--theme NAME|FILE.toml] [--mode dark|light|system]
+                                                   --no-serve (or BRAGI_TUI_SERVE=off) doesn't start
+                                                   `bragi serve` for the editors; it is on otherwise
                                                    its look (weirdnet-themes: bragi, the default,
                                                    tokyo-night, catppuccin, gruvbox, dracula, nord,
                                                    one, solarized). NO_COLOR, BRAGI_TUI_COLOR
@@ -54,6 +56,8 @@ pub struct Args {
     /// `--mouse` / `--no-mouse`: whether the terminal's mouse reporting is on (`None`: the
     /// `BRAGI_TUI_MOUSE` variable, else on).
     pub mouse: Option<bool>,
+    /// Don't make sure `bragi serve` is running.
+    pub no_serve: bool,
 }
 
 /// Whether `BRAGI_TUI_MOUSE` (`0`, `off`, `false`, `no` turn the mouse off; `1`, `on`, `true`,
@@ -116,6 +120,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--demo" => out.launch.demo = true,
             "--mouse" => out.mouse = Some(true),
             "--no-mouse" => out.mouse = Some(false),
+            "--no-serve" => out.no_serve = true,
             "--theme" => out.theme.theme = Some(value("--theme")?),
             "--mode" => out.theme.mode = Some(value("--mode")?),
             "--rewrite" => {

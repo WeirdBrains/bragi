@@ -9,6 +9,7 @@ pub mod code;
 pub mod editor;
 pub mod hit;
 pub mod markdown;
+pub mod serve;
 pub mod session;
 pub mod settings;
 pub mod theme;

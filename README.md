@@ -53,6 +53,12 @@ them all on a release tag. Releases go through `scripts/weirdnet_release.py`; se
 
 ## The terminal app
 
+`bragi-tui` makes sure `bragi serve` (the local API the editor extension uses) is running when it
+starts, in the background, and shows its state in the status bar. A server that is already running
+is reused and never stopped; one it starts stops after 30 idle minutes. `--no-serve` or
+`BRAGI_TUI_SERVE=off` turns that off; `BRAGI_SERVE_PORT` and `BRAGI_HOME` pick the port and the
+Bragi home (the token's folder, shared with the extension and the desktop app).
+
 `bragi-tui` is a device of its own: its profile is in `~/.local/share/bragi-tui` (or `--home DIR`,
 or `BRAGI_TUI_HOME`), never the desktop app's. Link it once with `bragi-tui link`, which prints a code
 and a QR code to open on a device that's already linked (`ymirctl pool add CODE` on a Ymir node). It
@@ -72,6 +78,8 @@ bragi-tui                                                  # the full-screen app
 bragi-tui .                                                # code mode on the current folder (also `bragi .`)
 bragi-tui src/main.rs                                      # on one file, rooted at its git repository
 bragi-tui --path serve                                     # explicit path, for a folder named like a command
+bragi-tui --no-serve                                        # without starting `bragi serve` for the editors
+bragi serve ensure                                         # start `bragi serve` in the background if none is running
 bragi-tui link /ip4/…/tcp/4848/p2p/…                       # dial a node Bragi can't find by itself
 bragi-tui code --rewrite src/lib.rs:10-40 "use iterators"  # prints a unified diff
 bragi-tui code --suggest --context src "find bugs" --apply # writes the change

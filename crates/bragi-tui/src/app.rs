@@ -134,6 +134,9 @@ pub struct App {
     /// selected); the main loop makes the terminal match.
     pub mouse: bool,
     last_click: Option<(Instant, crate::hit::Action)>,
+    /// The local API server's state, kept up to date in the background (`None` in tests).
+    pub serve: Option<crate::serve::Shared>,
+    serve_seen: Option<crate::serve::ServeState>,
     jobs: (mpsc::Sender<Job>, mpsc::Receiver<Job>),
     last_reload: Instant,
 }
@@ -216,6 +219,8 @@ impl App {
             hover: None,
             mouse: true,
             last_click: None,
+            serve: None,
+            serve_seen: None,
             jobs: mpsc::channel(),
             last_reload: Instant::now(),
             core,
@@ -325,6 +330,15 @@ impl App {
     pub fn tick(&mut self) -> bool {
         let before = (self.notice.clone(), self.stream.as_ref().map(|s| (s.text.len(), s.reasoning.len(), s.queued, s.node.clone())));
         let mut changed = false;
+        if let Some(now) = self.serve.as_ref().and_then(|s| s.lock().ok().map(|g| g.clone()))
+            && self.serve_seen.as_ref() != Some(&now)
+        {
+            changed = true;
+            if let crate::serve::ServeState::Failed(m) = &now {
+                self.fail(format!("The local API (for editors) didn't start: {m}"));
+            }
+            self.serve_seen = Some(now);
+        }
         if self.watch.has_changed().unwrap_or(false) {
             changed = true;
             let was = self.linked();

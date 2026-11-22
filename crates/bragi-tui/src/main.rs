@@ -45,7 +45,8 @@ fn main() -> ExitCode {
         }
     };
     let mouse = args.mouse.or_else(|| cli::mouse_from_env(std::env::var("BRAGI_TUI_MOUSE").ok().as_deref())).unwrap_or(true);
-    match run(&session, root, opened, mouse) {
+    let serve = bragi_tui::serve::start(args.no_serve || args.launch.demo);
+    match run(&session, root, opened, mouse, serve) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("bragi-tui: {e}");
@@ -89,7 +90,7 @@ fn leave_modes() {
     let _ = execute!(std::io::stdout(), DisableMouseCapture, DisableBracketedPaste);
 }
 
-fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, mouse: bool) -> Result<(), String> {
+fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>, mouse: bool, serve: bragi_tui::serve::Shared) -> Result<(), String> {
     let mut terminal = ratatui::try_init().map_err(|e| e.to_string())?;
     // ratatui's panic hook restores the screen; this one also switches off the mouse first,
     // so a crash doesn't leave the shell reporting clicks as escape codes.
@@ -102,6 +103,7 @@ fn run(session: &Session, root: std::path::PathBuf, opened: Option<cli::Opened>,
     let mut captured = false;
     let mut app = App::new(session.core.clone(), &session.home, root);
     app.mouse = mouse;
+    app.serve = Some(serve);
     if let Some(o) = opened {
         app.open_code(&o);
     }

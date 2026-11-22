@@ -416,6 +416,21 @@ fn draw_footer(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     left.push(Span::styled(format!(" {dot}"), seg.fg(color)));
     left.push(Span::styled(format!(" {state} "), seg.fg(t.fg)));
     hits.push(Rect { x: link_at, width: at(&left) - link_at, ..area }, Action::Goto(View::Status));
+    if wide >= 60
+        && let Some(sv) = app.serve.as_ref().and_then(|s| s.lock().ok().map(|g| g.clone()))
+    {
+        use crate::serve::ServeState;
+        let serve_at = at(&left);
+        let color = match sv {
+            ServeState::Running { .. } => t.success,
+            ServeState::Starting | ServeState::Stopped => t.warning,
+            ServeState::Failed(_) => t.error,
+            ServeState::Off => t.muted,
+        };
+        left.push(Span::styled(format!(" {}", t.icons.on), seg.fg(color)));
+        left.push(Span::styled(format!(" {} ", sv.label()), seg.fg(t.fg)));
+        hits.push(Rect { x: serve_at, width: at(&left) - serve_at, ..area }, Action::Goto(View::Status));
+    }
     if wide >= 96 {
         let n = app.state.catalog.nodes.len();
         left.push(Span::styled(format!(" {n} node{} ", crate::code::plural(n)), t.muted()));

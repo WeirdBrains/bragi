@@ -8,6 +8,7 @@ import { ChatView } from './chat';
 import { editorContext } from './context';
 import { InlineProvider } from './inline';
 import { PROPOSED_SCHEME, Rewrites } from './rewrite';
+import { ServeManager, describeServe } from './serve';
 import { defaultTokenPath, Secrets } from './tokens';
 import { BragiError, BragiTarget, Scope } from './types';
 
@@ -17,6 +18,7 @@ export interface BragiApi {
   inline: InlineProvider;
   rewrites: Rewrites;
   chat: ChatView;
+  serve: ServeManager;
   refreshStatus(): Promise<void>;
 }
 
@@ -32,13 +34,15 @@ async function showError(e: unknown): Promise<void> {
   if (e instanceof BragiError && e.kind === 'unauthorized') {
     actions.push('Import Token', 'Set Token');
   } else if (e instanceof BragiError && e.kind === 'unreachable') {
-    actions.push('How to Start Bragi');
+    actions.push('Start Server', 'How to Start Bragi');
   }
   const pick = await vscode.window.showErrorMessage(`Bragi: ${describe(e)}`, ...actions);
   if (pick === 'Import Token') {
     await vscode.commands.executeCommand('bragi.importToken');
   } else if (pick === 'Set Token') {
     await vscode.commands.executeCommand('bragi.setToken');
+  } else if (pick === 'Start Server') {
+    await vscode.commands.executeCommand('bragi.restartServer');
   } else if (pick === 'How to Start Bragi') {
     void vscode.window.showInformationMessage('Start the Bragi app with --serve, or run `bragi serve` (or `bragi-serve`) in a terminal. It listens on 127.0.0.1:4877.', { modal: true });
   }
@@ -64,6 +68,22 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
     }
     return `Bragi · ${router.modelFor(router.bragi) ?? 'default model'}`;
   };
+  const serve = new ServeManager(secrets, context.globalState, () => router.target() === 'bragi');
+  router.bragi.revive = async () => (await serve.ensure()).kind === 'running';
+  const serveItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  serveItem.name = "Bragi's server";
+  serveItem.command = 'bragi.restartServer';
+  const drawServe = () => {
+    const d = describeServe(serve.state, serve.port);
+    serveItem.text = d.text;
+    serveItem.tooltip = d.tooltip;
+    serveItem.backgroundColor = d.warn ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
+    if (router.target() === 'bragi') {
+      serveItem.show();
+    } else {
+      serveItem.hide();
+    }
+  };
   const chat = new ChatView(context.extensionUri, router, targetLabel);
 
   async function refreshStatus(): Promise<void> {
@@ -74,10 +94,14 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
     status.show();
     chat.refreshTarget();
     if (router.target() === 'bragi') {
-      const up = await router.bragi.health();
+      // Starts the server when none answers (the setting `bragi.autoStartServer`), else just looks.
+      // Later it only looks: a server that stopped itself when idle starts again on the next request.
+      const s = serve.state.kind === 'unknown' ? await serve.ensure() : serve.state.kind === 'starting' ? serve.state : await serve.check();
+      drawServe();
+      const up = s.kind === 'running';
       if (!up) {
         status.text = '$(debug-disconnect) Bragi';
-        status.tooltip = 'The local Bragi API is not running (start the app with --serve, or run bragi serve)';
+        status.tooltip = s.message ?? 'The local Bragi API is not running (start the app with --serve, or run bragi serve)';
         status.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
       }
     }
@@ -113,6 +137,13 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
 
   context.subscriptions.push(
     status,
+    serveItem,
+    serve,
+    serve.onDidChange(drawServe),
+    vscode.commands.registerCommand('bragi.restartServer', async () => {
+      await serve.restart();
+      await refreshStatus();
+    }),
     vscode.languages.registerInlineCompletionItemProvider({ pattern: '**' }, inline),
     rewrites.register(),
     vscode.window.registerWebviewViewProvider(ChatView.id, chat, { webviewOptions: { retainContextWhenHidden: true } }),
@@ -182,7 +213,7 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
         }
       }),
     ),
-    vscode.commands.registerCommand('bragi.pickModel', run(() => pickModel(router))),
+    vscode.commands.registerCommand('bragi.pickModel', run(() => pickModel(router, secrets, serve))),
     vscode.commands.registerCommand(
       'bragi.showStatus',
       run(async () => {
@@ -204,7 +235,8 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
   const timer = setInterval(() => void refreshStatus(), 30_000);
   context.subscriptions.push({ dispose: () => clearInterval(timer) });
   void refreshStatus();
-  return { router, secrets, inline, rewrites, chat, refreshStatus };
+  drawServe();
+  return { router, secrets, inline, rewrites, chat, serve, refreshStatus };
 }
 
 interface Pick extends vscode.QuickPickItem {
@@ -213,7 +245,66 @@ interface Pick extends vscode.QuickPickItem {
   bragiTarget?: BragiTarget | null;
 }
 
-async function pickModel(router: Router): Promise<void> {
+/** How the token is asked for: the typed token, 'import' for the Bragi app's file, or undefined if dismissed. */
+export type AskToken = () => Promise<string | { import: true } | undefined>;
+
+const askTokenInBox: AskToken = () =>
+  new Promise((resolve) => {
+    const box = vscode.window.createInputBox();
+    const importBtn: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('cloud-download'), tooltip: 'Import the token from the Bragi app' };
+    box.title = 'Bragi: no API token yet';
+    box.prompt = "There's no Bragi API token yet. Paste it here (`bragi serve token` prints it), or use the button to import it from the Bragi app.";
+    box.placeholder = 'Bragi API token';
+    box.password = true;
+    box.ignoreFocusOut = true;
+    box.buttons = [importBtn];
+    let done = false;
+    const end = (v: string | { import: true } | undefined) => {
+      if (!done) {
+        done = true;
+        resolve(v);
+        box.dispose();
+      }
+    };
+    box.onDidAccept(() => (box.value.trim() ? end(box.value.trim()) : end({ import: true })));
+    box.onDidTriggerButton(() => end({ import: true }));
+    box.onDidHide(() => end(undefined));
+    box.show();
+  });
+
+/**
+ * Makes sure there is a token: the stored one, else the one in the Bragi home (read silently, after
+ * the server had its chance to make it), else a prompt. True when there is one. Never shows it.
+ */
+export async function ensureToken(secrets: Secrets, serve?: ServeManager, ask: AskToken = askTokenInBox): Promise<boolean> {
+  if (await secrets.serveToken()) {
+    return true;
+  }
+  if (serve) {
+    await serve.ensure();
+  }
+  if (await secrets.importServeToken()) {
+    return true;
+  }
+  const answer = await ask();
+  if (!answer) {
+    return false;
+  }
+  if (typeof answer === 'string') {
+    await secrets.setServeToken(answer);
+    return true;
+  }
+  if (await secrets.importServeToken()) {
+    return true;
+  }
+  void vscode.window.showWarningMessage(`Bragi: no token found at ${defaultTokenPath()}. Start Bragi once, or paste the token from \`bragi serve token\`.`);
+  return false;
+}
+
+async function pickModel(router: Router, secrets: Secrets, serve: ServeManager): Promise<void> {
+  if (router.target() === 'bragi' && !(await ensureToken(secrets, serve))) {
+    return;
+  }
   const items: Pick[] = [{ label: 'Bragi (local app)', kind: vscode.QuickPickItemKind.Separator }];
   try {
     const [list, targets] = await Promise.all([router.bragi.models(), router.bragi.targets()]);

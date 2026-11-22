@@ -24,6 +24,7 @@
 //! - `POST /v1/cancel`: stops a streaming request.
 
 pub mod cli;
+pub mod ensure;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -100,8 +101,75 @@ pub async fn serve(
     listener: tokio::net::TcpListener,
     shutdown: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> anyhow::Result<()> {
+    serve_tracked(core, token, listener, shutdown, None).await
+}
+
+/// What a server's clients have been doing, for the idle shutdown: the time of the last request
+/// (not counting `/v1/health`) and how many are running now.
+#[derive(Clone)]
+pub struct Activity {
+    last: Arc<std::sync::Mutex<std::time::Instant>>,
+    running: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl Default for Activity {
+    fn default() -> Self {
+        Self { last: Arc::new(std::sync::Mutex::new(std::time::Instant::now())), running: Arc::default() }
+    }
+}
+
+impl Activity {
+    fn touch(&self) {
+        if let Ok(mut l) = self.last.lock() {
+            *l = std::time::Instant::now();
+        }
+    }
+
+    /// How long since a request started or finished; zero while one runs.
+    pub fn idle_for(&self) -> Duration {
+        if self.running.load(std::sync::atomic::Ordering::SeqCst) > 0 {
+            return Duration::ZERO;
+        }
+        self.last.lock().map(|l| l.elapsed()).unwrap_or_default()
+    }
+
+    /// Resolves once nothing has asked for `after`.
+    pub async fn idle(&self, after: Duration) {
+        let step = (after / 4).clamp(Duration::from_millis(20), Duration::from_secs(5));
+        while self.idle_for() < after {
+            tokio::time::sleep(step).await;
+        }
+    }
+}
+
+async fn track(State(a): State<Activity>, req: Request, next: Next) -> Response {
+    let counts = req.uri().path() != "/v1/health";
+    if counts {
+        a.running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        a.touch();
+    }
+    let r = next.run(req).await;
+    if counts {
+        a.touch();
+        a.running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
+    r
+}
+
+/// [`serve`], counting requests in `activity` when given.
+pub async fn serve_tracked(
+    core: Core,
+    token: String,
+    listener: tokio::net::TcpListener,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+    activity: Option<Activity>,
+) -> anyhow::Result<()> {
     let port = listener.local_addr()?.port();
-    axum::serve(listener, router(core, token, port)).with_graceful_shutdown(shutdown).await?;
+    let mut app = router(core, token, port);
+    if let Some(a) = activity {
+        app = app.layer(middleware::from_fn_with_state(a, track));
+    }
+    axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
     Ok(())
 }
 
@@ -597,6 +665,20 @@ mod tests {
         assert!(!host_is_local("127.0.0.1.evil.example", 4877));
         assert!(!host_is_local("127.0.0.1:9999", 4877));
         assert!(!host_is_local("", 4877));
+    }
+
+    #[tokio::test]
+    async fn the_idle_watch_waits_for_quiet() {
+        let a = Activity::default();
+        let t = std::time::Instant::now();
+        a.idle(Duration::from_millis(150)).await;
+        assert!(t.elapsed() >= Duration::from_millis(150));
+        // A request in flight counts as activity however long ago it began.
+        a.running.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert!(tokio::time::timeout(Duration::from_millis(300), a.idle(Duration::from_millis(50))).await.is_err());
+        a.running.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        a.touch();
+        assert!(a.idle_for() < Duration::from_millis(100));
     }
 
     #[test]
