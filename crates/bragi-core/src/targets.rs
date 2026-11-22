@@ -306,7 +306,15 @@ impl Core {
                 let ep =
                     self.inner.endpoints.get(id).ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))?;
                 let m = Some(m.clone()).filter(|m| !m.is_empty()).or(model);
-                self.send_endpoints(conversation, prompt, attachments, vec![ep], m)?
+                // Outside MCP servers apply (enabled, in scope): the model gets their tools and
+                // Bragi runs the tool-call loop, asking before each call. Images and audio keep
+                // the plain chat (agent mode takes text only).
+                let text_only = crate::attach::needs(&attachments) == weirdnet_agent::Modalities::TEXT;
+                if text_only && !self.inner.mcp.applying(None, conversation).is_empty() {
+                    self.send_agent_local(conversation, prompt, &ep.id, m, None, attachments)?
+                } else {
+                    self.send_endpoints(conversation, prompt, attachments, vec![ep], m)?
+                }
             }
         };
         // Bind new sessions, and sessions the caller moved, to where they went. A pool session that

@@ -42,6 +42,8 @@ weirdnet-sync.workspace = true
 keyring.workspace = true
 
 [dev-dependencies]
+axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }
+weirdnet-mcp = { version = "0.6", features = ["agent", "axum"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["net", "io-util"] }
 
