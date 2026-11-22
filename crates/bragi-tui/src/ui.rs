@@ -63,6 +63,7 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
 
 /// Code mode's lines and keys.
 pub const CODE_HELP: &[(&str, &str)] = &[
+    ("f · Ctrl-F · /files", "the file picker: a tree of the folder to add files from"),
     ("/add PATH…", "add files or folders as context (.gitignore is respected)"),
     ("/drop PATH|N", "remove one from the context"),
     ("/clear · /root DIR", "empty the context · work in another folder"),
@@ -72,6 +73,9 @@ pub const CODE_HELP: &[(&str, &str)] = &[
     ("y · n · Space", "accept · reject · toggle the hunk (review)"),
     ("a · r", "accept all · reject all"),
     ("v", "unified or side-by-side diff"),
+    ("Picker: ↑↓ j k · → l · ← h", "move · open a folder · shut it or go up"),
+    ("Picker: Space · Enter", "add or take out a file (a folder: all its files) · open: add a file and close"),
+    ("Picker: / · Ctrl-U · c", "type to filter (fuzzy) · clear the filter · empty the context"),
     ("w, Enter", "write the accepted hunks (undo with /undo)"),
 ];
 
@@ -105,7 +109,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if input_h > 0 {
         let streaming = app.streaming();
         let (title, placeholder) = match base {
-            View::Code => ("Code".to_string(), "/add PATH · /rewrite FILE:A-B how · or ask for suggestions across the context"),
+            View::Code => ("Code".to_string(), "f files · /rewrite FILE:A-B how · or ask for suggestions across the context"),
             _ if streaming => (
                 format!("{} Bragi is answering · Esc stops it", t.spinner(app.stream.as_ref().map_or(0, |s| s.started.elapsed().as_millis()))),
                 "Type the next message…",
@@ -130,6 +134,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             View::Settings => draw_settings(f, app, body),
             _ => draw_help(f, app, body),
         }
+    }
+    if app.view == View::Code && app.picker.is_some() {
+        backdrop(f, Rect { height: body.height + input.height, ..body });
+        draw_picker(f, app, Rect { height: body.height + input.height, ..body });
     }
     draw_footer(f, app, footer);
     draw_toast(f, app, body);
@@ -313,6 +321,12 @@ fn draw_header(f: &mut Frame, app: &App, area: Rect) {
 
 /// The keys a screen offers, for the status bar.
 fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
+    if app.view == View::Code && app.picker.is_some() {
+        return match app.picker.as_ref().map(|p| &p.mode) {
+            Some(crate::picker::Mode::Filter) => &[("type", "filter"), ("↑↓", "move"), ("Space", "select"), ("Enter", "keep"), ("Esc", "clear")],
+            _ => &[("↑↓", "move"), ("Space", "select"), ("Enter", "open"), ("/", "filter"), ("→←", "fold"), ("c", "clear"), ("Esc", "close")],
+        };
+    }
     match app.view {
         View::Chat if app.streaming() => &[("Esc", "stop"), ("PgUp/PgDn", "scroll"), ("F1", "help")],
         View::Chat if app.focus == Focus::Chats => {
@@ -323,7 +337,7 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
         View::Code => match app.code.phase {
             Phase::Review => &[("y/n", "accept/reject"), ("↑↓", "hunks"), ("a/r", "all"), ("v", "view"), ("w", "write"), ("Esc", "discard")],
             Phase::Asking => &[("Esc", "stop")],
-            Phase::Compose => &[("Enter", "run"), ("/undo", "undo"), ("Esc", "back"), ("F1", "help")],
+            Phase::Compose => &[("Enter", "run"), ("^F", "files"), ("/undo", "undo"), ("Esc", "back"), ("F1", "help")],
         },
         View::Status => &[("r", "sync now"), ("Esc", "back")],
         View::Models => &[("↑↓", "move"), ("Tab", "targets/models"), ("Enter", "use"), ("a", "automatic"), ("Esc", "back")],
@@ -1377,7 +1391,7 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
             ]));
         }
         if app.code.context.is_empty() {
-            lines.push(Line::styled("none yet: /add PATH", t.dim()));
+            lines.push(Line::styled("none yet: f picks files", t.dim()));
         }
         for file in app.code.gathered.files.iter().take(inner.height.saturating_sub(lines.len() as u16 + 3) as usize) {
             lines.push(Line::styled(clip(&format!("  {} ({} lines)", file.path, file.text.lines().count()), sw), t.dim()));
@@ -1508,4 +1522,112 @@ fn draw_code(f: &mut Frame, app: &mut App, area: Rect) {
             f.render_widget(Paragraph::new(lines.into_iter().take(inner.height as usize).collect::<Vec<_>>()), inner);
         }
     }
+}
+
+/// The file picker: a window over code mode with the tree (or the filter's matches), what is
+/// in the context marked, sizes, and the context against its limit.
+fn draw_picker(f: &mut Frame, app: &mut App, area: Rect) {
+    use crate::picker::{self, Mode};
+    let t = th();
+    let limits = bragi_core::code::Limits::default();
+    let used = app.code.gathered.total_bytes();
+    let n_files = app.code.gathered.files.len();
+    let right = format!("{} (at most {} files)", app.code.summary(), limits.max_files);
+    let inner = window(f, area, 100, area.height.saturating_sub(2), "Files", "Space select · Enter open · / filter");
+    if inner.height < 4 {
+        return;
+    }
+    let [head, list, foot] = Layout::vertical([Constraint::Length(2), Constraint::Min(1), Constraint::Length(1)]).areas(inner);
+    let Some(p) = app.picker.as_mut() else { return };
+    // The root and the filter.
+    let root = clip(&app.code.root.display().to_string(), inner.width as usize);
+    let filtering = p.mode == Mode::Filter;
+    let filter = if p.filter.is_empty() && !filtering {
+        Span::styled("press / to filter, or move with the arrows", t.dim())
+    } else {
+        Span::styled(format!("{}{}", p.filter, if filtering { "▏" } else { "" }), t.text())
+    };
+    f.render_widget(
+        Paragraph::new(vec![
+            Line::styled(root, t.muted()),
+            Line::from(vec![Span::styled(if filtering { "/ " } else { "  " }, t.bold_accent()), filter]),
+        ]),
+        head,
+    );
+    let h = list.height as usize;
+    let first = p.window(h);
+    let w = list.width as usize;
+    let rows: Vec<picker::Node> = p.rows().into_iter().skip(first).take(h).cloned().collect();
+    let flat = !p.filter.trim().is_empty();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for (i, n) in rows.iter().enumerate() {
+        let selected = first + i == p.sel;
+        let files = p.files_under(n);
+        let inside = files.iter().filter(|x| app.code.has_file(&x.path)).count();
+        let (mark, mark_style) = match (inside, files.len()) {
+            (0, _) => (t.icons.off, t.dim()),
+            (a, b) if a == b => (t.icons.on, t.fg(t.success)),
+            _ => (t.icons.half, t.fg(t.warning)),
+        };
+        let indent = if flat { 0 } else { n.depth * 2 };
+        let arrow = if n.is_dir { if p.is_open(&n.path) { t.icons.open } else { t.icons.closed } } else { " " };
+        let label = if flat { n.path.clone() } else { n.name.clone() };
+        let size = if n.is_dir { format!("{} files", files.len()) } else { picker::size(n.size) };
+        let too_big = !n.is_dir && n.size as usize > limits.max_file_bytes;
+        let left_w = 2 + indent + 2;
+        let name_w = w.saturating_sub(left_w + size.chars().count() + 2);
+        let label = clip(&label, name_w);
+        let pad = " ".repeat(w.saturating_sub(left_w + width(&label) + size.chars().count()));
+        let name_style = if n.is_dir {
+            t.fg(t.header).add_modifier(Modifier::BOLD)
+        } else if too_big {
+            t.dim()
+        } else {
+            t.text()
+        };
+        let base = if selected { t.selection() } else { Style::new() };
+        lines.push(Line::from(vec![
+            Span::styled(format!("{mark} "), if selected { base } else { mark_style }),
+            Span::styled(" ".repeat(indent), base),
+            Span::styled(format!("{arrow} "), if selected { base } else { t.accent() }),
+            Span::styled(label, if selected { base } else { name_style }),
+            Span::styled(pad, base),
+            Span::styled(
+                size,
+                if selected {
+                    base
+                } else if too_big {
+                    t.fg(t.warning)
+                } else {
+                    t.dim()
+                },
+            ),
+        ]));
+    }
+    if lines.is_empty() {
+        let what = if flat { "No file matches that." } else { "No files here: everything is ignored, hidden or empty." };
+        lines.push(Line::styled(what, t.dim()));
+    }
+    f.render_widget(Paragraph::new(lines), list);
+    // The context against its limits.
+    let ratio = used as f64 / limits.max_total_bytes as f64;
+    let tone = if ratio >= 1.0 || n_files >= limits.max_files {
+        t.error
+    } else if ratio >= 0.8 {
+        t.warning
+    } else {
+        t.success
+    };
+    let bar_w = 14usize;
+    let filled = ((ratio.min(1.0)) * bar_w as f64).round() as usize;
+    let mut spans = vec![
+        Span::styled("Context ", t.muted()),
+        Span::styled(t.icons.bar.repeat(filled), t.fg(tone)),
+        Span::styled(t.icons.rule.repeat(bar_w - filled), t.dim()),
+        Span::styled(format!(" {right}"), t.text()),
+    ];
+    if p.truncated {
+        spans.push(Span::styled(format!("  · listing cut at {} entries", picker::MAX_ENTRIES), t.fg(t.warning)));
+    }
+    f.render_widget(Paragraph::new(Line::from(spans)), foot);
 }

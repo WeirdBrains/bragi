@@ -1183,6 +1183,7 @@ version = "0.1.1"
 dependencies = [
  "base64 0.21.7",
  "bragi-core",
+ "ignore",
  "qrcode",
  "ratatui",
  "tempfile",

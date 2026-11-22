@@ -78,11 +78,19 @@ bragi-tui code --suggest --context src "find bugs" --apply # writes the change
 bragi-tui undo                                             # puts the last written change back
 ```
 
-Give it a path and it opens code mode there: a folder is the root and its files the context; a file opens
+Give it a path and it opens code mode there: a folder is the root and the file picker opens on it (the
+context starts empty); a file opens
 from its git repository (or its folder). `.`, `..`, `~` and relative paths work, and a missing path is an
 error. A lone word that is a command (`link`, `status`, `undo`, `code`, `tui`) stays a command; write
 `./link` or `--path link` for a folder of that name. `bragi PATH` (the desktop binary) hands over to `bragi-tui`
 the same way. Suggestions, rewrites and hunk review never leave the root.
+
+The file picker (`f`, Ctrl-F or `/files` in code mode) is a tree of the root: `.gitignore` is respected and
+`target/`, `node_modules/`, `.git/` and the like are hidden. ↑↓ or `j k` move, `→ l` and `← h` open and shut
+folders, Space adds or removes the file (on a folder, all its files), Enter opens a folder or adds a file and
+closes the picker, `/` filters (fuzzy), Ctrl-U clears the filter, `c` empties the context and Esc closes it.
+A marker shows what is in the context, and the bottom line shows its size against the limit (64 files,
+256 KiB a file, 512 KiB in all).
 
 The prompts, the diffs and the undo journal are `bragi_core::code`, shared with the editor extension.
 

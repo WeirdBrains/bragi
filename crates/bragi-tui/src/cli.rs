@@ -16,7 +16,7 @@ pub const USAGE: &str = "\
 usage:
   bragi-tui [PATH] [--home DIR] [--demo] [--root DIR]  the terminal app (F1 lists its keys)
                                                    with a PATH it opens code mode there: a folder is
-                                                   the root and its files the context; a file is
+                                                   the root and a file picker opens; a file is
                                                    opened in its git repository (or its folder).
                                                    `bragi-tui .` works here; use ./link for a path
                                                    named like a command, or --path PATH
@@ -199,8 +199,9 @@ pub fn run(args: Args) -> i32 {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Opened {
     pub root: PathBuf,
-    /// Added to the context, relative to `root`; `.` for a folder.
-    pub context: PathBuf,
+    /// The file to start with in the context, relative to `root`; none for a folder (the file
+    /// picker opens instead of loading every file).
+    pub context: Option<PathBuf>,
     pub is_file: bool,
 }
 
@@ -218,12 +219,12 @@ pub fn resolve_open(raw: &str, cwd: &std::path::Path) -> Result<Opened, String> 
         _ => format!("can't open {raw}: {e}"),
     })?;
     if path.is_dir() {
-        return Ok(Opened { root: path, context: PathBuf::from("."), is_file: false });
+        return Ok(Opened { root: path, context: None, is_file: false });
     }
     let parent = path.parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"));
     let root = parent.ancestors().find(|d| d.join(".git").exists()).map(PathBuf::from).unwrap_or(parent);
     let context = path.strip_prefix(&root).map(PathBuf::from).unwrap_or_else(|_| path.clone());
-    Ok(Opened { root, context, is_file: true })
+    Ok(Opened { root, context: Some(context), is_file: true })
 }
 
 /// The folder code mode works in, and what to open there, for the terminal app.
@@ -504,17 +505,13 @@ mod tests {
         // A folder is the root, however it is spelled.
         for typed in [".", "./", "../repo", &base.join("repo").display().to_string()] {
             let o = resolve_open(typed, &base.join("repo")).unwrap();
-            assert_eq!(
-                (o.root.as_path(), o.context.as_path(), o.is_file),
-                (base.join("repo").as_path(), std::path::Path::new("."), false),
-                "{typed}"
-            );
+            assert_eq!((o.root.as_path(), o.context.as_deref(), o.is_file), (base.join("repo").as_path(), None, false), "{typed}");
         }
         // A file is opened from its git root, or from its folder with none.
         let o = resolve_open("repo/src/a.rs", &base).unwrap();
-        assert_eq!((o.root, o.context, o.is_file), (base.join("repo"), "src/a.rs".into(), true));
+        assert_eq!((o.root, o.context, o.is_file), (base.join("repo"), Some("src/a.rs".into()), true));
         let o = resolve_open("plain/b.txt", &base).unwrap();
-        assert_eq!((o.root, o.context), (base.join("plain"), "b.txt".into()));
+        assert_eq!((o.root, o.context), (base.join("plain"), Some("b.txt".into())));
         // Missing and empty paths say so.
         assert_eq!(resolve_open("nope", &base).unwrap_err(), "nope doesn't exist");
         assert!(resolve_open("", &base).is_err());

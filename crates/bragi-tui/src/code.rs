@@ -43,6 +43,7 @@ pub enum Command {
     Drop(String),
     Clear,
     Root(String),
+    Pick,
     Ask(CodeRequest),
     Undo { force: bool },
     Nothing,
@@ -88,6 +89,68 @@ impl CodeState {
         Ok(format!("Context: {} files, {} KiB{}", self.gathered.files.len(), self.gathered.total_bytes().div_ceil(1024), self.skipped_note()))
     }
 
+    /// Whether `rel` (a path under the root, `/`-separated) is in the context, by itself or
+    /// through a folder that was added.
+    pub fn has_file(&self, rel: &str) -> bool {
+        self.gathered.get(rel).is_some()
+    }
+
+    /// Adds or takes out one file: what the file picker's Space does. Taking out a file that
+    /// came with a folder swaps the folder for its other files. Adding is refused past the
+    /// limits (files, bytes per file, bytes in all).
+    pub fn set_file(&mut self, rel: &str, on: bool) -> Result<(), String> {
+        let limits = Limits::default();
+        let rel_of = |root: &Path, p: &Path| bragi_core::code::context::relative(root, &if p.is_absolute() { p.to_path_buf() } else { root.join(p) });
+        if on {
+            if self.has_file(rel) {
+                return Ok(());
+            }
+            let size = std::fs::metadata(self.root.join(rel)).map_err(|e| format!("{rel}: {e}"))?.len() as usize;
+            if size > limits.max_file_bytes {
+                return Err(format!("{rel} is {} KiB; one file may be at most {} KiB", size.div_ceil(1024), limits.max_file_bytes / 1024));
+            }
+            if self.gathered.files.len() >= limits.max_files {
+                return Err(format!("The context holds {} files already; take one out first", limits.max_files));
+            }
+            if self.gathered.total_bytes() + size > limits.max_total_bytes {
+                return Err(format!("{rel} would take the context past {} KiB; take something out first", limits.max_total_bytes / 1024));
+            }
+            self.context.push(PathBuf::from(rel));
+            return self.refresh();
+        }
+        if let Some(i) = self.context.iter().position(|p| rel_of(&self.root, p) == rel) {
+            self.context.remove(i);
+            return self.refresh();
+        }
+        // It came with a folder: swap the folder for the files it brought, less this one.
+        let mut kept = Vec::new();
+        let mut found = false;
+        for p in std::mem::take(&mut self.context) {
+            let r = rel_of(&self.root, &p);
+            let under = r == "." || r.is_empty() || rel.starts_with(&format!("{}/", r.trim_end_matches('/')));
+            if under && self.root.join(&p).is_dir() {
+                found = true;
+                let prefix = if r == "." || r.is_empty() { String::new() } else { format!("{}/", r.trim_end_matches('/')) };
+                kept.extend(self.gathered.files.iter().filter(|f| f.path.starts_with(&prefix) && f.path != rel).map(|f| PathBuf::from(&f.path)));
+            } else {
+                kept.push(p);
+            }
+        }
+        kept.dedup();
+        self.context = kept;
+        if !found {
+            return Ok(());
+        }
+        self.refresh()
+    }
+
+    /// `3 files, 12 KiB of 512 KiB`.
+    pub fn summary(&self) -> String {
+        let l = Limits::default();
+        let n = self.gathered.files.len();
+        format!("{n} file{}, {} KiB of {} KiB", plural(n), self.gathered.total_bytes().div_ceil(1024), l.max_total_bytes / 1024)
+    }
+
     pub fn skipped_note(&self) -> String {
         match self.gathered.skipped.len() {
             0 => String::new(),
@@ -95,7 +158,7 @@ impl CodeState {
         }
     }
 
-    /// Reads a typed line: `/add`, `/drop`, `/clear`, `/root`, `/rewrite FILE[:A-B] how`,
+    /// Reads a typed line: `/files`, `/add`, `/drop`, `/clear`, `/root`, `/rewrite FILE[:A-B] how`,
     /// `/suggest [what]`, `/undo[!]`; anything else asks for suggestions about it.
     pub fn parse(&mut self, line: &str) -> Result<Command, String> {
         let line = line.trim();
@@ -110,6 +173,7 @@ impl CodeState {
             "add" | "a" if !rest.is_empty() => Command::Add(rest.split_whitespace().map(str::to_string).collect()),
             "drop" | "d" if !rest.is_empty() => Command::Drop(rest.to_string()),
             "clear" => Command::Clear,
+            "files" | "pick" | "f" => Command::Pick,
             "root" if !rest.is_empty() => Command::Root(rest.to_string()),
             "undo" => Command::Undo { force: false },
             "undo!" => Command::Undo { force: true },
@@ -331,5 +395,37 @@ mod tests {
         assert!(text.contains("LINE 2\n") && text.contains("line 19\n"));
         s.undo(false).unwrap();
         assert!(std::fs::read_to_string(d.path().join("src/a.rs")).unwrap().contains("line 2\n"));
+    }
+
+    #[test]
+    fn single_files_come_and_go_within_the_limits() {
+        let (d, mut st) = project();
+        let root = d.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        for n in ["a.rs", "b.rs", "c.rs"] {
+            std::fs::write(root.join("src").join(n), "fn x() {}\n").unwrap();
+        }
+        st.set_file("src/a.rs", true).unwrap();
+        st.set_file("src/a.rs", true).unwrap();
+        assert!(st.has_file("src/a.rs") && st.gathered.files.len() == 1);
+        // A folder, then one of its files out: the others stay.
+        st.add(&["src".to_string()]).unwrap();
+        assert!(st.has_file("src/b.rs") && st.has_file("src/c.rs"));
+        st.set_file("src/b.rs", false).unwrap();
+        assert!(!st.has_file("src/b.rs") && st.has_file("src/a.rs") && st.has_file("src/c.rs"));
+        st.set_file("src/a.rs", false).unwrap();
+        st.set_file("src/c.rs", false).unwrap();
+        assert!(st.gathered.files.iter().all(|f| !f.path.starts_with("src/")));
+        // Limits.
+        std::fs::write(root.join("big.txt"), "x".repeat(300 * 1024)).unwrap();
+        assert!(st.set_file("big.txt", true).unwrap_err().contains("at most 256 KiB"));
+        for i in 0..2 {
+            std::fs::write(root.join(format!("m{i}.txt")), "y".repeat(200 * 1024)).unwrap();
+        }
+        st.set_file("m0.txt", true).unwrap();
+        st.set_file("m1.txt", true).unwrap();
+        std::fs::write(root.join("m2.txt"), "y".repeat(200 * 1024)).unwrap();
+        assert!(st.set_file("m2.txt", true).unwrap_err().contains("past 512 KiB"));
+        assert!(!st.has_file("m2.txt"));
     }
 }

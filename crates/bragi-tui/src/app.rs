@@ -115,6 +115,8 @@ pub struct App {
     pub link_input: Editor,
     pub link_check: Option<LinkCheck>,
     pub code: CodeState,
+    /// The file picker, open over code mode.
+    pub picker: Option<crate::picker::Picker>,
     pub confirm_delete: Option<String>,
     /// Text to put on the terminal's clipboard (OSC 52), written by the main loop.
     pub clipboard: Vec<String>,
@@ -193,6 +195,7 @@ impl App {
             link_input: Editor::default(),
             link_check: None,
             code: CodeState::new(root, home.join("code-undo")),
+            picker: None,
             confirm_delete: None,
             clipboard: Vec::new(),
             quit: false,
@@ -213,15 +216,103 @@ impl App {
     /// Starts in code mode on what `bragi-tui PATH` named: the folder's files, or the one file,
     /// are the context. Requests and diffs stay inside the root.
     pub fn open_code(&mut self, o: &crate::cli::Opened) {
-        match self.code.add(&[o.context.display().to_string()]) {
-            Ok(note) => self.say(&note),
-            Err(e) => self.fail(e),
+        match &o.context {
+            // A file: it is the context.
+            Some(file) => match self.code.add(&[file.display().to_string()]) {
+                Ok(note) => self.say(&note),
+                Err(e) => self.fail(e),
+            },
+            // A folder: start empty and choose what goes in.
+            None => self.open_picker(),
         }
         // A new device links first; the code view waits behind that screen.
         if self.view == View::Link {
             self.back = View::Code;
         } else {
             self.view = View::Code;
+        }
+    }
+
+    /// Opens the file picker on the code root.
+    pub fn open_picker(&mut self) {
+        self.picker = Some(crate::picker::Picker::new(&self.code.root));
+    }
+
+    fn picker_key(&mut self, k: KeyEvent, ctrl: bool) {
+        use crate::picker::Mode;
+        let Some(p) = self.picker.as_mut() else { return };
+        let filtering = p.mode == Mode::Filter;
+        match k.code {
+            KeyCode::Up => p.step(-1),
+            KeyCode::Down => p.step(1),
+            KeyCode::PageUp => p.step(-10),
+            KeyCode::PageDown => p.step(10),
+            KeyCode::Home => p.first(),
+            KeyCode::End => p.last(),
+            KeyCode::Char(' ') => return self.picker_toggle(),
+            KeyCode::Char('u') if ctrl => p.clear_filter(),
+            KeyCode::Esc if filtering => p.clear_filter(),
+            KeyCode::Esc => self.picker = None,
+            KeyCode::Enter if filtering => p.mode = Mode::Browse,
+            KeyCode::Enter => return self.picker_open(),
+            KeyCode::Backspace if filtering => p.backspace(),
+            KeyCode::Char(c) if filtering && !ctrl => p.type_char(c),
+            KeyCode::Char('q') => self.picker = None,
+            KeyCode::Char('k') => p.step(-1),
+            KeyCode::Char('j') => p.step(1),
+            KeyCode::Char('g') => p.first(),
+            KeyCode::Char('G') => p.last(),
+            KeyCode::Right | KeyCode::Char('l') => p.expand(),
+            KeyCode::Left | KeyCode::Char('h') => p.collapse(),
+            KeyCode::Char('/') => p.mode = Mode::Filter,
+            KeyCode::Char('c') => {
+                self.code.context.clear();
+                if let Err(e) = self.code.refresh() {
+                    self.fail(e);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Space: puts the file under the cursor in the context or takes it out; on a folder, all
+    /// its files (until the limits say stop).
+    fn picker_toggle(&mut self) {
+        let Some(p) = self.picker.as_ref() else { return };
+        let Some(node) = p.current().cloned() else { return };
+        let files: Vec<String> = p.files_under(&node).iter().map(|n| n.path.clone()).collect();
+        let all_in = !files.is_empty() && files.iter().all(|f| self.code.has_file(f));
+        let mut err = None;
+        for f in &files {
+            if let Err(e) = self.code.set_file(f, !all_in) {
+                err = Some(e);
+                break;
+            }
+        }
+        if let Some(e) = err {
+            self.fail(e);
+        }
+        if let Some(p) = self.picker.as_mut()
+            && !node.is_dir
+            && p.filter.is_empty()
+        {
+            p.step(1);
+        }
+    }
+
+    /// Enter: opens or shuts a folder; on a file, puts it in the context and closes the picker.
+    fn picker_open(&mut self) {
+        let Some(p) = self.picker.as_mut() else { return };
+        let Some(node) = p.current().cloned() else { return };
+        if node.is_dir {
+            return p.toggle_dir();
+        }
+        match self.code.set_file(&node.path, true) {
+            Ok(()) => {
+                self.picker = None;
+                self.say(format!("Context: {}", self.code.summary()));
+            }
+            Err(e) => self.fail(e),
         }
     }
 
@@ -537,6 +628,13 @@ impl App {
     pub fn on_key(&mut self, k: KeyEvent) {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
         let alt = k.modifiers.contains(KeyModifiers::ALT);
+        // The file picker takes every key but the ones that quit.
+        if self.picker.is_some() && self.view == View::Code && !(ctrl && matches!(k.code, KeyCode::Char('q' | 'c'))) {
+            return self.picker_key(k, ctrl);
+        }
+        if ctrl && k.code == KeyCode::Char('f') && self.view == View::Code && self.code.phase == Phase::Compose {
+            return self.open_picker();
+        }
         // Global keys first.
         match k.code {
             KeyCode::Char('q') if ctrl => return self.quit = true,
@@ -1209,6 +1307,7 @@ impl App {
                 KeyCode::Char('j') if ctrl => self.input.insert("\n"),
                 KeyCode::Enter => self.code_submit(),
                 KeyCode::Char('?') if self.input.is_empty() => self.open(View::Help),
+                KeyCode::Char('f') if self.input.is_empty() && !ctrl && !alt => self.open_picker(),
                 _ => {
                     self.input.key(k);
                 }
@@ -1228,6 +1327,7 @@ impl App {
             Command::Nothing => return,
             Command::Add(paths) => self.code.add(&paths),
             Command::Drop(what) => self.code.drop_path(&what),
+            Command::Pick => return self.open_picker(),
             Command::Clear => {
                 self.code.context.clear();
                 self.code.refresh().map(|_| "Context cleared.".to_string())

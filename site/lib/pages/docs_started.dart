@@ -59,6 +59,12 @@ the files as context and suggestions, rewrites and hunk review limited to that f
 bragi ~/src/app          # on another folder
 bragi src/main.rs        # on one file, rooted at its git repository (or its folder)
 bragi-tui --path serve   # a folder named like a command; ./serve works too</code></pre>
+<p>With a folder, a <strong>file picker</strong> opens: a tree of the folder (<code>.gitignore</code> is respected;
+<code>target/</code>, <code>node_modules/</code> and <code>.git/</code> are hidden) with file sizes and a marker on what is in
+the context. Move with the arrows or <code>j</code> and <code>k</code>, press <code>Space</code> to add or remove a file (a folder adds
+all of its files), <code>Enter</code> to open a folder or add a file and close the picker, <code>/</code> to filter by typing, and
+<code>Esc</code> to close. The bottom line shows the context's size against its limit. Open it again from code mode with
+<code>f</code>, <code>Ctrl+F</code> or <code>/files</code>. A file named on the command line goes straight into the context.</p>
 <p>A relative path, <code>.</code>, <code>..</code> and <code>~</code> are resolved first, and a path that doesn't exist is
 an error. <code>bragi status</code>, <code>bragi link</code> and the other commands work as before. <code>bragi PATH</code>
 starts <code>bragi-tui</code>, so install it beside <code>bragi</code> (the packages do).</p>

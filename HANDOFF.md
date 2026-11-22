@@ -2,6 +2,20 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-35, the file picker in the terminal app's code mode (branch `feature/tui-file-picker`)
+
+**What changed**
+- [`picker.rs`](crates/bragi-tui/src/picker.rs): the picker's state. The tree comes from the `ignore` walker (`.gitignore`, global and exclude files, dotfiles) with `target`, `node_modules`, `.git`, `dist`, `build` and similar always hidden, folders first, empty folders dropped, at most 20,000 entries (it says when it cuts). Folders open and shut; a `/` filter is a fuzzy match on the path that lists the best matches first.
+- [`code.rs`](crates/bragi-tui/src/code.rs): `CodeState::set_file` adds or removes one file within the existing limits (64 files, 256 KiB a file, 512 KiB in all); taking out a file that came with a folder swaps the folder for its other files. `/files` (also `/pick`, `/f`) is a new code command.
+- [`app.rs`](crates/bragi-tui/src/app.rs) and [`ui.rs`](crates/bragi-tui/src/ui.rs): the picker is a window over code mode. Open it with `f` (empty message box), Ctrl-F or `/files`. Keys: arrows or j k, → l and ← h, Space, Enter, `/`, Ctrl-U, `c`, Esc. Markers show what is in the context (half for a part of a folder), the bottom line a size bar against the limit. Keys are in the status bar and the help.
+- [`cli.rs`](crates/bragi-tui/src/cli.rs): `bragi PATH` with a folder starts with an empty context and the picker open; with a file it preselects that file, as before.
+- The picker only lists the root and sets paths relative to it, so suggest, rewrite and hunk review stay inside it. It uses existing theme roles only; [`theme.rs`](crates/bragi-tui/src/theme.rs) is untouched.
+- [README](README.md) and the [Getting started guide](site/lib/pages/docs_started.dart) describe it.
+
+**Tests**: tree building with ignore rules, hidden folders and ordering; open, shut and cursor moves; fuzzy filtering; selecting and the context limits (a folder swapped out, too many bytes, a file too big); and [`tests/picker.rs`](crates/bragi-tui/tests/picker.rs), which drives the keys and draws on the test backend.
+
+**Not tested**: a very large tree (the 20,000 cap is by construction); a real terminal other than a pseudo-terminal capture; mouse use (there is none).
+
 ## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
 
 **What changed**
