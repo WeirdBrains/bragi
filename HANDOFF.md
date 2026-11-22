@@ -2,6 +2,17 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-37, outside MCP servers for chats (branch `feature/mcp-client`)
+
+**What changed**
+- [`mcp_servers.rs`](crates/bragi-core/src/mcp_servers.rs): the user's list of outside MCP servers (`mcp-servers.json`, no secrets). Secrets (env values, bearer tokens, header values) go to the sealed store or the OS keychain, like API keys. Scopes (`all`, a folder or a session), "always allow" per tool, a 16-server cap, and a warning before adding a stdio server (it runs as the user). The protocol client and tool-call loop are `weirdnet-mcp` (`client`, `agent`) and `weirdnet-agent`.
+- Chat on an endpoint runs that loop with the MCP servers that apply to the chat.
+- [`mcp_cli.rs`](crates/bragi-tui/src/mcp_cli.rs): `bragi mcp-servers` (and `bragi-tui mcp-servers`) can list, add, remove, enable, disable, test and revoke. Secrets are never typed on the command line: `--env NAME`, `--bearer-env VAR` and `--header NAME=VAR` read the environment at add time.
+
+**Tests**: save/load and the CLI in the workspace; [`crates/bragi-core/tests/mcp_client.rs`](crates/bragi-core/tests/mcp_client.rs) drives the tool-call loop against a mock endpoint and a demo server.
+
+**Not tested**: a real remote MCP server; the Settings UI for the list (the store and the CLI are in; a dedicated screen is not).
+
 ## 2026-11-22: mouse in the terminal app (branch `feature/tui-mouse`)
 
 **What changed**
@@ -565,3 +576,8 @@ The app was also run under a pty in a private tmux server (`env -i`, a throwaway
 **What's left:** iOS Keychain and Android Keystore.
 
 **What's next:** LF-12.
+
+## 2026-11-22: LF-37 MCP client design
+
+- Design for adding outside MCP servers: [docs/design/mcp-client.md](docs/design/mcp-client.md). weirdnet-mcp 0.6.1 already has a usable client (feature `client`, `agent`); no weirdnet blocker. Wish list for the Weirdnet Lead is in the design.
+- Branch `feature/mcp-client` is now merged: the client is built (store, endpoint tool-call loop, and `bragi mcp-servers`). See the LF-37 entry at the top of this log.

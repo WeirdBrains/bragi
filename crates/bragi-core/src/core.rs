@@ -242,6 +242,8 @@ pub(crate) struct Inner {
     pub(crate) reactions: tokio::sync::broadcast::Sender<crate::reactions::ReactionEvent>,
     /// The user's OpenAI-compatible endpoints and their sealed keys (LF-11).
     pub(crate) endpoints: crate::endpoints::Endpoints,
+    /// Outside MCP servers whose tools agent mode on an endpoint can use (LF-37).
+    pub(crate) mcp: crate::mcp_servers::McpServers,
     /// Folders, and the target each conversation is bound to (LF-11).
     pub(crate) sessions: crate::sessions::Sessions,
 }
@@ -374,6 +376,7 @@ impl Core {
                 search: Mutex::new((0, NODE_SEARCH_LIMIT)),
                 reactions: tokio::sync::broadcast::channel(64).0,
                 endpoints: crate::endpoints::Endpoints::open(&dir),
+                mcp: crate::mcp_servers::McpServers::open(&dir),
                 sessions: crate::sessions::Sessions::open(&dir),
             }),
             _runtime: runtime,

@@ -63,6 +63,9 @@ pub enum Chat {
     Status(u16, &'static str),
     /// Some words, then the connection ends with no finish and no `[DONE]`.
     CutOff(Vec<&'static str>),
+    /// Asks for the tool `name` with `args` (a JSON object as text) until a request carries a tool
+    /// result, then answers with the words.
+    Tools(&'static str, &'static str, Vec<&'static str>),
 }
 
 #[derive(Clone, Debug)]
@@ -122,7 +125,7 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                 let mut first = head.lines().next().unwrap_or("").split(' ');
                 let (method, path) = (first.next().unwrap_or("").to_string(), first.next().unwrap_or("").to_string());
                 let auth = head.lines().find_map(|l| l.to_ascii_lowercase().starts_with("authorization:").then(|| l[14..].trim().to_string()));
-                log.lock().unwrap().push(Seen { method, path: path.clone(), auth: auth.clone(), body });
+                log.lock().unwrap().push(Seen { method, path: path.clone(), auth: auth.clone(), body: body.clone() });
                 if let Some(k) = key
                     && auth.as_deref() != Some(&format!("Bearer {k}"))
                 {
@@ -172,6 +175,11 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                     Chat::Words(w) => format!("{head}{}{done}", words(&w, "content")),
                     Chat::Reasoning(r, w) => format!("{head}{}{}{done}", words(&r, "reasoning_content"), words(&w, "content")),
                     Chat::CutOff(w) => format!("{head}{}", words(&w, "content")),
+                    Chat::Tools(_, _, w) if body.contains("\"role\":\"tool\"") => format!("{head}{}{done}", words(&w, "content")),
+                    Chat::Tools(name, args, _) => {
+                        let call = serde_json::json!({ "tool_calls": [{ "index": 0, "id": "call_1", "type": "function", "function": { "name": name, "arguments": args } }] });
+                        format!("{head}{}{}", sse(call.to_string(), "null"), done.replacen("\"stop\"", "\"tool_calls\"", 1))
+                    }
                 };
                 let _ = sock.write_all(out.as_bytes()).await;
                 let _ = sock.shutdown().await;

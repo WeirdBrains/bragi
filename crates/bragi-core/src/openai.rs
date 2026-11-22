@@ -145,6 +145,77 @@ pub async fn test(t: &Target) -> TestReport {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Finished {
     pub finish_reason: Option<String>,
+    /// Tool calls the model asked for (only when the request offered tools).
+    pub tool_calls: Vec<weirdnet_agent::ToolCall>,
+}
+
+/// Joins streamed `delta.tool_calls` fragments (an `index`, then name and argument pieces) into whole calls.
+#[derive(Default)]
+struct CallParts(std::collections::BTreeMap<u64, (String, String, String)>);
+
+impl CallParts {
+    fn push(&mut self, delta: &serde_json::Value) {
+        for (i, c) in delta.as_array().into_iter().flatten().enumerate() {
+            let e = self.0.entry(c.get("index").and_then(|x| x.as_u64()).unwrap_or(i as u64)).or_default();
+            if let Some(id) = c.get("id").and_then(|x| x.as_str()) {
+                e.0 = id.to_string();
+            }
+            if let Some(f) = c.get("function") {
+                if let Some(n) = f.get("name").and_then(|x| x.as_str()) {
+                    e.1.push_str(n);
+                }
+                if let Some(a) = f.get("arguments").and_then(|x| x.as_str()) {
+                    e.2.push_str(a);
+                }
+            }
+        }
+    }
+
+    fn finish(self) -> Vec<weirdnet_agent::ToolCall> {
+        self.0
+            .into_iter()
+            .filter(|(_, (_, name, _))| !name.is_empty())
+            .map(|(i, (id, name, args))| weirdnet_agent::ToolCall {
+                id: if id.is_empty() { format!("call_{i}") } else { id },
+                name,
+                // A model that sends broken JSON gets an empty object; the tool reports what is missing.
+                arguments: serde_json::from_str(&args).unwrap_or_else(|_| serde_json::json!({})),
+            })
+            .collect()
+    }
+}
+
+/// OpenAI wire form of the agent's messages: tool calls as `function` objects with string
+/// arguments, tool results with their `tool_call_id`.
+pub fn wire_messages(messages: &[Message]) -> serde_json::Value {
+    messages
+        .iter()
+        .map(|m| {
+            let mut v = serde_json::json!({ "role": m.role, "content": m.content });
+            if !m.tool_calls.is_empty() {
+                v["tool_calls"] = m
+                    .tool_calls
+                    .iter()
+                    .map(|c| serde_json::json!({ "id": c.id, "type": "function", "function": { "name": c.name, "arguments": c.arguments.to_string() } }))
+                    .collect();
+                if m.content.text().is_empty() {
+                    v["content"] = serde_json::Value::Null;
+                }
+            }
+            if let Some(id) = &m.tool_call_id {
+                v["tool_call_id"] = serde_json::json!(id);
+            }
+            v
+        })
+        .collect()
+}
+
+/// OpenAI `tools` for the agent's tool specs.
+pub fn wire_tools(tools: &[weirdnet_agent::ToolSpec]) -> serde_json::Value {
+    tools
+        .iter()
+        .map(|t| serde_json::json!({ "type": "function", "function": { "name": t.name, "description": t.description, "parameters": t.input_schema } }))
+        .collect()
 }
 
 /// `POST {base}/chat/completions` with `stream: true`; text, reasoning and usage go to `tx` as the
@@ -157,12 +228,29 @@ pub async fn chat_stream(
     tx: &mpsc::UnboundedSender<PoolEvent>,
     cancel: &CancelToken,
 ) -> Result<Finished> {
-    let body = serde_json::json!({
+    chat_stream_with(t, model, serde_json::json!(messages), None, tx, cancel).await
+}
+
+/// [`chat_stream`] with the messages already in wire form and, optionally, `tools` (see
+/// [`wire_tools`]); the tool calls the model asks for come back in [`Finished`].
+pub async fn chat_stream_with(
+    t: &Target,
+    model: &str,
+    messages: serde_json::Value,
+    tools: Option<serde_json::Value>,
+    tx: &mpsc::UnboundedSender<PoolEvent>,
+    cancel: &CancelToken,
+) -> Result<Finished> {
+    let mut body = serde_json::json!({
         "model": model,
         "messages": messages,
         "stream": true,
         "stream_options": { "include_usage": true },
     });
+    if let Some(tools) = tools.filter(|t| t.as_array().is_some_and(|a| !a.is_empty())) {
+        body["tools"] = tools;
+    }
+    let mut calls = CallParts::default();
     let req = authed(client(None)?.post(format!("{}/chat/completions", t.base_url)), t).json(&body);
     let resp = tokio::select! {
         r = req.send() => r.map_err(transport)?,
@@ -188,6 +276,7 @@ pub async fn chat_stream(
             let Some(data) = line.trim().strip_prefix("data:") else { continue };
             let data = data.trim();
             if data == "[DONE]" {
+                out.tool_calls = calls.finish();
                 return Ok(out);
             }
             let Ok(v) = serde_json::from_str::<serde_json::Value>(data) else { continue };
@@ -203,6 +292,9 @@ pub async fn chat_stream(
                 }
                 if let Some(text) = d.and_then(|d| d.get("content")).and_then(|c| c.as_str()).filter(|c| !c.is_empty()) {
                     let _ = tx.send(PoolEvent::Text(text.to_string()));
+                }
+                if let Some(tc) = d.and_then(|d| d.get("tool_calls")) {
+                    calls.push(tc);
                 }
                 if let Some(f) = c.get("finish_reason").and_then(|f| f.as_str()) {
                     out.finish_reason = Some(f.to_string());
@@ -221,7 +313,60 @@ pub async fn chat_stream(
     if out.finish_reason.is_none() {
         return Err(CoreError::new(ErrorKind::Unavailable, "the endpoint's stream ended early"));
     }
+    out.tool_calls = calls.finish();
     Ok(out)
+}
+
+/// A chat endpoint as the agent's model: each turn streams a completion with the tools offered
+/// and returns the text and the tool calls (the loop is `weirdnet_agent::AgentSession`).
+pub struct EndpointBackend {
+    target: Target,
+    model: String,
+    label: String,
+}
+
+impl EndpointBackend {
+    pub fn new(target: Target, model: String, label: String) -> Self {
+        Self { target, model, label }
+    }
+}
+
+#[async_trait::async_trait]
+impl weirdnet_agent::ModelBackend for EndpointBackend {
+    fn name(&self) -> String {
+        format!("{}@{}", self.model, self.label)
+    }
+
+    async fn complete(
+        &self,
+        messages: &[Message],
+        tools: &[weirdnet_agent::ToolSpec],
+        deltas: &weirdnet_agent::DeltaSink,
+        cancel: &CancelToken,
+    ) -> std::result::Result<weirdnet_agent::ModelTurn, weirdnet_agent::ModelError> {
+        use weirdnet_agent::ModelError;
+        let (tx, mut rx) = mpsc::unbounded_channel::<PoolEvent>();
+        let sink = deltas.clone();
+        let fwd = tokio::spawn(async move {
+            let mut text = String::new();
+            while let Some(e) = rx.recv().await {
+                if let PoolEvent::Text(t) = e {
+                    sink.text(t.clone());
+                    text.push_str(&t);
+                }
+            }
+            text
+        });
+        let r = chat_stream_with(&self.target, &self.model, wire_messages(messages), Some(wire_tools(tools)), &tx, cancel).await;
+        drop(tx);
+        let text = fwd.await.unwrap_or_default();
+        match r {
+            Ok(f) => Ok(weirdnet_agent::ModelTurn { text, tool_calls: f.tool_calls }),
+            Err(e) if e.kind == ErrorKind::Cancelled => Err(ModelError::Cancelled),
+            Err(e) if e.kind == ErrorKind::Unavailable => Err(ModelError::Unavailable(e.message)),
+            Err(e) => Err(ModelError::Failed(e.message)),
+        }
+    }
 }
 
 #[cfg(test)]

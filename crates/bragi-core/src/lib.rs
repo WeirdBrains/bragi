@@ -27,6 +27,7 @@ pub mod highlight;
 pub mod history;
 pub mod identity;
 pub mod markdown;
+pub mod mcp_servers;
 pub mod models;
 mod models_core;
 pub mod openai;
@@ -52,6 +53,7 @@ pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted
 pub use crate::models::{
     HubHit, ModelNode, ModelsEvent, NodeFit, NodeModels, NodeStatus, PullSpec, PullTarget, PulledView, QuantFit, StoredView, Verdict, human_bytes,
 };
+pub use crate::mcp_servers::{McpScope, McpSecrets, McpServer, McpServerInput, McpServerView, McpTestReport, McpTransport};
 pub use crate::models_core::ModelsRun;
 pub use crate::openai::TestReport;
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};

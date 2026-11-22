@@ -10,6 +10,7 @@ pub mod editor;
 pub mod entry;
 pub mod hit;
 pub mod markdown;
+pub mod mcp_cli;
 pub mod picker;
 pub mod serve;
 pub mod session;

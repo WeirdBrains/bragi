@@ -28,6 +28,9 @@ use crate::history::MessageState;
 /// The companion asked to run a task when the shell doesn't name one.
 pub const DEFAULT_COMPANION: &str = "assistant";
 
+/// Most model turns one task may take when Bragi runs the loop itself.
+pub const MAX_STEPS: u32 = 8;
+
 /// What a tool call's state is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -46,6 +49,9 @@ pub enum Choice {
     Once,
     /// The rest of this task.
     ThisTask,
+    /// This tool of an outside MCP server, from now on (this step runs, and the server's
+    /// "always allow" list gets the tool). Other tools still ask.
+    Always,
 }
 
 /// Cards waiting for an answer in one task.
@@ -53,12 +59,19 @@ pub enum Choice {
 pub struct Cards {
     next: AtomicU64,
     waiting: std::sync::Mutex<HashMap<u64, oneshot::Sender<ApprovalAnswer>>>,
+    /// Cards answered [`Choice::Always`].
+    always: std::sync::Mutex<std::collections::HashSet<u64>>,
 }
 
 /// The task's approver: the pump has already shown the card and queued where its answer arrives.
 struct CardApprover {
     queue: AsyncMutex<mpsc::UnboundedReceiver<(u64, oneshot::Receiver<ApprovalAnswer>)>>,
     out: mpsc::UnboundedSender<ChatEvent>,
+    cards: Arc<Cards>,
+    /// Tools the user chose "always allow" for: their cards are answered without being shown.
+    always: std::collections::HashSet<String>,
+    /// Called with the tool when the user answers [`Choice::Always`].
+    on_always: Option<Arc<dyn Fn(&str) + Send + Sync>>,
 }
 
 #[async_trait]
@@ -67,6 +80,11 @@ impl Approver for CardApprover {
         // The pump queues the card after flushing the text before it; showing it from here
         // (which knows the tool) keeps the order.
         let Some((ask, rx)) = self.queue.lock().await.recv().await else { return ApprovalAnswer::Deny };
+        if self.always.contains(&tool.name) {
+            lock(&self.cards.waiting).remove(&ask);
+            let _ = self.out.send(ChatEvent::Notice { text: format!("{} ran: you chose always allow for it", tool.name) });
+            return ApprovalAnswer::Approve { scope: Scope::Once };
+        }
         let _ = self.out.send(ChatEvent::Approval {
             ask,
             tool: tool.name.clone(),
@@ -74,7 +92,14 @@ impl Approver for CardApprover {
             site: prompt.request.site.clone(),
             summary: summary(prompt, &tool.name),
         });
-        rx.await.unwrap_or(ApprovalAnswer::Deny)
+        let answer = rx.await.unwrap_or(ApprovalAnswer::Deny);
+        if lock(&self.cards.always).remove(&ask)
+            && matches!(answer, ApprovalAnswer::Approve { .. })
+            && let Some(f) = &self.on_always
+        {
+            f(&tool.name);
+        }
+        answer
     }
 }
 
@@ -201,6 +226,107 @@ impl Core {
                 .ok_or_else(|| CoreError::new(ErrorKind::Unavailable, self.no_node_message()))?,
         };
         let companion = companion.filter(|c| !c.is_empty()).unwrap_or_else(|| DEFAULT_COMPANION.into());
+        let label = node.clone();
+        let name = companion.clone();
+        self.spawn_agent(conversation, prompt, attachments, node, companion, Default::default(), None, move |input, messages, ev_tx, approver, cancel, _out| async move {
+            let request = TaskRequest::new(AgentId::new(name.as_str()), input, messages);
+            run_task(&*net.dialer, &label, request, Some(ev_tx), &approver, &cancel).await.map(|o| o.outcome.stop).map_err(|e| agent_error(&e))
+        })
+    }
+
+    /// Agent mode on an OpenAI-compatible endpoint (no Ymir node): Bragi runs the tool-call loop
+    /// itself with the outside MCP servers that apply (enabled, in scope for `folder` and this
+    /// conversation). Events are [`send_agent`](Self::send_agent)'s; every tool call asks first,
+    /// and a server that won't connect is left out with a notice.
+    pub fn send_agent_local(
+        &self,
+        conversation: Option<&str>,
+        prompt: &str,
+        endpoint_id: &str,
+        model: Option<String>,
+        folder: Option<String>,
+        attachments: Vec<Attachment>,
+    ) -> Result<ChatHandle> {
+        if crate::attach::needs(&attachments) != weirdnet_agent::Modalities::TEXT {
+            return Err(CoreError::new(ErrorKind::BadRequest, "agent mode takes text and text files only for now; send images and audio in a chat"));
+        }
+        let ep = self
+            .inner
+            .endpoints
+            .get(endpoint_id)
+            .filter(|e| e.enabled)
+            .ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't there or is turned off"))?;
+        let target = self.inner.endpoints.target(&ep.id)?;
+        let servers = self.inner.mcp.applying(folder.as_deref(), conversation);
+        if servers.is_empty() {
+            return Err(CoreError::new(ErrorKind::BadRequest, "no MCP server applies here; add one in Settings first"));
+        }
+        let always = self.inner.mcp.always_allowed();
+        let core = self.clone();
+        let label = ep.name.clone();
+        let model = model.or(ep.model.clone());
+        let on_always: Arc<dyn Fn(&str) + Send + Sync> = {
+            let core = self.clone();
+            Arc::new(move |tool: &str| {
+                if let Some(s) = core.inner.mcp.list().into_iter().find(|s| tool.starts_with(&format!("{}.", crate::mcp_servers::slug(&s.name)))) {
+                    let _ = core.inner.mcp.set_always_allow(&s.id, tool, true);
+                }
+            })
+        };
+        let companion = DEFAULT_COMPANION.to_string();
+        self.spawn_agent(conversation, prompt, attachments, label.clone(), companion, always, Some(on_always), move |input, messages, ev_tx, approver, cancel, out| async move {
+            let model = match model {
+                Some(m) => m,
+                None => crate::openai::list_models(&target)
+                    .await
+                    .ok()
+                    .and_then(|m| m.into_iter().next())
+                    .ok_or_else(|| CoreError::new(ErrorKind::BadRequest, format!("{label} has no model picked and lists none")))?,
+            };
+            let mut registry = weirdnet_agent::ToolRegistry::new();
+            for s in &servers {
+                let notice = |text: String| {
+                    let _ = out.send(ChatEvent::Notice { text });
+                };
+                match core.inner.mcp.connect(&core.inner.endpoints, &s.id).await {
+                    Ok(source) => match source.client().list_tools().await {
+                        Ok(_) => registry.add_source(Arc::new(source)),
+                        Err(e) => notice(format!("{} left out: couldn't list its tools ({e:?})", s.name)),
+                    },
+                    Err(e) => notice(format!("{} left out: {}", s.name, e.message)),
+                }
+            }
+            registry.refresh().await.map_err(|e| CoreError::new(ErrorKind::Unavailable, e.to_string()))?;
+            let identity = weirdnet_agent::AgentIdentity::new(DEFAULT_COMPANION, "Assistant", weirdnet_agent::AgentKind::Local);
+            let mut config = weirdnet_agent::AgentConfig::new(identity);
+            config.budget.max_steps = MAX_STEPS;
+            let backend = Arc::new(crate::openai::EndpointBackend::new(target, model, label));
+            let mut session = weirdnet_agent::AgentSession::new(config, backend, Arc::new(registry), weirdnet_agent::Policy::new().shared(), Arc::new(approver));
+            session.restore_messages(messages);
+            Ok(session.run(input, Some(ev_tx), cancel).await.stop)
+        })
+    }
+
+    /// The shared start of an agent task: records the turn, runs `run` (which streams events and
+    /// asks cards through the approver it is given) and writes the answer.
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_agent<F, Fut>(
+        &self,
+        conversation: Option<&str>,
+        prompt: &str,
+        attachments: Vec<Attachment>,
+        node: String,
+        companion: String,
+        always: std::collections::HashSet<String>,
+        on_always: Option<Arc<dyn Fn(&str) + Send + Sync>>,
+        run: F,
+    ) -> Result<ChatHandle>
+    where
+        F: FnOnce(String, Vec<weirdnet_agent::Message>, mpsc::UnboundedSender<AgentEvent>, CardApprover, CancelToken, mpsc::UnboundedSender<ChatEvent>) -> Fut
+            + Send
+            + 'static,
+        Fut: std::future::Future<Output = Result<StopReason>> + Send + 'static,
+    {
         let (conv, mut messages) = self.begin_turn(conversation, prompt, &companion, attachments)?;
         let input = messages.pop().map(|m| m.content.into_text()).unwrap_or_default();
         let request_id = random_id("r");
@@ -213,26 +339,22 @@ impl Core {
         self.inner.handle.spawn(async move {
             let (ev_tx, ev_rx) = mpsc::unbounded_channel();
             let (q_tx, q_rx) = mpsc::unbounded_channel();
-            let approver = CardApprover { queue: AsyncMutex::new(q_rx), out: out.clone() };
+            let approver = CardApprover { queue: AsyncMutex::new(q_rx), out: out.clone(), cards: cards.clone(), always, on_always };
             let pump = tokio::spawn(pump(ev_rx, out.clone(), node.clone(), companion.clone(), cards, q_tx));
-            let request = TaskRequest::new(AgentId::new(companion.as_str()), input, messages);
-            let result = run_task(&*net.dialer, &node, request, Some(ev_tx), &approver, &cancel).await;
+            let result = run(input, messages, ev_tx, approver, cancel, out.clone()).await;
             let (text, tools) = pump.await.unwrap_or_default();
             let (state, last) = match &result {
-                Ok(o) => match &o.outcome.stop {
-                    StopReason::Completed => (MessageState::Complete, ChatEvent::Done { finish_reason: Some("agent".into()) }),
-                    StopReason::Cancelled => {
-                        (MessageState::Stopped, ChatEvent::Error { kind: ErrorKind::Cancelled, message: "stopped".into(), partial: text.clone() })
-                    }
-                    other => (
-                        MessageState::Failed,
-                        ChatEvent::Error { kind: ErrorKind::Other, message: format!("the task stopped early: {other:?}"), partial: text.clone() },
-                    ),
-                },
+                Ok(StopReason::Completed) => (MessageState::Complete, ChatEvent::Done { finish_reason: Some("agent".into()) }),
+                Ok(StopReason::Cancelled) => {
+                    (MessageState::Stopped, ChatEvent::Error { kind: ErrorKind::Cancelled, message: "stopped".into(), partial: text.clone() })
+                }
+                Ok(other) => (
+                    MessageState::Failed,
+                    ChatEvent::Error { kind: ErrorKind::Other, message: format!("the task stopped early: {other:?}"), partial: text.clone() },
+                ),
                 Err(e) => {
-                    let e = agent_error(e);
                     let state = if e.kind == ErrorKind::Cancelled { MessageState::Stopped } else { MessageState::Failed };
-                    (state, ChatEvent::Error { kind: e.kind, message: e.message, partial: text.clone() })
+                    (state, ChatEvent::Error { kind: e.kind, message: e.message.clone(), partial: text.clone() })
                 }
             };
             core.finish_agent(&conv, text, state, node, companion, tools);
@@ -248,9 +370,12 @@ impl Core {
     pub fn approve(&self, request_id: &str, ask: u64, choice: Choice) -> bool {
         let Some(cards) = lock(&self.inner.cards).get(request_id).cloned() else { return false };
         let Some(tx) = lock(&cards.waiting).remove(&ask) else { return false };
+        if choice == Choice::Always {
+            lock(&cards.always).insert(ask);
+        }
         let answer = match choice {
             Choice::Deny => ApprovalAnswer::Deny,
-            Choice::Once => ApprovalAnswer::Approve { scope: Scope::Once },
+            Choice::Once | Choice::Always => ApprovalAnswer::Approve { scope: Scope::Once },
             Choice::ThisTask => ApprovalAnswer::Approve { scope: Scope::Task },
         };
         tx.send(answer).is_ok()
