@@ -15,6 +15,7 @@ import 'sessions_ui.dart';
 import 'models_ui.dart';
 import 'settings_ui.dart';
 import 'theme.dart';
+import 'rust/api/bragi.dart' as rust;
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
 
@@ -537,6 +538,7 @@ class _FileCard extends StatelessWidget {
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 12, color: BragiColors.textSecondary),
               ),
             ),
+          if (f.kind == 'audio') _AudioRow(controller: controller, file: f),
           if (f.kind == 'image')
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -555,6 +557,52 @@ class _FileCard extends StatelessWidget {
                     : const SizedBox(height: 4),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// An audio file's player: Play/Pause, a seek bar and elapsed / total.
+class _AudioRow extends StatelessWidget {
+  const _AudioRow({required this.controller, required this.file});
+
+  final BragiController controller;
+  final FileView file;
+
+  @override
+  Widget build(BuildContext context) {
+    final f = file;
+    final c = controller.clip;
+    final mine = c != null && c.file == f.id && c.conversation == controller.current?.id;
+    final known = Duration(milliseconds: f.durationMs?.toInt() ?? 0);
+    final total = mine ? (c.duration ?? known) : known;
+    final at = mine ? c.position : Duration.zero;
+    final playing = mine && c.playing;
+    final progress = total.inMilliseconds == 0 ? 0.0 : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        children: [
+          IconButton(
+            key: Key('play-${f.id}'),
+            tooltip: playing ? 'Pause' : 'Play',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => controller.playFile(f),
+            icon: Icon(mine && c.loading ? Icons.hourglass_empty : (playing ? Icons.pause : Icons.play_arrow)),
+          ),
+          Expanded(
+            child: Slider(
+              key: Key('seek-${f.id}'),
+              value: progress,
+              onChanged: mine && !c.loading ? (v) => controller.seekFile(f, v) : null,
+            ),
+          ),
+          Text(
+            rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
+            key: Key('time-${f.id}'),
+            style: const TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+          ),
         ],
       ),
     );
