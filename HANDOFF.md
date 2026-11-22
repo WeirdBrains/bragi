@@ -2,6 +2,50 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-21: LF-13, the terminal app (branch `feature/tui`, not merged)
+
+**What changed**
+- A new shell, [`crates/bragi-tui`](crates/bragi-tui) (ratatui), binary `bragi-tui`. Like the desktop it only draws `AppState` and calls `Core`. Its profile is its own device ([`session.rs`](crates/bragi-tui/src/session.rs): `~/.local/share/bragi-tui`, `--home` or `BRAGI_TUI_HOME`), never the desktop's.
+- What it does, against the desktop's list ([`app.rs`](crates/bragi-tui/src/app.rs), [`ui.rs`](crates/bragi-tui/src/ui.rs)):
+  - Linking: a link code with a QR code, an incoming code, or a node address, as on the desktop.
+  - Sessions in nested folders ([`tree.rs`](crates/bragi-tui/src/tree.rs)): fold folders, open or delete a chat, and `/folder`, `/move`, `/rename` and `/nest`.
+  - OpenAI-compatible endpoints in Settings ([`settings.rs`](crates/bragi-tui/src/settings.rs)): add and edit with a masked key, on/off, alongside or fallback, test, reorder and delete (chats move to the pool). Weirdnet node addresses are listed there too.
+  - A picker for the target (the pool or an endpoint) and its model.
+  - Chat streams with stop and continue. Replies render as Markdown from `bragi_core::markdown` ([`markdown.rs`](crates/bragi-tui/src/markdown.rs)), and the Thinking section uses `think::label`.
+  - Text, image and audio attachments, node status, and a help screen. Copying uses OSC 52, so it works over SSH.
+- Code mode ([`code.rs`](crates/bragi-tui/src/code.rs)) and `bragi-tui code` / `undo` ([`cli.rs`](crates/bragi-tui/src/cli.rs)) sit on the shared [`bragi_core::code`](crates/bragi-core/src/code/mod.rs), which LF-14 (the editor extension) uses too:
+  - Context comes from files and folders, respecting `.gitignore`.
+  - You ask for suggestions or a rewrite of a file or line range.
+  - Each hunk of the unified or side-by-side diff is accepted or rejected, and writes go through the undo journal.
+- bragi-core:
+  - `Core::complete_to(messages, model, target)` routes a code request like a chat: the pool with fallback endpoints, or one endpoint. Nothing is saved, and `Core::complete` uses the default target ([`targets.rs`](crates/bragi-core/src/targets.rs)).
+  - `Core::has_identity`.
+  - The demo node answers code requests with well-formed edits ([`demo.rs`](crates/bragi-core/src/demo.rs)).
+  - `feature/code-core` points at the merge of main into this branch, so LF-14 can take the shared module from there.
+- Packaging: `bragi-tui` ships next to `bragi` in the Linux tarball, deb, rpm and Arch packages, in the macOS app and tarball, and in the Windows zip and MSI (on PATH). Its own `bragi-tui` tarball, deb, rpm, pkg and Windows exe carry no GUI libraries ([`packaging/nfpm/bragi-tui.yaml`](packaging/nfpm/bragi-tui.yaml), [`release.toml`](release.toml), [`scripts/dist-linux.sh`](scripts/dist-linux.sh)).
+
+**Commits:** `89e4466` (merge of main 431ea3c with the shared code module), `8a6a814` (bragi-tui), `4b21b99` (packaging), `bced350` (README and CHANGELOG), and this entry.
+
+**Checks:** All of these ran on the full workspace before committing and passed:
+- `cargo fmt --check`, build, `cargo clippy --workspace --all-targets -D warnings` and `cargo test --workspace`.
+- `cargo test` covers [`tests/scripted.rs`](crates/bragi-tui/tests/scripted.rs), which drives every screen key by key on ratatui's TestBackend against the demo nodes. It also covers [`tests/cli.rs`](crates/bragi-tui/tests/cli.rs) (rewrite diff, `--apply`, undo) and `code_requests_route_by_target_and_stay_out_of_history` in [`tests/endpoints.rs`](crates/bragi-core/tests/endpoints.rs).
+- `flutter analyze` and `flutter test --dart-define=BRAGI_DEMO=true`.
+
+The app was also run under a pty in a private tmux server (`env -i`, a throwaway HOME, `--demo`), with 13 screenshots taken outside the repo.
+
+**Not tested:**
+- A real Ymir node or a real endpoint from the terminal app (the endpoint code paths are core's, tested against a mock server).
+- The release workflow and packaging scripts did not run; the new files were only syntax-checked.
+- macOS and Windows builds of `bragi-tui`.
+
+**Left:**
+- Chat files (LF-12) are on `feature/chat-files`, not main yet; the terminal app gets them once they merge.
+- Message delete with undo, reactions and agent mode are desktop features the terminal does not have yet.
+- The link QR code needs a terminal about 60 rows tall for the long link codes; smaller ones show the code text only.
+- The Bragi status in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) is not updated (another repo).
+
+**Next:** review, then merge `feature/tui` when m3talsmith says so.
+
 ## 2026-11-21: LF-18, Weirdnet 0.5 and image and audio attachments (branch only)
 
 **What changed**
