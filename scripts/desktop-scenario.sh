@@ -8,7 +8,8 @@ set -euo pipefail
 out=$(realpath -m "${1:?usage: desktop-scenario.sh OUT_DIR [bragi]}")
 bin=$(realpath "${2:-${CARGO_TARGET_DIR:-target}/debug/bragi}")
 mkdir -p "$out"
-scratch=$(mktemp -d /tmp/bragi-virtual.XXXXXX)
+tmp=${TMPDIR:-/tmp}
+scratch=$(mktemp -d "$tmp/bragi-virtual.XXXXXX")
 mkdir -m 0700 "$scratch/run" "$scratch/home"
 trap 'rm -rf "$scratch"' EXIT
 
@@ -35,6 +36,6 @@ wait "$pid"
 INNER
 chmod +x "$scratch/inner.sh"
 
-env -i PATH=/usr/bin:/bin HOME="$scratch/home" XDG_RUNTIME_DIR="$scratch/run" LANG=C.UTF-8 \
-  BRAGI_SCENARIO_PAUSE_MS="${BRAGI_SCENARIO_PAUSE_MS:-900}" RUST_LOG=warn \
+env -i PATH=/usr/bin:/bin HOME="$scratch/home" TMPDIR="$tmp" XDG_RUNTIME_DIR="$scratch/run" LANG=C.UTF-8 \
+  BRAGI_SCENARIO_PAUSE_MS="${BRAGI_SCENARIO_PAUSE_MS:-900}" RUST_LOG=warn BRAGI_AUDIO=null \
   xvfb-run -a -s "-screen 0 1100x720x24 -nolisten tcp" "$scratch/inner.sh" "$out" "$bin"

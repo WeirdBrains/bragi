@@ -9,7 +9,12 @@ repository.workspace = true
 authors.workspace = true
 publish = false
 
+[features]
+# Decoding WAV and MP3 for a shell that plays through its own audio output (the desktop).
+decode = ["dep:symphonia"]
+
 [dependencies]
+symphonia = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
 chacha20poly1305.workspace = true

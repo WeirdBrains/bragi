@@ -177,6 +177,34 @@ fn code_answer(model: &str, prompt: &str) -> Option<String> {
     ))
 }
 
+/// A sound file for the demo and the tests: `ms` milliseconds of a `hz` tone, as a mono 8 kHz
+/// 16-bit WAV that fades in and out.
+pub fn tone_wav(ms: u32, hz: u32) -> Vec<u8> {
+    let rate = 8000u32;
+    let n = rate * ms / 1000;
+    let data = n * 2;
+    let mut w = Vec::with_capacity(44 + data as usize);
+    w.extend_from_slice(b"RIFF");
+    w.extend_from_slice(&(36 + data).to_le_bytes());
+    w.extend_from_slice(b"WAVEfmt ");
+    w.extend_from_slice(&16u32.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&1u16.to_le_bytes());
+    w.extend_from_slice(&rate.to_le_bytes());
+    w.extend_from_slice(&(rate * 2).to_le_bytes());
+    w.extend_from_slice(&2u16.to_le_bytes());
+    w.extend_from_slice(&16u16.to_le_bytes());
+    w.extend_from_slice(b"data");
+    w.extend_from_slice(&data.to_le_bytes());
+    for i in 0..n {
+        let t = i as f64 / rate as f64;
+        let edge = (i.min(n - i) as f64 / (rate as f64 / 20.0)).min(1.0);
+        let v = (t * hz as f64 * std::f64::consts::TAU).sin() * 0.4 * edge;
+        w.extend_from_slice(&((v * i16::MAX as f64) as i16).to_le_bytes());
+    }
+    w
+}
+
 pub fn answer_for(model: &str, prompt: &str) -> String {
     if let Some(a) = code_answer(model, prompt) {
         return a;

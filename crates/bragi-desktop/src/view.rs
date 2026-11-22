@@ -111,6 +111,12 @@ pub struct BragiView {
     /// this toolkit draws).
     files: RefCell<HashMap<String, FileCards>>,
     previews: RefCell<HashMap<String, Option<Arc<Image>>>>,
+    /// The audio clip playing or paused (one at a time, in the chat on screen), the file being
+    /// decoded for it, and the timer that redraws the time while it plays.
+    deck: bragi_core::audio::Deck,
+    player: Option<crate::audio::Player>,
+    audio_loading: Option<String>,
+    audio_tick: Option<Task<()>>,
     /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
     /// all history wants, the last delete while it can be undone, and the Settings view.
     confirm: Option<delete::Confirm>,
@@ -216,6 +222,10 @@ impl BragiView {
             markdown: RefCell::default(),
             files: RefCell::default(),
             previews: RefCell::default(),
+            deck: bragi_core::audio::Deck::default(),
+            player: None,
+            audio_loading: None,
+            audio_tick: None,
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -469,6 +479,91 @@ impl BragiView {
             });
         })
         .detach();
+    }
+
+    /// Play or pause on an audio file's card. Another clip stops first; the file is decoded
+    /// off the UI thread.
+    pub fn play_file(&mut self, file: &ChatFile, cx: &mut Context<Self>) {
+        let Some(conv) = self.current.as_ref().map(|c| c.id.clone()) else { return };
+        if self.deck.is(&conv, &file.id) {
+            if let Some(p) = &mut self.player {
+                p.toggle();
+                self.tick_audio(cx);
+            }
+            cx.notify();
+            return;
+        }
+        self.deck.start(&conv, &file.id);
+        self.player = None;
+        let bytes = match self.core.file_bytes(&conv, &file.id) {
+            Ok((_, b)) => b,
+            Err(e) => {
+                self.deck.stop();
+                self.notice = Some(e.message);
+                cx.notify();
+                return;
+            }
+        };
+        let (name, id) = (file.name.clone(), file.id.clone());
+        let job = cx.background_executor().spawn(async move { bragi_core::audio::decode(bytes, &name) });
+        self.audio_loading = Some(id.clone());
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            let r = job.await;
+            let _ = this.update(cx, |v, cx| {
+                if v.audio_loading.as_deref() == Some(id.as_str()) {
+                    v.audio_loading = None;
+                }
+                // Another clip, or another chat, since.
+                if !v.deck.is(&conv, &id) {
+                    return;
+                }
+                match r {
+                    Ok(pcm) => {
+                        v.player = Some(crate::audio::Player::open(&conv, &id, pcm));
+                        v.tick_audio(cx);
+                    }
+                    Err(e) => {
+                        v.deck.stop();
+                        v.notice = Some(e.message);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// A click on the seek bar of file `id`, at `fraction` of its length.
+    pub fn seek_file(&mut self, id: &str, fraction: f64, cx: &mut Context<Self>) {
+        if let Some(p) = self.player.as_mut().filter(|p| p.file == id) {
+            p.seek(bragi_core::audio::seek_ms(fraction, p.duration_ms));
+            cx.notify();
+        }
+    }
+
+    /// Redraws the time while a clip plays.
+    fn tick_audio(&mut self, cx: &mut Context<Self>) {
+        if self.audio_tick.is_some() {
+            return;
+        }
+        self.audio_tick = Some(cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(200)).await;
+                let go = this
+                    .update(cx, |v, cx| {
+                        cx.notify();
+                        let go = v.player.as_ref().is_some_and(|p| p.playing());
+                        if !go {
+                            v.audio_tick = None;
+                        }
+                        go
+                    })
+                    .unwrap_or(false);
+                if !go {
+                    break;
+                }
+            }
+        }));
     }
 
     /// Saves file `id` of conversation `conv` at `dest` (a file path, or a folder) and says where.
@@ -1134,6 +1229,7 @@ impl BragiView {
                     .on_click(cx.listener(move |v, _, _, cx| v.save_file(&file, cx))),
             );
         let preview = if f.kind == FileKind::Image { self.preview(m, f) } else { None };
+        let player = (f.kind == FileKind::Audio).then(|| self.audio_row(f, cx));
         div()
             .flex()
             .flex_col()
@@ -1151,6 +1247,52 @@ impl BragiView {
                     .map(|p| div().font_family(self.mono.clone()).text_size(px(12.)).line_height(px(17.)).text_color(rgb(t.text_secondary)).child(p)),
             )
             .children(preview.map(|i| img(i).max_w(px(320.)).max_h(px(220.)).object_fit(ObjectFit::Contain)))
+            .children(player)
+    }
+
+    /// An audio file's player: Play/Pause, a seek bar (a click goes there) and elapsed / total.
+    fn audio_row(&self, f: &ChatFile, cx: &mut Context<Self>) -> gpui::Div {
+        const STEPS: usize = 48;
+        let t = self.theme;
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let mine = self.player.as_ref().filter(|p| p.file == f.id && p.conversation == conv);
+        let (playing, pos, total) = match mine {
+            Some(p) => (p.playing(), p.position_ms(), p.duration_ms),
+            None => (false, 0, f.duration_ms.unwrap_or(0)),
+        };
+        let label = if self.audio_loading.as_deref() == Some(f.id.as_str()) {
+            "…"
+        } else if playing {
+            "❚❚ Pause"
+        } else {
+            "▶ Play"
+        };
+        let filled = (bragi_core::audio::progress(pos, total) * STEPS as f64).round() as usize;
+        let file = f.clone();
+        let bar = div().flex().flex_row().flex_1().min_w(px(80.)).h(px(16.)).items_center().children((0..STEPS).map(|k| {
+            let id = f.id.clone();
+            div()
+                .id(SharedString::from(format!("seek-{}-{k}", f.id)))
+                .flex_1()
+                .h(px(16.))
+                .flex()
+                .items_center()
+                .cursor_pointer()
+                .child(div().w_full().h(px(4.)).bg(rgb(if k < filled { t.accent } else { t.border })))
+                .on_click(cx.listener(move |v, _, _, cx| v.seek_file(&id, (k as f64 + 0.5) / STEPS as f64, cx)))
+        }));
+        div()
+            .flex()
+            .flex_row()
+            .gap(px(10.))
+            .items_center()
+            .child(
+                self.button(SharedString::from(format!("play-{}", f.id)), label, false)
+                    .on_click(cx.listener(move |v, _, _, cx| v.play_file(&file, cx))),
+            )
+            .child(bar)
+            .child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(bragi_core::audio::times(pos, total)))
+            .children(mine.map(|p| div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(p.output.clone())))
     }
 
     /// The message list, filling the space between the header and the composer: a scrollbar on
@@ -1402,6 +1544,11 @@ impl BragiView {
 impl Render for BragiView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        // A clip stops when the chat on screen changes.
+        if self.deck.shown(self.current.as_ref().map(|c| c.id.as_str())) {
+            self.player = None;
+            self.audio_loading = None;
+        }
         if std::mem::take(&mut self.recheck) {
             self.stick = self.at_bottom();
         }
@@ -1674,6 +1821,58 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     }
     step("reply file saved");
     shot(cx, "16c-reply-file").await;
+
+    // Audio files play on their card: Play/Pause, a seek bar and the time; one clip at a time;
+    // it stops when the chat changes. (BRAGI_AUDIO=null: a wall clock, no sound card.)
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let (low, high) = (dir.path().join("low tone.wav"), dir.path().join("high tone.wav"));
+    std::fs::write(&low, bragi_core::demo::tone_wav(3000, 330)).map_err(|e| e.to_string())?;
+    std::fs::write(&high, bragi_core::demo::tone_wav(2000, 660)).map_err(|e| e.to_string())?;
+    this.update(cx, |v, cx| {
+        v.new_chat(cx);
+        v.attach_path(&low.display().to_string(), cx);
+        v.attach_path(&high.display().to_string(), cx);
+        v.set_prompt("Listen to these", cx)
+    })
+    .map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the sound chips", |v| v.attachments.len() == 2).await?;
+    press_send(&this, cx)?;
+    wait_for(&this, cx, "the answer", |v| v.streaming.is_none() && last_assistant(v).is_some_and(|m| m.state == MessageState::Complete)).await?;
+    let clips = this
+        .read_with(cx, |v, _| v.current.as_ref().map(|c| bragi_core::files::describe(&c.messages[0])).unwrap_or_default())
+        .map_err(|e| e.to_string())?;
+    let lengths: Vec<Option<u64>> = clips.iter().map(|f| f.duration_ms).collect();
+    if clips.len() != 2 || lengths != [Some(3000), Some(2000)] {
+        return Err(format!("the sound cards: {lengths:?}"));
+    }
+    step("audio cards");
+    shot(cx, "16d-audio-cards").await;
+    this.update(cx, |v, cx| v.play_file(&clips[0], cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the first clip to play", |v| v.player.as_ref().is_some_and(|p| p.file == clips[0].id && p.position_ms() > 300)).await?;
+    this.update(cx, |v, cx| v.seek_file(&clips[0].id, 0.5, cx)).map_err(|e| e.to_string())?;
+    let at = this.read_with(cx, |v, _| v.player.as_ref().map(|p| p.position_ms()).unwrap_or(0)).map_err(|e| e.to_string())?;
+    if !(1500..2200).contains(&at) {
+        return Err(format!("seeking to the middle went to {at} ms"));
+    }
+    step("audio playing");
+    shot(cx, "16e-audio-playing").await;
+    this.update(cx, |v, cx| v.play_file(&clips[0], cx)).map_err(|e| e.to_string())?;
+    let paused = this.read_with(cx, |v, _| v.player.as_ref().map(|p| (p.playing(), p.position_ms()))).map_err(|e| e.to_string())?;
+    cx.background_executor().timer(Duration::from_millis(300)).await;
+    let later = this.read_with(cx, |v, _| v.player.as_ref().map(|p| (p.playing(), p.position_ms()))).map_err(|e| e.to_string())?;
+    if paused.is_none_or(|p| p.0) || paused != later {
+        return Err(format!("pause: {paused:?} then {later:?}"));
+    }
+    step("audio paused");
+    shot(cx, "16f-audio-paused").await;
+    // The other clip: the first one stops.
+    this.update(cx, |v, cx| v.play_file(&clips[1], cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the second clip", |v| v.player.as_ref().is_some_and(|p| p.file == clips[1].id && p.playing())).await?;
+    // Another chat: it stops.
+    this.update(cx, |v, cx| v.new_chat(cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the clip to stop with the chat", |v| v.player.is_none() && v.deck.clip().is_none()).await?;
+    step("audio stops with the chat");
+    drop(dir);
 
     this.update(cx, |v, cx| {
         v.new_chat(cx);

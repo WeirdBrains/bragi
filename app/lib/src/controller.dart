@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'api.dart';
+import 'audio.dart';
 
 /// Puts [delta] at [offset] (characters, as the core counts them), replacing what follows.
 String splice(String text, int offset, String delta) {
@@ -31,7 +32,7 @@ class ApprovalCard {
 }
 
 class BragiController extends ChangeNotifier {
-  BragiController(this.api);
+  BragiController(this.api, {ClipBackend Function()? audio}) : _newAudio = audio ?? ClipBackend.create;
 
   final BragiApi api;
   StateView? state;
@@ -104,6 +105,9 @@ class BragiController extends ChangeNotifier {
   @override
   void dispose() {
     _watch?.cancel();
+    unawaited(stopClip());
+    unawaited(_clipPosition?.cancel());
+    unawaited(_clipEnded?.cancel());
     super.dispose();
   }
 
@@ -343,6 +347,100 @@ class BragiController extends ChangeNotifier {
     final c = current;
     if (c == null) return Future.error('no chat open');
     return _bytes.putIfAbsent('${c.id}/${f.id}', () => api.fileBytes(c.id, f.id));
+  }
+
+  // ---- audio files: one clip at a time, in the chat on screen (bragi_core::audio::Deck) ----
+
+  final ClipBackend Function() _newAudio;
+  ClipBackend? _audio;
+  StreamSubscription<Duration>? _clipPosition;
+  StreamSubscription<void>? _clipEnded;
+
+  /// The clip playing or paused, if any.
+  Clip? clip;
+
+  /// Play or pause on an audio file's card. Another clip stops first.
+  Future<void> playFile(FileView f) async {
+    final conv = current?.id;
+    if (conv == null) return;
+    final c = clip;
+    if (c != null && c.conversation == conv && c.file == f.id) {
+      if (c.loading) return;
+      final a = _audio!;
+      if (c.playing) {
+        c.playing = false;
+        notifyListeners();
+        await a.pause();
+      } else {
+        if (c.duration != null && c.position >= c.duration!) {
+          c.position = Duration.zero;
+          await a.seek(Duration.zero);
+        }
+        c.playing = true;
+        notifyListeners();
+        await a.play();
+      }
+      return;
+    }
+    await stopClip();
+    final known = f.durationMs == null ? null : Duration(milliseconds: f.durationMs!.toInt());
+    final next = Clip(conversation: conv, file: f.id, duration: known);
+    clip = next;
+    notifyListeners();
+    try {
+      final a = _audio ??= _newAudio();
+      _clipPosition ??= a.position.listen((p) {
+        final c = clip;
+        if (c == null || c.loading) return;
+        c.position = p;
+        notifyListeners();
+      });
+      _clipEnded ??= a.ended.listen((_) {
+        final c = clip;
+        if (c == null) return;
+        c.playing = false;
+        c.position = c.duration ?? c.position;
+        notifyListeners();
+      });
+      final bytes = await api.fileBytes(conv, f.id);
+      final length = await a.load(f.name, bytes, known);
+      if (!identical(clip, next)) return;
+      next
+        ..duration = length ?? known
+        ..loading = false
+        ..playing = true;
+      await a.play();
+    } catch (e) {
+      if (identical(clip, next)) clip = null;
+      notice = 'Could not play ${f.name}: $e';
+    }
+    notifyListeners();
+  }
+
+  /// The seek bar of file [f], moved to [fraction] of its length.
+  Future<void> seekFile(FileView f, double fraction) async {
+    final c = clip;
+    final len = c?.duration;
+    if (c == null || c.file != f.id || c.loading || len == null) return;
+    final to = Duration(milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round());
+    c.position = to;
+    notifyListeners();
+    await _audio?.seek(to);
+  }
+
+  /// Stops the clip, if one plays.
+  Future<void> stopClip() async {
+    if (clip == null) return;
+    clip = null;
+    await _audio?.stop();
+  }
+
+  @override
+  void notifyListeners() {
+    // A clip stops when the chat on screen changes.
+    final c = clip;
+    if (c != null && c.conversation != current?.id) unawaited(stopClip());
+    super.notifyListeners();
   }
 
   /// Saves a file of the current chat at [dest] (a save dialog's path, or a folder: then under
