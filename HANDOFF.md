@@ -2,6 +2,32 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: LF-39, one `bragi` command: the terminal app is in it (branch `feature/bragi-single-binary`)
+
+**What changed**
+- [`entry.rs`](crates/bragi-tui/src/entry.rs): the terminal app's start-up moved out of `bragi-tui`'s `main` into `bragi_tui::entry::run(prog, args)`. [`main.rs`](crates/bragi-tui/src/main.rs) of `bragi-tui` is now a thin call to it (the compatibility binary).
+- [`main.rs`](crates/bragi-desktop/src/main.rs) of `bragi`: `dispatch` reads the first word: `mcp`, `serve` (with `ensure` and `status`), `desktop`, `--help`/`-h`, else the terminal app, run in-process with the whole command line (none, a path, `status`, `link`, `--demo`, `--no-serve`…). A path named like a subcommand is `./serve` or `--path serve`. The old `terminal.rs` hand-off is gone.
+- The window is the `gui` feature of `bragi-desktop` (default on): GPUI, cpal, qrcode and the rest are optional. `cargo build -p bragi-desktop --no-default-features` makes a `bragi` with no GUI libraries, and `bragi desktop` there says so. On Windows the exe is a console program now (the terminal app needs it) and `desktop` detaches the console.
+- `find_spawn` (bragi-serve) still finds the right program: `bragi` spawns itself with `serve`; the `bragi-tui` alias, a symlink, resolves to `bragi`.
+- Packaging: the desktop entry is `Exec=bragi desktop`; the macOS app starts a `bragi-app` script that runs `bragi desktop`; the Windows Start menu shortcut passes `desktop`. The Linux archives and nfpm, Arch and Nix packages link `bragi-tui` to `bragi`; the terminal-only archive and package are built with `--no-default-features`. Windows keeps a `bragi-tui.exe`. [README](README.md), the [Getting started guide](site/lib/pages/docs_started.dart) and the [CHANGELOG](CHANGELOG.md) say so; the FreeBSD job builds the no-window `bragi`.
+- Tests: `dispatch` for none, path, a path named like a subcommand, `desktop`, `mcp`, `serve`, `--help`.
+
+**Not tested**: the packaging changes (no nfpm, macOS or Windows here); the Windows console behaviour; the FreeBSD build.
+
+## 2026-11-22: LF-35, the file picker in the terminal app's code mode (branch `feature/tui-file-picker`)
+
+**What changed**
+- [`picker.rs`](crates/bragi-tui/src/picker.rs): the picker's state. The tree comes from the `ignore` walker (`.gitignore`, global and exclude files, dotfiles) with `target`, `node_modules`, `.git`, `dist`, `build` and similar always hidden, folders first, empty folders dropped, at most 20,000 entries (it says when it cuts). Folders open and shut; a `/` filter is a fuzzy match on the path that lists the best matches first.
+- [`code.rs`](crates/bragi-tui/src/code.rs): `CodeState::set_file` adds or removes one file within the existing limits (64 files, 256 KiB a file, 512 KiB in all); taking out a file that came with a folder swaps the folder for its other files. `/files` (also `/pick`, `/f`) is a new code command.
+- [`app.rs`](crates/bragi-tui/src/app.rs) and [`ui.rs`](crates/bragi-tui/src/ui.rs): the picker is a window over code mode. Open it with `f` (empty message box), Ctrl-F or `/files`. Keys: arrows or j k, → l and ← h, Space, Enter, `/`, Ctrl-U, `c`, Esc. Markers show what is in the context (half for a part of a folder), the bottom line a size bar against the limit. Keys are in the status bar and the help.
+- [`cli.rs`](crates/bragi-tui/src/cli.rs): `bragi PATH` with a folder starts with an empty context and the picker open; with a file it preselects that file, as before.
+- The picker only lists the root and sets paths relative to it, so suggest, rewrite and hunk review stay inside it. It uses existing theme roles only; [`theme.rs`](crates/bragi-tui/src/theme.rs) is untouched.
+- [README](README.md) and the [Getting started guide](site/lib/pages/docs_started.dart) describe it.
+
+**Tests**: tree building with ignore rules, hidden folders and ordering; open, shut and cursor moves; fuzzy filtering; selecting and the context limits (a folder swapped out, too many bytes, a file too big); and [`tests/picker.rs`](crates/bragi-tui/tests/picker.rs), which drives the keys and draws on the test backend.
+
+**Not tested**: a very large tree (the 20,000 cap is by construction); a real terminal other than a pseudo-terminal capture; mouse use (there is none).
+
 ## 2026-11-22: LF-33, theme switcher and editor in every front end (branch `feature/theme-editor`)
 
 **What changed**

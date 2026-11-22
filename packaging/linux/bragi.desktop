@@ -2,7 +2,7 @@
 Type=Application
 Name=Bragi
 Comment=Chat with your private AI cloud
-Exec=bragi
+Exec=bragi desktop
 Icon=bragi
 Terminal=false
 Categories=Network;Chat;

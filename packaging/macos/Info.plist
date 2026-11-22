@@ -5,7 +5,7 @@
   <key>CFBundleName</key><string>Bragi</string>
   <key>CFBundleDisplayName</key><string>Bragi</string>
   <key>CFBundleIdentifier</key><string>org.weirdbrains.bragi</string>
-  <key>CFBundleExecutable</key><string>bragi</string>
+  <key>CFBundleExecutable</key><string>bragi-app</string>
   <key>CFBundleIconFile</key><string>bragi</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>@VERSION@</string>

@@ -13,19 +13,26 @@ publish = false
 name = "bragi"
 path = "src/main.rs"
 
+# `gui` is the GPUI window (`bragi desktop`). Without it (BSD, servers, SSH-only machines) the
+# same `bragi` binary is the terminal app, MCP server and `bragi serve`, with no GUI libraries.
+[features]
+default = ["gui"]
+gui = ["dep:cpal", "dep:gpui", "dep:gpui_platform", "dep:qrcode", "dep:weirdnet-text", "dep:unicode-segmentation", "dep:tempfile", "dep:tokio", "dep:weirdnet-themes"]
+
 [dependencies]
 bragi-core = { workspace = true, features = ["decode"] }
-cpal.workspace = true
 bragi-mcp.workspace = true
 bragi-serve.workspace = true
-gpui.workspace = true
-gpui_platform.workspace = true
-qrcode = { version = "0.14", default-features = false }
-tempfile.workspace = true
-tokio.workspace = true
-weirdnet-text.workspace = true
-weirdnet-themes.workspace = true
-unicode-segmentation.workspace = true
+bragi-tui = { path = "../bragi-tui" }
+cpal = { workspace = true, optional = true }
+gpui = { workspace = true, optional = true }
+gpui_platform = { workspace = true, optional = true }
+qrcode = { version = "0.14", default-features = false, optional = true }
+tempfile = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+weirdnet-text = { workspace = true, optional = true }
+weirdnet-themes = { workspace = true, optional = true }
+unicode-segmentation = { workspace = true, optional = true }
 
 [lints]
 workspace = true

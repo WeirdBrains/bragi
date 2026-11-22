@@ -6,6 +6,11 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `bragi` is now the terminal app as well: `bragi` with no arguments, or `bragi PATH`, runs it in the same program (no hand-off to another binary), and `bragi --help` lists everything. The desktop window opens with `bragi desktop` (the desktop entry, the macOS app and the Windows Start menu shortcut do this for you). A build without the window (BSD, servers) is the same `bragi`, terminal app only. `bragi serve` and `bragi mcp` are unchanged. `bragi-tui` still works as a thin alias (a symlink to `bragi` on Linux and macOS, a small program on Windows) for one release, then goes.
+- The packages keep the `bragi-tui` name for the terminal-only build: it installs `bragi` (no GUI libraries) and `bragi-tui` links to it.
+
 ### Added
 
 - A Models screen on the desktop and phone apps: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting node or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's identity; nodes accept it only from devices linked to their owner.
