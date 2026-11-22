@@ -381,6 +381,14 @@ fn expand_hex(s: &str) -> String {
     }
 }
 
+impl Palette {
+    #[cfg(test)]
+    fn with_name(mut self, n: &str) -> Self {
+        self.theme = n.into();
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -490,13 +498,5 @@ mod tests {
         std::fs::write(d.path().join("appearance.json"), r#"{"theme":"broken","mode":"dark"}"#).unwrap();
         assert_eq!(a.palette().theme, "bragi");
         assert!(a.rows().unwrap().iter().any(|r| r.name == "broken" && r.error.is_some()));
-    }
-}
-
-impl Palette {
-    #[cfg(test)]
-    fn with_name(mut self, n: &str) -> Self {
-        self.theme = n.into();
-        self
     }
 }
