@@ -31,6 +31,8 @@ chmod 755 "$app/Contents/MacOS/bragi-app"
 cp brand/png/macos/bragi.icns "$app/Contents/Resources/bragi.icns"
 sed "s/@VERSION@/$ver/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
+# The binary first: it is not the bundle's main executable (bragi-app is), so signing the app alone leaves it unsigned.
+codesign --force --sign - --timestamp=none "$app/Contents/MacOS/bragi"
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --verbose "$app"
 mkdir -p dist

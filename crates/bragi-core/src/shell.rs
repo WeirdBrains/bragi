@@ -256,8 +256,14 @@ fn command_for(command: &str, cwd: &Path) -> Command {
 fn kill(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
-        // The whole group: `sh` and whatever it started.
-        let _ = Command::new("kill").args(["-KILL", &format!("-{}", child.id())]).stderr(Stdio::null()).status();
+        // The whole group: `sh` and whatever it started. A signal straight to the group, not the
+        // `kill` program, whose `kill -KILL -PID` fails in procps-ng 4 (Ubuntu 24.04).
+        if let Ok(pid) = libc::pid_t::try_from(child.id()) {
+            // SAFETY: kill(2) takes plain integers and touches no memory of ours.
+            unsafe {
+                libc::kill(-pid, libc::SIGKILL);
+            }
+        }
     }
     let _ = child.kill();
 }
@@ -330,7 +336,10 @@ mod tests {
         assert!(o.timed_out && o.code.is_none() && o.elapsed_ms < 10_000, "{o:?}");
         let stop = AtomicBool::new(true);
         let o = run("sleep 30", d.path(), Duration::from_secs(60), &stop).unwrap();
-        assert!(o.stopped && o.status().starts_with("stopped"), "{o:?}");
+        assert!(o.stopped && o.code.is_none() && o.elapsed_ms < 10_000 && o.status().starts_with("stopped"), "{o:?}");
+        // What the shell started in the background dies with it (else its pipes stay open).
+        let o = run("sleep 30 & sleep 30 & wait", d.path(), Duration::from_millis(200), &AtomicBool::new(false)).unwrap();
+        assert!(o.timed_out && o.code.is_none() && o.elapsed_ms < 10_000, "{o:?}");
     }
 
     #[test]
@@ -360,7 +369,7 @@ mod tests {
         assert_eq!((out.as_str(), err.as_str()), ("one\n", "two\n"));
         let t0 = Instant::now();
         let e = run_streaming("sleep 30", d.path(), Duration::from_secs(60), &|| t0.elapsed() > Duration::from_millis(200), &mut |_, _| {}).unwrap();
-        assert!(e.stopped && e.code.is_none() && e.elapsed_ms < 10_000);
+        assert!(e.stopped && e.code.is_none() && e.elapsed_ms < 10_000, "{e:?}");
     }
 
     #[test]

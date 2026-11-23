@@ -67,7 +67,7 @@ jobs:
         run: |
           for f in dist/*.deb; do dpkg-deb -I "$f" >/dev/null; dpkg-deb -c "$f"; done
           ldd target/release/bragi
-          tar -tzf dist/bragi-*-unknown-linux-gnu.tar.gz
+          tar -tzf dist/bragi-[0-9]*-unknown-linux-gnu.tar.gz
           sudo apt-get install -y ./dist/bragi_*.deb
           bragi --version
           bragi-tui --version

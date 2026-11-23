@@ -6,6 +6,14 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+0.2.0 was tagged but its Release workflow failed, so it has no release artifacts or GitHub release; 0.2.1 is the first release with everything listed under 0.2.0.
+
+### Fixed
+
+- A shell command that runs out of time or is stopped now ends at once with everything it started, on every Linux: the process group gets SIGKILL directly instead of through the `kill` program, whose `kill -KILL -PID` form fails in procps-ng 4 (Ubuntu 24.04).
+- macOS: the `bragi` binary inside Bragi.app is ad-hoc signed as well as the app, so `codesign --verify` passes now that the app opens through the `bragi-app` launcher.
+- Release workflow: the Linux package check lists the desktop tarball alone (`bragi-[0-9]*`), not the terminal-only `bragi-tui` tarball too.
+
 ## [0.2.0] - 2026-11-23
 
 ### Changed
