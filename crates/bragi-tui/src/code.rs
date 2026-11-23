@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bragi_core::code::budget::{Overflow, TokenBudget, fit, request_tokens, thousands};
-use bragi_core::code::prompt::{self, explanation, parse_edits, proposals};
+use bragi_core::code::prompt::{explanation, parse_edits, proposals};
 use bragi_core::code::{CodeRequest, CodeTask, FileChange, FileDiff, Gathered, Journal, Limits, gather, parse_target};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -477,14 +477,9 @@ impl CodeState {
         Ok(format!("Undid the last change: {}", names.join(", ")))
     }
 
-    /// The prompt messages for `req`, for `Core::complete`.
-    /// The prompt: the code instructions, then the conversation so far (a plan made in chat
-    /// mode, earlier code turns), then the files and the ask.
+    /// The prompt messages for `req`, for `Core::complete` (see `bragi_core::code::turns`).
     pub fn messages(req: &CodeRequest, conversation: &[bragi_core::code::PromptMessage]) -> Result<Vec<bragi_core::code::PromptMessage>, String> {
-        let mut m = prompt::build(req).map_err(|e| e.message)?;
-        let at = m.iter().take_while(|x| x.role == bragi_core::code::PromptRole::System).count();
-        m.splice(at..at, conversation.iter().cloned());
-        Ok(m)
+        bragi_core::code::turns::messages(req, conversation).map_err(|e| e.message)
     }
 }
 
@@ -510,37 +505,10 @@ fn less(b: TokenBudget, reserve: usize) -> TokenBudget {
     TokenBudget { context: b.context.saturating_sub(b.scaled(reserve) as u32), ..b }
 }
 
-/// The conversation as prompt turns, newest kept, within `max` estimated tokens: text only,
-/// streaming and empty answers left out, turns from the same side joined. Returns the turns and
-/// their estimate.
+/// The conversation as prompt turns within `max` estimated tokens (see
+/// `bragi_core::code::turns::conversation_turns`).
 pub fn conversation_turns(messages: &[bragi_core::ChatMessage], max: usize) -> (Vec<bragi_core::code::PromptMessage>, usize) {
-    use bragi_core::code::budget::{PER_MESSAGE, estimate_tokens};
-    use bragi_core::code::{PromptMessage, PromptRole};
-    let done: Vec<bragi_core::ChatMessage> =
-        messages.iter().filter(|m| m.state != bragi_core::MessageState::Streaming && !m.text.trim().is_empty()).cloned().collect();
-    let mut merged = bragi_core::merge_turns(&done);
-    // The ask that follows is a user turn: the history has to end with an answer.
-    while merged.last().is_some_and(|m| m.role == bragi_core::Role::User) {
-        merged.pop();
-    }
-    let mut out = Vec::new();
-    let mut used = 0;
-    for m in merged.iter().rev() {
-        let n = estimate_tokens(&m.text) + PER_MESSAGE;
-        if used + n > max {
-            break;
-        }
-        used += n;
-        let role = if m.role == bragi_core::Role::User { PromptRole::User } else { PromptRole::Assistant };
-        out.push(PromptMessage { role, content: m.text.clone() });
-    }
-    out.reverse();
-    // And start with a question.
-    while out.first().is_some_and(|m| m.role == PromptRole::Assistant) {
-        let m = out.remove(0);
-        used = used.saturating_sub(estimate_tokens(&m.content) + PER_MESSAGE);
-    }
-    (out, used)
+    bragi_core::code::turns::conversation_turns(messages, max)
 }
 
 /// `diffs` with their `accepted` hunks as file writes under `root` (files with none accepted are left out).

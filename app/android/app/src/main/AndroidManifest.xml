@@ -2,6 +2,9 @@
     <!-- Weirdnet: the node dials and listens; DNS servers come from the ConnectivityManager. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Scanning a desktop's pairing QR code. -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="Bragi"
         android:name="${applicationName}"

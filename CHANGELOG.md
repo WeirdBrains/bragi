@@ -15,6 +15,7 @@ All notable changes to Bragi are listed here. The format follows
 ### Added
 
 - The desktop link: `bragi linker pair` shares this computer's project folders with Bragi on a phone. It shows a QR code (and a code to type) that pins the desktop's key and expires after five minutes or one use. Paired phones read and write files there, gather code context, apply and undo changes, and run shell commands as you with output streamed back and a stop button. They connect directly over the LAN or VPN or through the Weirdnet relay, end-to-end encrypted either way. Nothing outside the shared folders is reachable. `bragi linker devices`, `revoke`, `roots` and `confirm` manage it. See [docs/desktop-link.md](docs/desktop-link.md).
+- Code mode in the phone app. A Chat/Code toggle switches what the message box sends in the same conversation. A project is a shared folder on a paired desktop (or a local folder on a computer). You pick files and folders for the context, review the proposed changes hunk by hunk, apply and undo them, and run shell commands with streamed output and a stop button. **Pair with desktop** scans the desktop's QR code with the camera or takes the typed code, and sets the route (Auto, Direct only, Weirdnet first). Up and Down on a hardware keyboard walk the prompt history (the chat's, or the project's), and a bell lists past notifications.
 
 - The terminal app keeps a prompt history: Up and Down at the first or last line of the message box walk back through what you sent (and give back what you were typing), shell style, without repeats in a row. Chat has one history; code mode has one per project folder. Up to 1000 entries are kept in the profile.
 - Past notifications: every toast is kept (up to 200, in the profile) and listed newest first in a window opened with F9, `/notifications` or the bell in the header, which shows how many are new. A toast under the pointer stays until the pointer leaves.
@@ -37,6 +38,7 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Fixed
 
+- The phone app's theme editor no longer rebuilds during a build when it opens, and its Saved message stays in view however far the colours are scrolled.
 - Code mode in the terminal app no longer clears itself: every ask, answer and shell run stays in one scrollable transcript, and each answer's Thinking is kept, folded to its title line, and opens with a click (Ctrl-K still opens or folds them all).
 - Thinking from an agent task is kept with its answer in the history.
 - Code mode fits its prompt to the model's context window: files that don't fit are left out (and named), and a "request exceeds the available context size" refusal is retried once with fewer files or shown as a plain message instead of raw JSON.

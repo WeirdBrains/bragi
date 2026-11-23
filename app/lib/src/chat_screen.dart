@@ -1,4 +1,5 @@
-// The chat: pick a model from the catalog, ask, watch it stream, stop it, continue it.
+// The chat: pick a model from the catalog, ask, watch it stream, stop it, continue it. In code
+// mode the same box asks for changes to a project (code_ui.dart), in the same conversation.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -8,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'api.dart';
+import 'code_ui.dart';
 import 'controller.dart';
 import 'markdown.dart';
 import 'delete_ui.dart';
@@ -41,6 +43,32 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
+    widget.controller.code.addListener(_codeChanged);
+  }
+
+  void _codeChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Up and Down on a hardware keyboard walk the prompts sent before (the chat's, or the open
+  /// project's), as in the terminal app; only while the box holds one line.
+  KeyEventResult _historyKey(FocusNode _, KeyEvent e) {
+    if (e is! KeyDownEvent || _prompt.text.contains('\n')) return KeyEventResult.ignored;
+    final code = widget.controller.code;
+    final String? next;
+    if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
+      next = code.historyUp(_prompt.text);
+    } else if (e.logicalKey == LogicalKeyboardKey.arrowDown) {
+      next = code.historyDown();
+    } else {
+      return KeyEventResult.ignored;
+    }
+    if (next == null) return KeyEventResult.handled;
+    _prompt.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+    return KeyEventResult.handled;
   }
 
   void _onScroll() {
@@ -56,6 +84,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    widget.controller.code.removeListener(_codeChanged);
     _prompt.dispose();
     _link.dispose();
     _scroll.dispose();
@@ -78,8 +107,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _send() {
     final text = _prompt.text;
+    final c = widget.controller;
+    if (c.code.on && c.code.project == null) {
+      // Kept in the box until there is a project to ask about.
+      c.say('Open a project first (the folder button).');
+      return;
+    }
     _prompt.clear();
-    widget.controller.send(text);
+    c.code.historyPush(text);
+    if (c.code.on) {
+      c.code.ask(text);
+    } else {
+      c.send(text);
+    }
   }
 
   @override
@@ -92,11 +132,18 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         title: Text(c.current?.title ?? 'Bragi', overflow: TextOverflow.ellipsis),
         actions: [
+          ModeToggle(code: c.code),
+          NotificationBell(code: c.code),
           IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(92),
-          child: Column(children: [TargetBar(controller: c), _Models(controller: c)]),
+          child: Column(
+            children: [
+              TargetBar(controller: c),
+              _Models(controller: c),
+            ],
+          ),
         ),
       ),
       drawer: _History(controller: c, link: _link),
@@ -111,19 +158,26 @@ class _ChatScreenState extends State<ChatScreen> {
                   // Replies stay selectable; each reply's copy button gives its raw Markdown.
                   : Stack(
                       children: [
-                        SelectionArea(child: ListView.builder(
-                          key: const Key('messages'),
-                          controller: _scroll,
-                          padding: const EdgeInsets.all(12),
-                          itemCount: c.messages.length,
-                          itemBuilder: (context, i) => GestureDetector(
-                            key: Key('bubble-$i'),
-                            // Long-press (or right-click) a message for its menu; not while an answer streams.
-                            onLongPress: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
-                            onSecondaryTap: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
-                            child: _Bubble(key: ValueKey('bubble-${c.current?.id}-$i'), message: c.messages[i], streaming: c.streaming && i == c.messages.length - 1, controller: c),
+                        SelectionArea(
+                          child: ListView.builder(
+                            key: const Key('messages'),
+                            controller: _scroll,
+                            padding: const EdgeInsets.all(12),
+                            itemCount: c.messages.length,
+                            itemBuilder: (context, i) => GestureDetector(
+                              key: Key('bubble-$i'),
+                              // Long-press (or right-click) a message for its menu; not while an answer streams.
+                              onLongPress: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                              onSecondaryTap: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
+                              child: _Bubble(
+                                key: ValueKey('bubble-${c.current?.id}-$i'),
+                                message: c.messages[i],
+                                streaming: c.streaming && i == c.messages.length - 1,
+                                controller: c,
+                              ),
+                            ),
                           ),
-                        )),
+                        ),
                         if (!_stick)
                           Positioned(
                             bottom: 8,
@@ -163,6 +217,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               ),
             if (c.card != null) _Card(controller: c),
+            if (c.code.on && (c.code.review?.files.isNotEmpty ?? false)) ReviewCard(code: c.code),
+            if (c.code.on && c.code.shell != null) ShellPanel(code: c.code),
+            if (c.code.on) CodeBar(chat: c),
             if (c.attachments.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
@@ -186,36 +243,38 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.fromLTRB(4, 8, 10, 8),
               child: Row(
                 children: [
-                  IconButton(
-                    key: const Key('attach'),
-                    tooltip: 'Attach a file, image or audio',
-                    onPressed: _attach,
-                    icon: const Icon(Icons.attach_file),
-                  ),
-                  IconButton(
-                    key: const Key('agent'),
-                    tooltip: c.agent ? 'Agent mode: on' : 'Agent mode: off',
-                    isSelected: c.agent,
-                    style: c.agent
-                        ? IconButton.styleFrom(backgroundColor: BragiColors.accent, foregroundColor: BragiColors.background)
-                        : null,
-                    onPressed: c.toggleAgent,
-                    icon: const Icon(Icons.smart_toy_outlined),
-                  ),
+                  if (!c.code.on) ...[
+                    IconButton(key: const Key('attach'), tooltip: 'Attach a file, image or audio', onPressed: _attach, icon: const Icon(Icons.attach_file)),
+                    IconButton(
+                      key: const Key('agent'),
+                      tooltip: c.agent ? 'Agent mode: on' : 'Agent mode: off',
+                      isSelected: c.agent,
+                      style: c.agent ? IconButton.styleFrom(backgroundColor: BragiColors.accent, foregroundColor: BragiColors.background) : null,
+                      onPressed: c.toggleAgent,
+                      icon: const Icon(Icons.smart_toy_outlined),
+                    ),
+                  ],
                   const SizedBox(width: 6),
                   Expanded(
-                    child: TextField(
-                      key: const Key('prompt'),
-                      controller: _prompt,
-                      minLines: 1,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.send,
-                      // The scripted demo types through `adb input`; the keyboard's autocorrect turned
-                      // "What" into "Chat". Real use keeps the keyboard's own settings.
-                      autocorrect: !_scripted,
-                      enableSuggestions: !_scripted,
-                      onSubmitted: (_) => _send(),
-                      decoration: const InputDecoration(hintText: 'Ask anything…', isDense: true, border: OutlineInputBorder()),
+                    child: Focus(
+                      onKeyEvent: _historyKey,
+                      child: TextField(
+                        key: const Key('prompt'),
+                        controller: _prompt,
+                        minLines: 1,
+                        maxLines: 4,
+                        textInputAction: TextInputAction.send,
+                        // The scripted demo types through `adb input`; the keyboard's autocorrect turned
+                        // "What" into "Chat". Real use keeps the keyboard's own settings.
+                        autocorrect: !_scripted,
+                        enableSuggestions: !_scripted,
+                        onSubmitted: (_) => _send(),
+                        decoration: InputDecoration(
+                          hintText: c.code.on ? 'Ask for a change…' : 'Ask anything…',
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
                     ),
                   ),
                   if (c.canContinue) ...[
@@ -224,12 +283,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   ],
                   const SizedBox(width: 6),
                   c.streaming
-                      ? OutlinedButton.icon(
-                          key: const Key('stop'),
-                          onPressed: c.stop,
-                          icon: const Icon(Icons.stop, size: 16),
-                          label: const Text('Stop'),
-                        )
+                      ? OutlinedButton.icon(key: const Key('stop'), onPressed: c.stop, icon: const Icon(Icons.stop, size: 16), label: const Text('Stop'))
                       : FilledButton(key: const Key('send'), onPressed: _send, child: const Text('Send')),
                 ],
               ),
@@ -263,10 +317,7 @@ class _Card extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(card.summary, style: const TextStyle(fontSize: 14)),
-          Text(
-            'the node asks to ${card.tier} · only you can say yes',
-            style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
-          ),
+          Text('the node asks to ${card.tier} · only you can say yes', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -381,14 +432,14 @@ class _Bubble extends StatelessWidget {
             // Saved messages show their files as cards (below); one still being sent, its labels.
             if (message.files.isEmpty)
               for (final a in message.attachments)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'attached: ${_attachmentLabel(a)}',
-                  key: const Key('bubble-attachment'),
-                  style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    'attached: ${_attachmentLabel(a)}',
+                    key: const Key('bubble-attachment'),
+                    style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                  ),
                 ),
-              ),
             if (line != null && line.isNotEmpty)
               Text(
                 line,
@@ -516,10 +567,7 @@ class _FileCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(f.path ?? f.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-                    Text(
-                      '${f.mime} · ${humanSize(f.size.toInt())} · $from',
-                      style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
-                    ),
+                    Text('${f.mime} · ${humanSize(f.size.toInt())} · $from', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
                   ],
                 ),
               ),
@@ -595,11 +643,7 @@ class _AudioRow extends StatelessWidget {
             icon: Icon(mine && c.loading ? Icons.hourglass_empty : (playing ? Icons.pause : Icons.play_arrow)),
           ),
           Expanded(
-            child: Slider(
-              key: Key('seek-${f.id}'),
-              value: progress,
-              onChanged: mine && !c.loading ? (v) => controller.seekFile(f, v) : null,
-            ),
+            child: Slider(key: Key('seek-${f.id}'), value: progress, onChanged: mine && !c.loading ? (v) => controller.seekFile(f, v) : null),
           ),
           Text(
             rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
@@ -685,7 +729,9 @@ class _ThinkingState extends State<_Thinking> {
               key: const Key('thinking-text'),
               margin: const EdgeInsets.only(top: 4),
               padding: const EdgeInsets.only(left: 10),
-              decoration: BoxDecoration(border: Border(left: BorderSide(color: BragiColors.border, width: 2))),
+              decoration: BoxDecoration(
+                border: Border(left: BorderSide(color: BragiColors.border, width: 2)),
+              ),
               child: DefaultTextStyle.merge(
                 style: TextStyle(color: BragiColors.textSecondary),
                 child: MarkdownView(key: const Key('thinking-markdown'), doc: widget.controller.markdown(widget.message.reasoning.trim(), now)),
@@ -724,9 +770,7 @@ class _History extends StatelessWidget {
               padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
             ),
-            Expanded(
-              child: SessionsTree(controller: c),
-            ),
+            Expanded(child: SessionsTree(controller: c)),
             ListTile(
               key: const Key('models'),
               dense: true,
