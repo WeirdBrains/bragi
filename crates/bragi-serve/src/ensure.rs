@@ -427,8 +427,16 @@ mod tests {
         });
         assert_eq!(probe(d.path(), port), Probe::NotBragi);
         t.join().unwrap();
-        // The listener is gone: nothing there.
-        assert_eq!(probe(d.path(), port), Probe::Down);
+        // Nothing listening: a port just let go of. Tests run in parallel and another one may
+        // take that port straight away, so a few fresh ports get a chance before it fails.
+        let seen: Vec<Probe> = (0..5)
+            .map(|_| {
+                let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+                probe(d.path(), port)
+            })
+            .take_while(|p| *p != Probe::Down)
+            .collect();
+        assert!(seen.len() < 5, "no free port probed as down: {seen:?}");
     }
 
     #[test]
