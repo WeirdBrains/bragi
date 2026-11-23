@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-23
+
 0.2.0 was tagged but its Release workflow failed, so it has no release artifacts or GitHub release; 0.2.1 is the first release with everything listed under 0.2.0.
 
 ### Fixed
