@@ -421,6 +421,16 @@ pub fn apply_edits(original: &str, edits: &[&ProposedEdit]) -> Result<String> {
 /// One diff per file from `edits`. The original text comes from `known` (the context sent) or
 /// is read under `root`; a file that doesn't exist may only be created by a whole-file edit.
 pub fn proposals(root: &Path, known: &[ContextFile], edits: &[ProposedEdit]) -> Result<Vec<FileDiff>> {
+    proposals_with(known, edits, &mut |path| match std::fs::read_to_string(root.join(path)) {
+        Ok(t) => Ok(Some(t)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(CoreError::new(ErrorKind::Storage, format!("{path}: {e}"))),
+    })
+}
+
+/// [`proposals`] reading files that weren't in the context through `read` (`Ok(None)`: no
+/// such file), for a project on another computer (the desktop link).
+pub fn proposals_with(known: &[ContextFile], edits: &[ProposedEdit], read: &mut dyn FnMut(&str) -> Result<Option<String>>) -> Result<Vec<FileDiff>> {
     let mut by_path: BTreeMap<&str, Vec<&ProposedEdit>> = BTreeMap::new();
     let mut order: Vec<&str> = Vec::new();
     for e in edits {
@@ -435,15 +445,14 @@ pub fn proposals(root: &Path, known: &[ContextFile], edits: &[ProposedEdit]) -> 
         let edits = &by_path[path];
         let (original, created) = match known.iter().find(|f| f.path == path) {
             Some(f) => (f.text.clone(), false),
-            None => match std::fs::read_to_string(root.join(path)) {
-                Ok(t) => (t, false),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            None => match read(path)? {
+                Some(t) => (t, false),
+                None => {
                     if edits.iter().any(|e| e.span != Span::Whole) {
                         return Err(bad(format!("{path} doesn't exist, and the change edits lines of it")));
                     }
                     (String::new(), true)
                 }
-                Err(e) => return Err(CoreError::new(ErrorKind::Storage, format!("{path}: {e}"))),
             },
         };
         let new = apply_edits(&original, edits)?;

@@ -9,6 +9,7 @@ pub mod code;
 pub mod editor;
 pub mod entry;
 pub mod hit;
+pub mod linker_cli;
 pub mod markdown;
 pub mod mcp_cli;
 pub mod picker;

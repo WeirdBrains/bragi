@@ -100,22 +100,7 @@ pub fn run(command: &str, cwd: &Path, timeout: Duration, stop: &AtomicBool) -> R
     if !meta.is_dir() {
         return Err(CoreError::new(ErrorKind::BadRequest, format!("{} isn't a folder", cwd.display())));
     }
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args(["/C", command]);
-        c
-    } else {
-        let mut c = Command::new("sh");
-        c.args(["-c", command]);
-        c
-    };
-    cmd.current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Its own process group, so a stop or time-out ends what it started too.
-        cmd.process_group(0);
-    }
+    let mut cmd = command_for(command, cwd);
     let mut child = cmd.spawn().map_err(|e| CoreError::new(ErrorKind::Other, format!("couldn't start the shell: {e}")))?;
     let out = reader(child.stdout.take());
     let err = reader(child.stderr.take());
@@ -153,12 +138,119 @@ pub fn run(command: &str, cwd: &Path, timeout: Duration, stop: &AtomicBool) -> R
     })
 }
 
+/// How a streamed run ended ([`run_streaming`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Ended {
+    pub code: Option<i32>,
+    pub timed_out: bool,
+    pub stopped: bool,
+    pub elapsed_ms: u64,
+}
+
+/// Like [`run`], but hands each piece of output to `on` as it arrives (`true` for stderr) and
+/// keeps none of it. `stop` is asked every few milliseconds; when it says so the command and
+/// everything it started are killed. Used by the desktop link, which streams to a phone.
+pub fn run_streaming(command: &str, cwd: &Path, timeout: Duration, stop: &dyn Fn() -> bool, on: &mut dyn FnMut(bool, String)) -> Result<Ended> {
+    let started = Instant::now();
+    let meta = std::fs::metadata(cwd).map_err(|e| CoreError::new(ErrorKind::Storage, format!("{}: {e}", cwd.display())))?;
+    if !meta.is_dir() {
+        return Err(CoreError::new(ErrorKind::BadRequest, format!("{} isn't a folder", cwd.display())));
+    }
+    let mut child = command_for(command, cwd).spawn().map_err(|e| CoreError::new(ErrorKind::Other, format!("couldn't start the shell: {e}")))?;
+    let (tx, rx) = std::sync::mpsc::channel::<(bool, String)>();
+    let readers = [streamer(child.stdout.take(), false, tx.clone()), streamer(child.stderr.take(), true, tx)];
+    let (mut timed_out, mut stopped) = (false, false);
+    let status = loop {
+        while let Ok((err, text)) = rx.try_recv() {
+            on(err, text);
+        }
+        match child.try_wait() {
+            Ok(Some(s)) => break Some(s),
+            Ok(None) => {}
+            Err(_) => break None,
+        }
+        if started.elapsed() >= timeout {
+            timed_out = true;
+        } else if stop() {
+            stopped = true;
+        }
+        if timed_out || stopped {
+            kill(&mut child);
+            break child.wait().ok();
+        }
+        if let Ok((err, text)) = rx.recv_timeout(Duration::from_millis(20)) {
+            on(err, text);
+        }
+    };
+    for r in readers {
+        let _ = r.join();
+    }
+    while let Ok((err, text)) = rx.try_recv() {
+        on(err, text);
+    }
+    let code = if timed_out || stopped { None } else { status.and_then(|s| s.code()) };
+    Ok(Ended { code, timed_out, stopped, elapsed_ms: started.elapsed().as_millis() as u64 })
+}
+
+/// Sends a stream's text on as it comes, never splitting a UTF-8 character.
+fn streamer<R: Read + Send + 'static>(r: Option<R>, err: bool, tx: std::sync::mpsc::Sender<(bool, String)>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let Some(mut r) = r else { return };
+        let mut pending: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 8192];
+        while let Ok(n) = r.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            pending.extend_from_slice(&buf[..n]);
+            let upto = match std::str::from_utf8(&pending) {
+                Ok(_) => pending.len(),
+                Err(e) if e.error_len().is_none() => e.valid_up_to(),
+                Err(_) => pending.len(),
+            };
+            if upto > 0 {
+                let rest = pending.split_off(upto);
+                let text = String::from_utf8_lossy(&pending).into_owned();
+                pending = rest;
+                if tx.send((err, text)).is_err() {
+                    return;
+                }
+            }
+        }
+        if !pending.is_empty() {
+            let _ = tx.send((err, String::from_utf8_lossy(&pending).into_owned()));
+        }
+    })
+}
+
 /// [`run`] on a thread, for shells that can't block: `done` gets the result.
 pub fn spawn(command: String, cwd: PathBuf, timeout: Duration, done: impl FnOnce(Result<ShellOutput>) + Send + 'static) -> Arc<AtomicBool> {
     let stop = Arc::new(AtomicBool::new(false));
     let flag = stop.clone();
     std::thread::spawn(move || done(run(&command, &cwd, timeout, &flag)));
     stop
+}
+
+/// `sh -c COMMAND` (`cmd /C` on Windows) in `cwd`, no input, both outputs piped, in a process
+/// group of its own.
+fn command_for(command: &str, cwd: &Path) -> Command {
+    let mut cmd = if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.args(["/C", command]);
+        c
+    } else {
+        let mut c = Command::new("sh");
+        c.args(["-c", command]);
+        c
+    };
+    cmd.current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Its own process group, so a stop or time-out ends what it started too.
+        cmd.process_group(0);
+    }
+    cmd
 }
 
 fn kill(child: &mut std::process::Child) {
@@ -254,6 +346,21 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         let e = run("true", &d.path().join("nope"), Duration::from_secs(5), &AtomicBool::new(false)).unwrap_err();
         assert_eq!(e.kind, ErrorKind::Storage);
+    }
+
+    #[test]
+    fn streaming_hands_over_output_and_stops() {
+        let d = tempfile::tempdir().unwrap();
+        let mut got = Vec::new();
+        let e =
+            run_streaming("echo one; echo two >&2; exit 4", d.path(), Duration::from_secs(10), &|| false, &mut |err, t| got.push((err, t))).unwrap();
+        assert_eq!(e.code, Some(4));
+        let out: String = got.iter().filter(|(e, _)| !e).map(|(_, t)| t.as_str()).collect();
+        let err: String = got.iter().filter(|(e, _)| *e).map(|(_, t)| t.as_str()).collect();
+        assert_eq!((out.as_str(), err.as_str()), ("one\n", "two\n"));
+        let t0 = Instant::now();
+        let e = run_streaming("sleep 30", d.path(), Duration::from_secs(60), &|| t0.elapsed() > Duration::from_millis(200), &mut |_, _| {}).unwrap();
+        assert!(e.stopped && e.code.is_none() && e.elapsed_ms < 10_000);
     }
 
     #[test]

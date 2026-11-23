@@ -18,6 +18,8 @@ symphonia = { workspace = true, optional = true }
 anyhow.workspace = true
 async-trait.workspace = true
 chacha20poly1305.workspace = true
+blake3 = "1.8"
+if-addrs = "0.15"
 reqwest.workspace = true
 base64.workspace = true
 futures.workspace = true
@@ -46,7 +48,7 @@ keyring.workspace = true
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }
 weirdnet-mcp = { version = "0.6", features = ["agent", "axum"] }
 tempfile.workspace = true
-tokio = { workspace = true, features = ["net", "io-util"] }
+tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros"] }
 
 [lints]
 workspace = true
