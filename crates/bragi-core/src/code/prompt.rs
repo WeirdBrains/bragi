@@ -166,14 +166,19 @@ pub fn title(req: &CodeRequest) -> String {
 /// The messages for `req`, for [`Core::complete`](crate::Core::complete).
 pub fn build(req: &CodeRequest) -> Result<Vec<PromptMessage>> {
     let instruction = req.instruction.trim();
-    let mut files = String::from("The files (line-numbered for reference):\n");
+    let mut files = if req.files.is_empty() {
+        String::from("The project has no files yet: create the ones the request needs, each as a whole-file block (no `lines` or `after`).\n")
+    } else {
+        String::from("The files (line-numbered for reference):\n")
+    };
     for f in &req.files {
         files.push_str(&file_block(f));
     }
     let (system, ask) = match &req.task {
         CodeTask::Suggest => {
-            if req.files.is_empty() {
-                return Err(bad("add a file or folder to review"));
+            // With no files, the request has to say what to make.
+            if req.files.is_empty() && instruction.is_empty() {
+                return Err(bad("add a file or folder to review, or say what to create"));
             }
             let what = if instruction.is_empty() { "Suggest improvements to this code." } else { instruction };
             (format!("{SUGGEST_SYSTEM}\n\n{FORMAT}"), format!("{what}\n"))

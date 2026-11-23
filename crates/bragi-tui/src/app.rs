@@ -36,6 +36,8 @@ pub enum View {
     Settings,
     Themes,
     Help,
+    /// Past notices, newest first.
+    Notifications,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,8 @@ enum Job {
     AcceptDone(bool, Result<(), String>),
     Test(String, Result<TestReport, String>),
     Models(String, Result<Vec<String>, String>),
+    /// A `!command` finished.
+    Shell(Result<bragi_core::shell::ShellOutput, String>),
 }
 
 /// An answer streaming in.
@@ -146,6 +150,18 @@ pub struct App {
     serve_seen: Option<crate::serve::ServeState>,
     jobs: (mpsc::Sender<Job>, mpsc::Receiver<Job>),
     last_reload: Instant,
+    /// Prompts sent in chat, for Up and Down.
+    pub history: bragi_core::prompt_history::PromptHistory,
+    /// Every notice shown, kept (the toasts go away), and the row picked in its list.
+    pub notices: bragi_core::notifications::NotificationLog,
+    pub notices_sel: usize,
+    /// The profile folder (per-project prompt histories live in it).
+    home: PathBuf,
+    /// A `!command` running: its stop switch.
+    pub shell: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// Answers whose Thinking is shown the other way round from `show_thinking`
+    /// (by conversation id and message index).
+    pub thinking_flipped: HashSet<(String, usize)>,
 }
 
 /// A notice's kind: the colour and icon of its toast, and whether it waits for an answer.
@@ -232,8 +248,15 @@ impl App {
             serve_seen: None,
             jobs: mpsc::channel(),
             last_reload: Instant::now(),
+            history: bragi_core::prompt_history::PromptHistory::open(bragi_core::prompt_history::file_for(home, None)),
+            notices: bragi_core::notifications::NotificationLog::open(home),
+            notices_sel: 0,
+            home: home.to_path_buf(),
+            shell: None,
+            thinking_flipped: HashSet::new(),
             core,
         };
+        app.code.history = bragi_core::prompt_history::PromptHistory::open(bragi_core::prompt_history::file_for(home, Some(&app.code.root)));
         // A linked device goes online in the background: give it a moment before showing the
         // link screen.
         if !linked(&state) && !app.core.has_identity() {
@@ -467,7 +490,27 @@ impl App {
         match (&self.notice, &self.notice_since) {
             (None, _) => self.notice_since = None,
             (Some(n), Some((seen, _))) if n == seen => {}
-            (Some(n), _) => self.notice_since = Some((n.clone(), Instant::now())),
+            (Some(n), _) => {
+                // Every notice is kept: the list (F9) and, in code mode, the transcript.
+                let level = match self.notice_tone {
+                    Tone::Info => bragi_core::notifications::Level::Info,
+                    Tone::Ok => bragi_core::notifications::Level::Ok,
+                    Tone::Ask => bragi_core::notifications::Level::Ask,
+                    Tone::Error => bragi_core::notifications::Level::Error,
+                };
+                self.notices.push(level, n);
+                if self.view == View::Code || self.back == View::Code && self.code.phase != Phase::Compose {
+                    self.code.note(n, self.notice_tone == Tone::Error);
+                }
+                self.notice_since = Some((n.clone(), Instant::now()));
+                changed = true;
+            }
+        }
+        // A toast under the pointer stays (so it can be read); its clock restarts after.
+        if self.toast_hovered()
+            && let Some((_, at)) = &mut self.notice_since
+        {
+            *at = Instant::now();
         }
         if let Some((_, at)) = &self.notice_since
             && self.notice_tone != Tone::Ask
@@ -504,6 +547,23 @@ impl App {
                 Ok(_) => {}
                 Err(e) => self.fail(e),
             },
+            Job::Shell(r) => {
+                self.shell = None;
+                match r {
+                    Ok(out) => {
+                        let ok = out.ok();
+                        let line = format!("$ {} — {}", out.command, out.status());
+                        if self.view == View::Code {
+                            self.code.log.push(crate::code::Entry::Shell(out));
+                            self.scroll = 0;
+                        } else {
+                            self.shell_into_chat(out);
+                        }
+                        if ok { self.say(line) } else { self.fail(line) }
+                    }
+                    Err(e) => self.fail(e),
+                }
+            }
             Job::AcceptDone(matches, r) => {
                 self.say(match r {
                     Ok(()) if matches => "Linked.".to_string(),
@@ -575,7 +635,16 @@ impl App {
                 };
             }
             (Purpose::Code, Ok(())) => {
-                let note = self.code.answered(&s.text);
+                let thinking_ms = s.thought_ms.or_else(|| s.thinking_since.map(|t| t.elapsed().as_millis() as u64));
+                let (reasoning, body) =
+                    if s.reasoning.trim().is_empty() { bragi_core::think::split(&s.text) } else { (s.reasoning.clone(), s.text.clone()) };
+                self.code.log.push(crate::code::Entry::Answer {
+                    model: s.model.clone().unwrap_or_default(),
+                    text: bragi_core::code::prompt::explanation(&body),
+                    reasoning,
+                    thinking_ms: thinking_ms.filter(|_| !s.reasoning.is_empty()),
+                });
+                let note = self.code.answered(&body);
                 self.scroll = 0;
                 self.say(note);
             }
@@ -658,7 +727,7 @@ impl App {
         if view == self.view {
             return;
         }
-        const OVERLAYS: [View; 5] = [View::Help, View::Models, View::Status, View::Settings, View::Themes];
+        const OVERLAYS: [View; 6] = [View::Help, View::Models, View::Status, View::Settings, View::Themes, View::Notifications];
         if OVERLAYS.contains(&view) && !OVERLAYS.contains(&self.view) {
             self.back = self.view;
         }
@@ -680,13 +749,20 @@ impl App {
         if view == View::Themes {
             self.open_themes();
         }
+        if view == View::Notifications {
+            self.notices_sel = 0;
+            self.notices.seen();
+        }
         self.auto_link = false;
         self.view = view;
     }
 
     fn close(&mut self) {
-        self.view =
-            if matches!(self.view, View::Help | View::Models | View::Status | View::Settings | View::Themes) { self.back } else { View::Chat };
+        self.view = if matches!(self.view, View::Help | View::Models | View::Status | View::Settings | View::Themes | View::Notifications) {
+            self.back
+        } else {
+            View::Chat
+        };
     }
 
     pub fn on_key(&mut self, k: KeyEvent) {
@@ -711,6 +787,7 @@ impl App {
                 return;
             }
             KeyCode::F(1) => return if self.view == View::Help { self.close() } else { self.open(View::Help) },
+            KeyCode::F(9) => return if self.view == View::Notifications { self.close() } else { self.open(View::Notifications) },
             KeyCode::Char('l') if ctrl => return self.open(View::Link),
             KeyCode::F(2) => return self.open(View::Link),
             KeyCode::Char('o') if ctrl => return self.open(View::Models),
@@ -725,6 +802,9 @@ impl App {
             KeyCode::F(7) => return self.open(View::Themes),
             KeyCode::Char('k') if ctrl => {
                 self.show_thinking = !self.show_thinking;
+                // Ctrl-K sets every Thinking one way; clicks then flip single ones.
+                self.thinking_flipped.clear();
+                self.code.open_thinking.clear();
                 return self.say(if self.show_thinking { "Showing the reasoning." } else { "Reasoning folded." });
             }
             KeyCode::Char('n') if ctrl => {
@@ -791,6 +871,7 @@ impl App {
                 }
                 _ => {}
             },
+            View::Notifications => self.notices_key(k),
             View::Link => self.link_key(k, ctrl),
             View::Code => self.code_key(k, ctrl, alt),
             View::Chat => self.chat_key(k, ctrl, alt),
@@ -1130,6 +1211,8 @@ impl App {
         if k.code == KeyCode::Esc {
             if let Some(s) = &self.stream {
                 self.core.cancel(&s.request_id);
+            } else if let Some(stop) = &self.shell {
+                stop.store(true, std::sync::atomic::Ordering::Relaxed);
             } else if self.focus == Focus::Chats {
                 self.focus = Focus::Input;
             }
@@ -1143,12 +1226,78 @@ impl App {
             KeyCode::Char('j') if ctrl => self.input.insert("\n"),
             KeyCode::Enter => self.send(),
             KeyCode::Char('?') if self.input.is_empty() => self.open(View::Help),
-            KeyCode::Up if self.input.is_empty() => self.scroll += 1,
-            KeyCode::Down if self.input.is_empty() => self.scroll = self.scroll.saturating_sub(1),
+            KeyCode::Up if !ctrl && !alt && self.input.on_first_line() => {
+                if let Some(t) = self.history.up(self.input.text()) {
+                    self.input.set(&t);
+                } else if self.input.is_empty() {
+                    self.scroll += 1;
+                }
+            }
+            KeyCode::Down if !ctrl && !alt && self.input.on_last_line() => {
+                if let Some(t) = self.history.down() {
+                    self.input.set(&t);
+                } else if self.input.is_empty() {
+                    self.scroll = self.scroll.saturating_sub(1);
+                }
+            }
             _ => {
+                if matches!(k.code, KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete) {
+                    self.history.reset();
+                }
                 self.input.key(k);
             }
         }
+    }
+
+    /// The notifications list: Up/Down pick, c clears, Esc closes.
+    fn notices_key(&mut self, k: KeyEvent) {
+        let n = self.notices.entries().len();
+        match k.code {
+            KeyCode::Esc | KeyCode::Char('q') => self.close(),
+            KeyCode::Up | KeyCode::Char('k') => self.notices_sel = self.notices_sel.saturating_sub(1),
+            KeyCode::Down | KeyCode::Char('j') => self.notices_sel = (self.notices_sel + 1).min(n.saturating_sub(1)),
+            KeyCode::PageUp => self.notices_sel = self.notices_sel.saturating_sub(10),
+            KeyCode::PageDown => self.notices_sel = (self.notices_sel + 10).min(n.saturating_sub(1)),
+            KeyCode::Home | KeyCode::Char('g') => self.notices_sel = 0,
+            KeyCode::End | KeyCode::Char('G') => self.notices_sel = n.saturating_sub(1),
+            KeyCode::Char('y') | KeyCode::Enter => {
+                // Newest first on screen.
+                if let Some(e) = self.notices.entries().iter().rev().nth(self.notices_sel) {
+                    self.clipboard.push(e.text.clone());
+                }
+            }
+            KeyCode::Char('c') => {
+                self.notices.clear();
+                self.notices_sel = 0;
+            }
+            _ => {}
+        }
+    }
+
+    /// Whether the pointer is over the toast.
+    fn toast_hovered(&self) -> bool {
+        let Some((x, y)) = self.hover else { return false };
+        self.hits.hits().iter().any(|h| h.action == crate::hit::Action::DismissToast && crate::hit::contains(h.rect, x, y))
+    }
+
+    /// Runs a `!command` in `dir` in the background; its output comes back as [`Job::Shell`].
+    fn run_shell(&mut self, command: String, dir: PathBuf) {
+        if self.shell.is_some() {
+            return self.say("A command is still running; Esc stops it.");
+        }
+        let tx = self.jobs.0.clone();
+        let stop = bragi_core::shell::spawn(command.clone(), dir, bragi_core::shell::DEFAULT_TIMEOUT, move |r| {
+            let _ = tx.send(Job::Shell(r.map_err(|e| e.message)));
+        });
+        self.shell = Some(stop);
+        self.say(format!("Running {command}…"));
+    }
+
+    /// A command run from chat: its output goes in the input box as a block to send (or not).
+    fn shell_into_chat(&mut self, out: bragi_core::shell::ShellOutput) {
+        let t = out.transcript();
+        let fence = if t.contains("```") { "~~~~" } else { "```" };
+        self.input.set(&format!("{fence}console\n{t}{fence}\n"));
     }
 
     fn sidebar_key(&mut self, k: KeyEvent) {
@@ -1282,6 +1431,19 @@ impl App {
         if text.is_empty() {
             return;
         }
+        self.history.push(&text);
+        if bragi_core::shell::is_shell_line(&text) {
+            let Some(cmd) = bragi_core::shell::parse(&text).map(str::to_string) else {
+                return self.fail("usage: !COMMAND or /shell COMMAND");
+            };
+            self.input.take();
+            let dir = self.code.root.clone();
+            return self.run_shell(cmd, dir);
+        }
+        if text == "/notifications" || text == "/notices" {
+            self.input.take();
+            return self.open(View::Notifications);
+        }
         if let Some(path) = text.strip_prefix("/attach ") {
             match Attachment::from_path(&crate::code::expand(path.trim())) {
                 Ok(a) => {
@@ -1375,6 +1537,25 @@ impl App {
                 }
             }
             Phase::Compose => match k.code {
+                KeyCode::Esc if self.shell.is_some() => {
+                    if let Some(stop) = &self.shell {
+                        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                    }
+                }
+                KeyCode::Up if !ctrl && !alt && self.input.on_first_line() => {
+                    if let Some(t) = self.code.history.up(self.input.text()) {
+                        self.input.set(&t);
+                    } else if self.input.is_empty() {
+                        self.scroll += 1;
+                    }
+                }
+                KeyCode::Down if !ctrl && !alt && self.input.on_last_line() => {
+                    if let Some(t) = self.code.history.down() {
+                        self.input.set(&t);
+                    } else if self.input.is_empty() {
+                        self.scroll = self.scroll.saturating_sub(1);
+                    }
+                }
                 KeyCode::Esc if self.input.is_empty() => self.view = View::Chat,
                 KeyCode::Esc => {
                     self.input.take();
@@ -1415,9 +1596,15 @@ impl App {
             Ok(c) => c,
             Err(e) => return self.fail(e),
         };
+        self.code.history.push(&line);
         self.input.take();
         let note = match cmd {
             Command::Nothing => return,
+            Command::Shell(c) => {
+                let dir = self.code.root.clone();
+                return self.run_shell(c, dir);
+            }
+            Command::Notifications => return self.open(View::Notifications),
             Command::Add(paths) => self.code.add(&paths),
             Command::Drop(what) => self.code.drop_path(&what),
             Command::Pick => return self.open_picker(),
@@ -1428,12 +1615,11 @@ impl App {
             Command::Root(dir) => {
                 let dir = crate::code::expand(&dir);
                 let dir = if dir.is_absolute() { dir } else { self.code.root.join(dir) };
-                if dir.is_dir() {
-                    self.code.root = dir;
-                    self.code.context.clear();
-                    self.code.refresh().map(|_| format!("Working in {}", self.code.root.display()))
-                } else {
+                if dir.exists() && !dir.is_dir() {
                     Err(format!("{} isn't a folder", dir.display()))
+                } else {
+                    let home = self.home.clone();
+                    self.code.set_root(dir, &home)
                 }
             }
             Command::Undo { force } => self.code.undo(force),

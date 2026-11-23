@@ -154,11 +154,10 @@ impl Picker {
     }
 
     /// What is on screen, in order: the tree with its folders open or shut, or, while a filter
-    /// is set, the files that match it, best first.
+    /// is set, the files and folders that match it, best first.
     pub fn rows(&self) -> Vec<&Node> {
         if !self.filter.trim().is_empty() {
-            let mut hits: Vec<(i64, &Node)> =
-                self.nodes.iter().filter(|n| !n.is_dir).filter_map(|n| fuzzy(&self.filter, &n.path).map(|s| (s, n))).collect();
+            let mut hits: Vec<(i64, &Node)> = self.nodes.iter().filter_map(|n| fuzzy(&self.filter, &n.path).map(|s| (s, n))).collect();
             hits.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.path.cmp(&b.1.path)));
             return hits.into_iter().map(|(_, n)| n).collect();
         }

@@ -36,6 +36,16 @@ pub enum Action {
     FormField(usize),
     /// A proposed file in code review.
     CodeFile(usize),
+    /// A theme in the theme picker; a click on the selected one (or a double click) uses it.
+    ThemeRow(usize),
+    /// A row of the file picker; a click on the selected one (or a double click) opens it.
+    FileRow(usize),
+    /// A notice in the notification list; a double click copies it.
+    NoticeRow(usize),
+    /// The Thinking header of message `i` in the open chat: fold or unfold it.
+    Thinking(usize),
+    /// The Thinking header of code-mode transcript entry `i`.
+    CodeThinking(usize),
     /// The message box and the chat pane: type here.
     FocusInput,
     /// Close the toast.
@@ -70,6 +80,9 @@ pub enum Wheel {
     Settings,
     /// Hunks in code review.
     Hunks,
+    Themes,
+    Files,
+    Notices,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

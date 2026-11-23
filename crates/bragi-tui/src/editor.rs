@@ -53,6 +53,36 @@ impl Editor {
         (line, col)
     }
 
+    /// Whether the cursor is on the first line (Up there goes to the prompt history).
+    pub fn on_first_line(&self) -> bool {
+        self.line_col().0 == 0
+    }
+
+    /// Whether the cursor is on the last line (Down there goes to the prompt history).
+    pub fn on_last_line(&self) -> bool {
+        self.line_col().0 == self.text.matches('\n').count()
+    }
+
+    /// Moves the cursor a line up or down, keeping its column where the line allows; returns
+    /// whether it moved.
+    pub fn line_step(&mut self, up: bool) -> bool {
+        let (line, col) = self.line_col();
+        let lines: Vec<&str> = self.text.split('\n').collect();
+        let target = if up {
+            match line.checked_sub(1) {
+                Some(l) => l,
+                None => return false,
+            }
+        } else if line + 1 < lines.len() {
+            line + 1
+        } else {
+            return false;
+        };
+        let before: usize = lines[..target].iter().map(|l| l.chars().count() + 1).sum();
+        self.cursor = before + col.min(lines[target].chars().count());
+        true
+    }
+
     /// Handles an editing key; returns whether it was one.
     pub fn key(&mut self, k: KeyEvent) -> bool {
         let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
@@ -144,5 +174,23 @@ mod tests {
         assert_eq!(e.line_col(), (1, 12));
         assert_eq!(e.take(), "\nnext    lineéllXo");
         assert!(e.is_empty());
+    }
+
+    #[test]
+    fn lines_and_steps() {
+        let mut e = Editor::default();
+        e.set("first line\nsecond\nthird one");
+        assert!(e.on_last_line() && !e.on_first_line());
+        assert!(e.line_step(true));
+        assert_eq!(e.line_col(), (1, 6));
+        assert!(e.line_step(true));
+        assert_eq!(e.line_col(), (0, 6));
+        assert!(e.on_first_line());
+        assert!(!e.line_step(true));
+        assert!(e.line_step(false) && e.line_step(false));
+        assert!(!e.line_step(false));
+        let mut one = Editor::default();
+        one.set("one line");
+        assert!(one.on_first_line() && one.on_last_line());
     }
 }

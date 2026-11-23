@@ -112,6 +112,55 @@ impl App {
                     self.code.hunk = 0;
                 }
             }
+            Action::ThemeRow(i) if i < self.themes.rows.len() && self.themes.edit.is_none() => {
+                if double || self.themes.sel == i {
+                    self.themes.sel = i;
+                    self.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                } else {
+                    self.themes.sel = i;
+                    self.preview();
+                }
+            }
+            Action::FileRow(i) => {
+                let Some(p) = self.picker.as_mut() else { return };
+                if i >= p.rows().len() {
+                    return;
+                }
+                let again = p.sel == i;
+                p.sel = i;
+                if double || again {
+                    let dir = p.current().is_some_and(|n| n.is_dir);
+                    if dir {
+                        p.toggle_dir();
+                    } else {
+                        self.on_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE));
+                        // Space moves on to the next file; a click stays on the one clicked.
+                        if let Some(p) = self.picker.as_mut() {
+                            p.sel = i;
+                        }
+                    }
+                }
+            }
+            Action::NoticeRow(i) if i < self.notices.entries().len() => {
+                self.notices_sel = i;
+                if double {
+                    self.on_key(KeyEvent::new(KeyCode::Char('y'), KeyModifiers::NONE));
+                    self.say("Copied to the terminal's clipboard (OSC 52).");
+                }
+            }
+            Action::Thinking(i) => {
+                if let Some(c) = &self.current {
+                    let key = (c.id.clone(), i);
+                    if !self.thinking_flipped.remove(&key) {
+                        self.thinking_flipped.insert(key);
+                    }
+                }
+            }
+            Action::CodeThinking(i) => {
+                if !self.code.open_thinking.remove(&i) {
+                    self.code.open_thinking.insert(i);
+                }
+            }
             Action::FocusInput => {
                 if self.view == View::Chat {
                     self.focus = Focus::Input;
@@ -122,7 +171,8 @@ impl App {
                     self.notice = None;
                 }
             }
-            Action::PickerTarget(_) | Action::PickerModel(_) | Action::SettingsRow(_) | Action::Noop => {}
+            Action::PickerTarget(_) | Action::PickerModel(_) | Action::SettingsRow(_) | Action::ThemeRow(_) | Action::NoticeRow(_) | Action::Noop => {
+            }
         }
     }
 
@@ -190,6 +240,17 @@ impl App {
                     self.code.step(!up);
                 }
             }
+            Wheel::Themes if self.themes.edit.is_none() => {
+                self.themes.sel = step(self.themes.sel, self.themes.rows.len().saturating_sub(1));
+                self.preview();
+            }
+            Wheel::Themes => {}
+            Wheel::Files => {
+                if let Some(p) = self.picker.as_mut() {
+                    p.step(if up { -1 } else { 1 });
+                }
+            }
+            Wheel::Notices => self.notices_sel = step(self.notices_sel, self.notices.entries().len().saturating_sub(1)),
         }
         true
     }

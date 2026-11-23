@@ -30,10 +30,14 @@ pub mod markdown;
 pub mod mcp_servers;
 pub mod models;
 mod models_core;
+pub mod notifications;
 pub mod openai;
+pub mod project;
+pub mod prompt_history;
 pub mod reactions;
 pub mod secrets;
 pub mod sessions;
+pub mod shell;
 mod targets;
 pub mod think;
 

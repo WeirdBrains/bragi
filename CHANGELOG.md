@@ -13,6 +13,12 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Added
 
+- The terminal app keeps a prompt history: Up and Down at the first or last line of the message box walk back through what you sent (and give back what you were typing), shell style, without repeats in a row. Chat has one history; code mode has one per project folder. Up to 1000 entries are kept in the profile.
+- Past notifications: every toast is kept (up to 200, in the profile) and listed newest first in a window opened with F9, `/notifications` or the bell in the header, which shows how many are new. A toast under the pointer stays until the pointer leaves.
+- Shell commands from the terminal app: `!cmd` or `/shell cmd` runs in the project folder; its output and exit status stay in the code transcript (in chat, they come back in the message box to send or not). Esc stops a running command.
+- `/root DIR` in code mode makes a missing folder (or fills an empty one) with a starter `README.md` and `.gitignore`; existing files are never touched. A suggestion can be asked with no files in the context (to create them).
+- Folders, not only files: `/attach DIR` sends a folder's text files as one attachment (respecting `.gitignore` and the size limits), and the file picker's filter matches folders too.
+- In the terminal app, every list takes the mouse: themes, the file picker and the notifications as well as chats, models and settings. A click picks a row; a click on the picked row (or a double click) uses it, and the wheel scrolls.
 - A Models screen on the desktop and phone apps: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting node or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's identity; nodes accept it only from devices linked to their owner.
 - See and save the files in a chat, on desktop and phone. Each file attached to a message (text, image or audio) and each file an answer writes (a code block that names its file, such as ```` ```python hello.py ````, or an embedded image) gets a card under its message with its name, type and size, a preview (the first lines of a text file, or the picture), and Save. On desktop, Save opens the system save dialog. On the phone, it opens the system save sheet.
 - Audio files in a chat play on their card, on desktop and phone. Each card has Play/Pause, a seek bar and the elapsed and total time, and the total shows before the clip loads. Only one clip plays at a time, and it stops when you switch chats. Phones play through the system player and audio session, so calls and other apps pause it. The desktop plays through the system audio output; with no sound device, the controls still work, silently. On Linux the desktop app now needs ALSA (libasound).
@@ -28,6 +34,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Fixed
 
+- Code mode in the terminal app no longer clears itself: every ask, answer, shell run and notice stays in one scrollable transcript, and each answer's Thinking is kept, folded to its title line, and opens with a click (Ctrl-K still opens or folds them all). Chat answers' Thinking also opens one at a time with a click.
+- Thinking from an agent task is kept with its answer in the history.
 - Code mode fits its prompt to the model's context window: files that don't fit are left out (and named), and a "request exceeds the available context size" refusal is retried once with fewer files or shown as a plain message instead of raw JSON.
 
 ## [0.1.1] - 2026-11-21
