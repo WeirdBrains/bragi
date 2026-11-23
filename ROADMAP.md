@@ -4,7 +4,7 @@
 
 Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc.
 
-Updated 2026-11-21. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
+Updated 2026-11-23. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
 
 ## B1 Core and both shells (Done)
 
@@ -20,7 +20,7 @@ Weirdnet crates: `weirdnet-agent`.
 
 ## B3 Platforms (In progress)
 
-iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight) and signing with a release key.
+iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight), signing with a release key, and finishing the F-Droid draft recipe.
 
 Weirdnet crates: none new.
 
@@ -32,13 +32,13 @@ Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 
 ## B5 Breadth (In progress)
 
-Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Next: BSD support, once the desktop toolkit builds there.
+Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. The BSD desktop window does not build yet, so on BSD it is the terminal app only.
 
 Weirdnet crates: `weirdnet-agent`.
 
-## B6 Your own endpoints (In progress)
+## B6 Your own endpoints (Done)
 
-Any OpenAI-compatible server, with an optional API key, next to the Weirdnet pool or as a fallback when it is down. Settings add, edit, delete, test and reorder both Weirdnet links and endpoints; keys are sealed on the device and never synced. Each chat is bound to one target and keeps its own history, and chats nest in folders. Built in the core and the Flutter app (desktop and phone); the GPUI desktop shell is next.
+Any OpenAI-compatible server, with an optional API key, next to the Weirdnet pool or as a fallback when it is down. Settings add, edit, delete, test and reorder both Weirdnet links and endpoints; keys are sealed on the device and never synced. Each chat is bound to one target and keeps its own history, and chats nest in folders. Built in the core, the Flutter app (desktop and phone) and the GPUI desktop shell.
 
 Weirdnet crates: `weirdnet-agent`.
 
@@ -47,3 +47,9 @@ Weirdnet crates: `weirdnet-agent`.
 A Models screen on both shells: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting one or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's own identity, and the nodes accept it only from devices linked to their owner; a device a node refuses is shown as needing an owner device. Built in the core, the Flutter app and the GPUI desktop shell, and tried against demo nodes and a mock Hub. Next: a check against a real Ymir node.
 
 Weirdnet crates: `weirdnet-backends`, `weirdnet-model`.
+
+## v0.2 Chat, code and the desktop link (Done)
+
+Chat and code are modes of one conversation (Tab to switch). A desktop linker with QR pairing over Weirdnet lets the phone's code mode work against a paired desktop. Also shipped in v0.2.1: project scaffolding, a shell-out command, prompt history, a notification log, mouse support in the terminal app, and thinking blocks that stay collapsed and can be expanded.
+
+Weirdnet crates: none new.
