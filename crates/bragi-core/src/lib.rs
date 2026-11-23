@@ -8,6 +8,8 @@
 //! - History on the shared context store, so conversations follow the user between devices.
 //! - Code suggestions and rewrites ([`code`]): prompts from an editor's context or from files and folders,
 //!   reviewable hunk diffs and an undo journal, shared by the editor extension and the terminal app.
+//! - The desktop link ([`link`]): a paired phone runs code mode on a desktop's project, directly or
+//!   through Weirdnet.
 
 pub mod agent;
 pub mod appearance;
@@ -26,6 +28,7 @@ pub mod files;
 pub mod highlight;
 pub mod history;
 pub mod identity;
+pub mod link;
 pub mod markdown;
 pub mod mcp_servers;
 pub mod models;

@@ -14,6 +14,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Added
 
+- The desktop link: `bragi linker pair` shares this computer's project folders with Bragi on a phone. It shows a QR code (and a code to type) that pins the desktop's key and expires after five minutes or one use. Paired phones read and write files there, gather code context, apply and undo changes, and run shell commands as you with output streamed back and a stop button. They connect directly over the LAN or VPN or through the Weirdnet relay, end-to-end encrypted either way. Nothing outside the shared folders is reachable. `bragi linker devices`, `revoke`, `roots` and `confirm` manage it. See [docs/desktop-link.md](docs/desktop-link.md).
+
 - The terminal app keeps a prompt history: Up and Down at the first or last line of the message box walk back through what you sent (and give back what you were typing), shell style, without repeats in a row. Chat has one history; code mode has one per project folder. Up to 1000 entries are kept in the profile.
 - Past notifications: every toast is kept (up to 200, in the profile) and listed newest first in a window opened with F9, `/notifications` or the bell in the header, which shows how many are new. A toast under the pointer stays until the pointer leaves.
 - Shell commands from the terminal app: `!cmd` or `/shell cmd` runs in the project folder, and its output and exit status are kept in the conversation. Esc stops a running command.

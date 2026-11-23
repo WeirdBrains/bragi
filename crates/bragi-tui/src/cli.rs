@@ -33,6 +33,10 @@ usage:
   bragi-tui link [CODE | NODE-ADDRESS] [--yes]     link this terminal: show a code to open on a linked
                                                    device, open a code shown elsewhere, or add a node
                                                    address (ymirctl pool addresses)
+  bragi-tui linker pair|serve|devices|revoke|roots|confirm
+                                                   share this computer's projects with Bragi on your
+                                                   phone: a QR code to pair, then code mode on the phone
+                                                   runs here (bragi-tui linker help)
   bragi-tui status                                 this device, inference nodes and models
   bragi-tui code --rewrite FILE[:FROM-TO] [options] HOW
   bragi-tui code --suggest [options] [WHAT]        suggestions across the --context files
@@ -94,6 +98,8 @@ pub enum Cmd {
     },
     /// `mcp-servers …`: the words after it, run by [`crate::mcp_cli`].
     McpServers(Vec<String>),
+    /// `linker …`: the desktop link for a phone, run by [`crate::linker_cli`].
+    Linker(Vec<String>),
     Version,
     Help,
 }
@@ -124,6 +130,22 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         let rest = args[at + 1..].to_vec();
         crate::mcp_cli::parse(rest.clone())?;
         out.command = Cmd::McpServers(rest);
+        return Ok(out);
+    }
+    // `bragi-tui [--home DIR] linker …`: the same, for the desktop link.
+    if let Some(at) = args.iter().position(|a| a == "linker")
+        && args[..at].iter().all(|a| !a.starts_with("--") || a == "--home")
+        && args[..at].iter().filter(|a| !a.starts_with("--")).count() <= args[..at].iter().filter(|a| *a == "--home").count()
+    {
+        let mut it = args[..at].iter();
+        while let Some(a) = it.next() {
+            if a == "--home" {
+                out.launch.home = it.next().map(|h| h.into());
+            }
+        }
+        let rest = args[at + 1..].to_vec();
+        crate::linker_cli::parse(rest.clone())?;
+        out.command = Cmd::Linker(rest);
         return Ok(out);
     }
     let mut words: Vec<String> = Vec::new();
@@ -226,6 +248,7 @@ pub fn run(args: Args) -> i32 {
         Cmd::McpServers(rest) => {
             crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask)))
         }
+        Cmd::Linker(rest) => crate::linker_cli::parse(rest).and_then(|sub| crate::linker_cli::run(&home_of(&args), sub)),
         Cmd::Link { arg, yes } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
