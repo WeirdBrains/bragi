@@ -120,6 +120,14 @@ fn bad(msg: impl Into<String>) -> CoreError {
     CoreError::new(ErrorKind::BadRequest, msg)
 }
 
+/// How one context file appears in the prompt: line-numbered, in its own fence. [`build`] joins
+/// these, so a file's share of the prompt is exactly this block (see `budget`).
+pub(crate) fn file_block(f: &ContextFile) -> String {
+    let body = numbered(&f.text);
+    let fence = fence_for(&body);
+    format!("\n{fence}text path={}\n{body}{fence}\n", f.path)
+}
+
 fn numbered(text: &str) -> String {
     let width = lines(text).len().max(1).to_string().len();
     let mut s = String::with_capacity(text.len() + text.len() / 4);
@@ -160,9 +168,7 @@ pub fn build(req: &CodeRequest) -> Result<Vec<PromptMessage>> {
     let instruction = req.instruction.trim();
     let mut files = String::from("The files (line-numbered for reference):\n");
     for f in &req.files {
-        let body = numbered(&f.text);
-        let fence = fence_for(&body);
-        files.push_str(&format!("\n{fence}text path={}\n{body}{fence}\n", f.path));
+        files.push_str(&file_block(f));
     }
     let (system, ask) = match &req.task {
         CodeTask::Suggest => {

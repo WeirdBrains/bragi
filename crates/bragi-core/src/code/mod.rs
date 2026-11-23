@@ -13,21 +13,26 @@
 //!
 //! 1. [`context::gather`] reads the files and directories the user picked (respecting
 //!    `.gitignore`, skipping binaries, secrets and oversize files).
-//! 2. [`prompt::build`] turns a [`CodeRequest`] into prompt messages for
+//! 2. [`budget::fit`] leaves out the files that don't fit the model's context window (in tokens,
+//!    with room kept for the answer), and [`budget::Overflow`] reads a server's refusal when the
+//!    window was smaller than the catalog said.
+//! 3. [`prompt::build`] turns a [`CodeRequest`] into prompt messages for
 //!    [`Core::complete`](crate::Core::complete).
-//! 3. [`prompt::parse_edits`] reads the answer into [`ProposedEdit`]s, and
+//! 4. [`prompt::parse_edits`] reads the answer into [`ProposedEdit`]s, and
 //!    [`prompt::proposals`] turns those into one [`FileDiff`] per file.
-//! 4. The shell shows each diff's hunks; the user accepts or rejects each one, and
+//! 5. The shell shows each diff's hunks; the user accepts or rejects each one, and
 //!    [`FileDiff::apply`] builds the file with only the accepted hunks.
-//! 5. [`Journal::apply`] writes the files, keeping a copy of what was there, and
+//! 6. [`Journal::apply`] writes the files, keeping a copy of what was there, and
 //!    [`Journal::undo_last`] puts it back.
 
+pub mod budget;
 pub mod context;
 pub mod diff;
 pub mod edit;
 mod editor;
 pub mod prompt;
 
+pub use budget::{Fitted, Overflow, TokenBudget, fit};
 pub use context::{ContextFile, Gathered, Limits, gather};
 pub use diff::{FileDiff, Hunk, HunkLine, LineTag, SideBySideRow};
 pub use edit::{Applied, FileChange, Journal, JournalEntry};

@@ -2,6 +2,19 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-22: code mode fits the model's context window (branch `fix/code-context-budget`)
+
+**What changed**
+- Bug: code mode only capped its context in bytes (512 KiB), never in tokens, so 22 files (215 KiB of Python) went out as a ~92k-token prompt to a model served with a 32k window, and the server's raw `exceed_context_size_error` JSON was shown.
+- [`budget.rs`](crates/bragi-core/src/code/budget.rs): a high-side token estimate (about 2.5 bytes per token on the built prompt), a `TokenBudget` per window (a quarter, 1k to 8k, kept for the answer, plus a 5% margin), and `fit`, which leaves out files in order until the prompt fits. A rewrite's target is never left out; if it alone is too big, the request is refused with the numbers. `Overflow` reads llama.cpp, vLLM and OpenAI context-size refusals.
+- [`catalog.rs`](crates/bragi-core/src/catalog.rs): `min_context` and `CatalogView::context_for`, the smallest window among the nodes serving a model (the picker still shows the largest).
+- Terminal app ([`code.rs`](crates/bragi-tui/src/code.rs), [`app.rs`](crates/bragi-tui/src/app.rs), [`ui.rs`](crates/bragi-tui/src/ui.rs)): requests are fitted to the catalog's window before they go out, with a note naming the files left out. The context panel and the file picker show the estimate against the model's window. On a context-size refusal it learns the server's window and token ratio, asks again once with fewer files, and otherwise shows a plain message.
+- MCP code tools ([`code.rs`](crates/bragi-mcp/src/code.rs)): the same fit when the catalog lists a window (files left out are listed under `skipped`), and a plain message for a refusal.
+
+**Tests**: `budget` unit tests (estimate, budget, the reported 22-file case, rewrite target, nothing fitting, ratio, refusal parsing), `catalog` (smallest window), and terminal-app tests for fitting and the one retry. `cargo fmt --check`; `cargo clippy --all-targets -- -D warnings` and `cargo test` on `bragi-core`, `bragi-tui` and `bragi-mcp` (216 passed; scoped, with debug info off and `-j 2`, because a full workspace test link saturated the build disk). An earlier `cargo clippy --workspace --all-targets -- -D warnings` passed before the MCP change. No Dart changed, so `flutter analyze` and `flutter test` were not run.
+
+**Not tested**: against a live Ymir node serving Inkling 2 Mini. Endpoints with no catalog entry have no known window until a refusal teaches it (no `/props` query yet). Chat mode doesn't trim history to the window yet.
+
 ## 2026-11-22: LF-37, outside MCP servers for chats (branch `feature/mcp-client`)
 
 **What changed**

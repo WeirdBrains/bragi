@@ -121,12 +121,27 @@ impl BragiTools {
         Journal::new(self.options().journal.clone())
     }
 
-    async fn propose(&self, req: CodeRequest, args: &Value, skipped: Vec<(String, String)>) -> Result<CallToolResult, CoreError> {
-        let messages = prompt::build(&req)?;
+    async fn propose(&self, req: CodeRequest, args: &Value, mut skipped: Vec<(String, String)>) -> Result<CallToolResult, CoreError> {
         let model = weirdnet_mcp::args::opt_string(args, "model").filter(|m| !m.is_empty()).map(str::to_string);
         let target = self.target_arg(args, model.as_deref())?;
+        // Fit the files to the model's context window when the pool's catalog lists it.
+        let catalog = self.core().state().catalog;
+        let named = model.clone().or_else(|| catalog.default_model().map(str::to_string));
+        let req = match named.as_deref().and_then(|m| catalog.context_for(m).map(|c| (m, c))) {
+            Some((m, c)) => {
+                let f = bragi_core::code::fit(&req, bragi_core::code::TokenBudget::for_context(c), m)?;
+                skipped.extend(f.dropped.iter().map(|(p, n)| (p.clone(), format!("doesn't fit {m}'s {c}-token context (~{n} tokens)"))));
+                f.request
+            }
+            None => req,
+        };
+        let messages = prompt::build(&req)?;
         let handle = self.core().complete_to(messages, model, target)?;
-        let answer = collect::answer(self.core(), handle, self.options().timeout).await?;
+        let answer =
+            collect::answer(self.core(), handle, self.options().timeout).await.map_err(|e| match bragi_core::code::Overflow::parse(&e.message) {
+                Some(o) => CoreError::new(e.kind, o.message(named.as_deref().unwrap_or("the model"))),
+                None => e,
+            })?;
         let edits = parse_edits(&answer.text, &req.task)?;
         let diffs: Vec<FileDiff> = proposals(self.root(), &req.files, &edits)?.into_iter().filter(|d| !d.is_empty()).collect();
         let why = explanation(&answer.text);

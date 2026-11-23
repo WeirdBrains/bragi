@@ -22,6 +22,10 @@ pub struct ModelInfo {
     pub replicas: u32,
     pub tokens_per_sec: Option<f32>,
     pub context: Option<u32>,
+    /// The smallest context window any node serving it lists: what a request must fit, since
+    /// the pool may send it to any of them (failover included).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_context: Option<u32>,
     /// The inference nodes that serve it, best first (warm before loadable).
     #[serde(default)]
     pub nodes: Vec<String>,
@@ -79,6 +83,7 @@ fn info(m: &CatalogModel) -> ModelInfo {
         replicas: m.replicas,
         tokens_per_sec: m.tokens_per_sec,
         context: m.context,
+        min_context: m.context,
         nodes: Vec::new(),
         standin: None,
         vision: m.inputs.vision,
@@ -127,6 +132,10 @@ impl CatalogView {
                             (a, b) => a.or(b),
                         };
                         i.context = i.context.max(m.context);
+                        i.min_context = match (i.min_context, m.context) {
+                            (Some(a), Some(b)) => Some(a.min(b)),
+                            (a, b) => a.or(b),
+                        };
                         i.vision |= m.inputs.vision;
                         i.audio |= m.inputs.audio;
                         if i.standin.is_none() {
@@ -167,8 +176,33 @@ impl CatalogView {
         }
     }
 
+    /// The context window a request to `model` must fit (the smallest its nodes list), if known.
+    pub fn context_for(&self, model: &str) -> Option<u32> {
+        self.models.iter().find(|m| m.id == model).and_then(|m| m.min_context.or(m.context))
+    }
+
     /// The nodes to ask for `model`, best first (empty if no node lists it).
     pub fn nodes_for(&self, model: &str) -> Vec<String> {
         self.models.iter().find(|m| m.id == model).map(|m| m.nodes.clone()).unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_request_must_fit_the_smallest_window_among_the_nodes() {
+        let at = |ctx: Option<u32>| {
+            let mut m = CatalogModel::new("inkling-2-mini", Purpose::Chat, ModelState::Warm);
+            m.context = ctx;
+            Catalog::new(1, vec![m])
+        };
+        let v = CatalogView::merge(&[("a".into(), at(Some(131_072))), ("b".into(), at(Some(32_768))), ("c".into(), at(None))]);
+        assert_eq!(v.models[0].context, Some(131_072), "the picker shows the largest");
+        assert_eq!(v.context_for("inkling-2-mini"), Some(32_768));
+        assert_eq!(v.context_for("other"), None);
+        let v = CatalogView::merge(&[("c".into(), at(None))]);
+        assert_eq!(v.context_for("inkling-2-mini"), None);
     }
 }

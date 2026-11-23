@@ -13,11 +13,12 @@ use bragi_core::{
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::{mpsc as tmpsc, watch};
 
-use crate::code::{CodeState, Command, Phase};
+use crate::code::{AfterError, CodeState, Command, Phase};
 use crate::editor::Editor;
 use crate::hit::HitMap;
 use crate::settings::{self, Form, Settings};
 use crate::tree::{self, Row};
+use bragi_core::code::CodeRequest;
 
 mod themes_screen;
 pub use themes_screen::{Ask, Confirm, EditState, ThemeScreen, parse_hex};
@@ -578,9 +579,19 @@ impl App {
                 self.scroll = 0;
                 self.say(note);
             }
-            (Purpose::Code, Err((kind, m))) => {
+            (Purpose::Code, Err((ErrorKind::Cancelled, _))) => {
                 self.code.failed();
-                self.say(if kind == ErrorKind::Cancelled { "Stopped.".to_string() } else { m });
+                self.say("Stopped.".to_string());
+            }
+            (Purpose::Code, Err((_, m))) => {
+                self.code.failed();
+                match self.code.after_error(&m) {
+                    AfterError::Retry(req, why) => match self.code_send(req) {
+                        Ok(()) => self.say(format!("{why}…")),
+                        Err(e) => self.fail(e),
+                    },
+                    AfterError::Fail(m) => self.fail(m),
+                }
             }
         }
     }
@@ -1380,6 +1391,23 @@ impl App {
         }
     }
 
+    /// The model a code request goes to: the endpoint's, the picked one, or the catalog's default.
+    pub fn code_model(&self) -> Option<String> {
+        if let Some(Target::Endpoint { model, .. }) = self.effective_target() {
+            return (!model.is_empty()).then_some(model);
+        }
+        self.model.clone().or_else(|| self.state.catalog.default_model().map(str::to_string))
+    }
+
+    /// Sends an already fitted code request and follows its answer.
+    fn code_send(&mut self, req: CodeRequest) -> Result<(), String> {
+        let target = self.effective_target();
+        let h = CodeState::messages(&req).and_then(|m| self.core.complete_to(m, self.model.clone(), target).map_err(|e| e.message))?;
+        self.code.start(req);
+        self.follow(h, Purpose::Code);
+        Ok(())
+    }
+
     /// Runs the code-mode line in the input box.
     pub fn code_submit(&mut self) {
         let line = self.input.text().to_string();
@@ -1414,15 +1442,19 @@ impl App {
                     return self.say("An answer is still coming; Esc stops it.");
                 }
                 let title = bragi_core::code::prompt::title(&req);
-                let target = self.effective_target();
-                match CodeState::messages(&req).and_then(|m| self.core.complete_to(m, self.model.clone(), target).map_err(|e| e.message)) {
-                    Ok(h) => {
-                        self.code.start(req);
-                        self.follow(h, Purpose::Code);
-                        Ok(format!("{title} — asking {}…", self.model_label()))
-                    }
-                    Err(e) => Err(e),
-                }
+                let model = self.code_model();
+                let listed = model.as_deref().and_then(|m| self.state.catalog.context_for(m));
+                let (req, left_out) = match model.as_deref() {
+                    Some(m) => match self.code.prepare(req, m, listed) {
+                        Ok(x) => x,
+                        Err(e) => return self.fail(e),
+                    },
+                    None => (req, String::new()),
+                };
+                self.code_send(req).map(|()| {
+                    let asking = format!("{title} — asking {}…", self.model_label());
+                    if left_out.is_empty() { asking } else { format!("{left_out}. {asking}") }
+                })
             }
         };
         match note {
