@@ -31,6 +31,7 @@ pub mod diff;
 pub mod edit;
 mod editor;
 pub mod prompt;
+pub mod turns;
 
 pub use budget::{Fitted, Overflow, TokenBudget, fit};
 pub use context::{ContextFile, Gathered, Limits, gather};

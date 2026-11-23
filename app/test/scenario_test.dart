@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:bragi/src/api.dart';
 import 'package:bragi/src/app.dart';
 import 'package:bragi/src/controller.dart';
+import 'package:bragi/src/sessions_ui.dart';
 import 'package:bragi/src/theme.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
@@ -342,8 +343,15 @@ void main() {
 
     final before = c.conversations.length;
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
-    await until('the drawer', () => shown('delete-conv-${target.id}'));
+    await until('the drawer', () => shown('models'));
     await tester.pump(const Duration(milliseconds: 400));
+    // The oldest conversation is at the end of the history list, below the fold on a phone.
+    await tester.scrollUntilVisible(
+      find.byKey(Key('delete-conv-${target.id}')),
+      120,
+      scrollable: find.descendant(of: find.byType(SessionsTree), matching: find.byType(Scrollable)).first,
+    );
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.ensureVisible(find.byKey(Key('delete-conv-${target.id}')));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(Key('delete-conv-${target.id}')));

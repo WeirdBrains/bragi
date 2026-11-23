@@ -18,9 +18,16 @@ bragi linker roots add ~/src/myapp     # share a project folder (repeat for more
 bragi linker pair                      # show a QR code and a typed code, then keep serving
 ```
 
-On the phone: open code mode, choose **Pair with desktop**, and scan the QR code (or type the
-code under it). From then on, the phone lists the desktop in code mode. Pick it and a shared folder
-as the project root.
+On the phone: switch the chat to **Code** (the toggle in the top bar), tap **Open a project**, choose
+**Pair with desktop**, and scan the QR code (or type the code under it). The camera is asked for
+once. From then on, **Open a project** lists the desktop and its shared folders: pick one, and
+optionally a folder inside it (a missing one is made with a starter readme). The same screen sets
+the route (**Auto**, **Direct only** or **Weirdnet first**) and unpairs desktops.
+
+In code mode the phone picks context files from the desktop folder, asks for changes in the same
+conversation as the chat, reviews them hunk by hunk, applies or undoes them on the desktop, and runs
+shell commands there (**Run**), with the output streamed back and a stop button. On a computer the
+app can also open a local folder.
 
 Other commands:
 

@@ -9,12 +9,14 @@
 
 pub mod client;
 pub mod confine;
+pub mod project;
 pub mod proto;
 pub mod server;
 pub mod workspace;
 
 pub use client::{DesktopView, LinkClient, Route};
 pub use confine::Root;
+pub use project::{CodeSession, Project};
 pub use proto::{Entry, Hello, PairLink, RootInfo, ShellFrame, ShellRequest, ShortCode, WireChange};
 pub use server::{Confirm, DeviceView, LinkEvent, LinkServer, Offer, ServerOptions, Settings, ShellAsk};
 

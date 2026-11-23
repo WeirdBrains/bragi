@@ -18,6 +18,9 @@ use crate::frb_generated::StreamSink;
 
 struct Running {
     core: Core,
+    /// This device's Bragi data folder, and its side of the desktop link.
+    dir: PathBuf,
+    link: Arc<bragi_core::link::LinkClient>,
     _demo: Option<Arc<DemoNode>>,
     _runtime: Option<tokio::runtime::Runtime>,
 }
@@ -31,6 +34,21 @@ fn slot() -> &'static Mutex<Option<Running>> {
 fn pending() -> &'static Mutex<HashMap<String, UnboundedReceiver<ChatEvent>>> {
     static P: OnceLock<Mutex<HashMap<String, UnboundedReceiver<ChatEvent>>>> = OnceLock::new();
     P.get_or_init(Default::default)
+}
+
+/// The profile folder and the desktop link client (see `api::code`).
+pub(crate) fn running_parts() -> Result<(Core, PathBuf, Arc<bragi_core::link::LinkClient>), String> {
+    slot()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .map(|r| (r.core.clone(), r.dir.clone(), r.link.clone()))
+        .ok_or_else(|| "Bragi has not started".to_string())
+}
+
+/// Registers a started answer for `follow_chat` (code mode's asks use it too).
+pub(crate) fn register(h: ChatHandle) -> ChatStarted {
+    started(h)
 }
 
 fn core() -> Result<Core, String> {
@@ -509,10 +527,12 @@ pub fn start(dir: String, label: String) -> Result<(), String> {
     if s.is_some() {
         return Ok(());
     }
-    let core = Core::start(Config::new(PathBuf::from(dir), label)).map_err(err)?;
+    let dir = PathBuf::from(dir);
+    let core = Core::start(Config::new(dir.clone(), label)).map_err(err)?;
     // API keys go to the OS keychain where there is one (Android and iOS keep the sealed file for now).
     core.use_os_keychain();
-    *s = Some(Running { core, _demo: None, _runtime: None });
+    let link = Arc::new(bragi_core::link::LinkClient::open(bragi_core::link::server::link_dir(&dir), false));
+    *s = Some(Running { core, dir, link, _demo: None, _runtime: None });
     Ok(())
 }
 
@@ -553,7 +573,9 @@ pub fn start_demo(dir: String, label: String, accept_after_ms: u32, word_delay_m
             }
         });
     }
-    *s = Some(Running { core, _demo: Some(node), _runtime: Some(rt) });
+    let app = dir.join("app");
+    let link = Arc::new(bragi_core::link::LinkClient::open(bragi_core::link::server::link_dir(&app), true));
+    *s = Some(Running { core, dir: app, link, _demo: Some(node), _runtime: Some(rt) });
     Ok(())
 }
 

@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart';
 import 'api.dart';
 import 'appearance.dart';
 import 'audio.dart';
+import 'code_api.dart';
+import 'code_controller.dart';
 
 /// Puts [delta] at [offset] (characters, as the core counts them), replacing what follows.
 String splice(String text, int offset, String delta) {
@@ -33,9 +35,15 @@ class ApprovalCard {
 }
 
 class BragiController extends ChangeNotifier {
-  BragiController(this.api, {ClipBackend Function()? audio}) : _newAudio = audio ?? ClipBackend.create;
+  BragiController(this.api, {ClipBackend Function()? audio, CodeApi? code})
+      : _newAudio = audio ?? ClipBackend.create,
+        _codeApi = code ?? const RustCodeApi();
 
   final BragiApi api;
+  final CodeApi _codeApi;
+
+  /// Code mode: the project, its context, proposed changes and shell runs (the same conversation).
+  late final CodeController code = CodeController(this, _codeApi);
 
   /// The look: the chosen theme and the palette the widgets paint with.
   late final AppearanceController appearance = AppearanceController(api);
@@ -440,12 +448,65 @@ class BragiController extends ChangeNotifier {
     await _audio?.stop();
   }
 
+  String? _logged;
+
   @override
   void notifyListeners() {
     // A clip stops when the chat on screen changes.
     final c = clip;
     if (c != null && c.conversation != current?.id) unawaited(stopClip());
+    // Every notice shown is kept in the list behind the bell.
+    final n = notice;
+    if (n != null && n != _logged) {
+      _logged = n;
+      final ok = n.startsWith('Saved ') || n.startsWith('Linked') || n.startsWith('Deleted ');
+      code.log(ok ? 'ok' : 'info', n);
+    }
+    if (n == null) _logged = null;
     super.notifyListeners();
+  }
+
+  /// Opens conversation [id] (a code turn just saved in it) and refreshes the history list.
+  Future<void> showConversation(String id) async {
+    try {
+      current = await api.conversation(id);
+      messages = List.of(current!.messages);
+      conversations = await api.conversations(0, 100);
+      await _refreshSettings();
+    } catch (e) {
+      notice = '$e';
+    }
+    notifyListeners();
+  }
+
+  /// Streams an answer that bragi-core keeps out of history until it is done (a code ask): the
+  /// ask and the growing answer are shown here meanwhile. Returns the answer, or null when it
+  /// was stopped before any text.
+  Future<MessageView?> followLocal(String request, String prompt, String? model) async {
+    requestId = request;
+    thinkingSince = null;
+    messages = [...messages, localMessage('user', prompt), localMessage('assistant', '', state: 'streaming', model: model)];
+    notifyListeners();
+    var failed = false;
+    try {
+      await for (final e in api.followChat(request)) {
+        _apply(e);
+        notifyListeners();
+        if (e.kind == 'error') failed = true;
+        if (e.kind == 'done' || e.kind == 'error') break;
+      }
+    } finally {
+      requestId = null;
+      thinkingSince = null;
+      card = null;
+    }
+    final last = messages.last;
+    if (failed && last.text.trim().isEmpty) {
+      messages = messages.take(messages.length - 2).toList();
+      notifyListeners();
+      return null;
+    }
+    return last;
   }
 
   /// Saves a file of the current chat at [dest] (a save dialog's path, or a folder: then under

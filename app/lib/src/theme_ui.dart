@@ -331,7 +331,10 @@ class _ThemeEditorScreenState extends State<ThemeEditorScreen> {
   @override
   void initState() {
     super.initState();
-    _show();
+    // After this first frame: the preview rebuilds the app, which is mid-build now.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _show();
+    });
   }
 
   @override
@@ -412,10 +415,13 @@ class _ThemeEditorScreenState extends State<ThemeEditorScreen> {
           TextButton(key: const Key('edit-save'), onPressed: dirty ? _save : null, child: const Text('Save')),
         ],
       ),
+      // The save message stays in view however far the list is scrolled.
+      bottomNavigationBar: msg == null
+          ? null
+          : SafeArea(child: Padding(padding: const EdgeInsets.all(16), child: Text(msg!, key: const Key('edit-msg'), style: TextStyle(color: BragiColors.textSecondary)))),
       body: ListView(
         key: const Key('role-list'),
         children: [
-          if (msg != null) Padding(padding: const EdgeInsets.all(16), child: Text(msg!, key: const Key('edit-msg'), style: TextStyle(color: BragiColors.textSecondary))),
           for (final r in roles)
             ListTile(
               key: Key('role-${r.role}'),

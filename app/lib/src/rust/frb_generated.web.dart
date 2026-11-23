@@ -7,6 +7,7 @@
 // ignore_for_file: argument_type_not_assignable
 
 import 'api/bragi.dart';
+import 'api/code.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -37,10 +38,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ShellEventView> dco_decode_StreamSink_shell_event_view_Sse(
+    dynamic raw,
+  );
+
+  @protected
   RustStreamSink<StateView> dco_decode_StreamSink_state_view_Sse(dynamic raw);
 
   @protected
   String dco_decode_String(dynamic raw);
+
+  @protected
+  AnsweredView dco_decode_answered_view(dynamic raw);
+
+  @protected
+  AppliedView dco_decode_applied_view(dynamic raw);
 
   @protected
   AttachmentView dco_decode_attachment_view(dynamic raw);
@@ -52,10 +64,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool dco_decode_box_autoadd_bool(dynamic raw);
 
   @protected
+  ContextView dco_decode_box_autoadd_context_view(dynamic raw);
+
+  @protected
   EndpointForm dco_decode_box_autoadd_endpoint_form(dynamic raw);
 
   @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int dco_decode_box_autoadd_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
@@ -65,6 +83,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NodeFitView dco_decode_box_autoadd_node_fit_view(dynamic raw);
+
+  @protected
+  ProjectView dco_decode_box_autoadd_project_view(dynamic raw);
+
+  @protected
+  ReviewView dco_decode_box_autoadd_review_view(dynamic raw);
 
   @protected
   TargetView dco_decode_box_autoadd_target_view(dynamic raw);
@@ -82,6 +106,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChatStarted dco_decode_chat_started(dynamic raw);
 
   @protected
+  CodeAskView dco_decode_code_ask_view(dynamic raw);
+
+  @protected
+  ContextFileView dco_decode_context_file_view(dynamic raw);
+
+  @protected
+  ContextView dco_decode_context_view(dynamic raw);
+
+  @protected
   ConversationView dco_decode_conversation_view(dynamic raw);
 
   @protected
@@ -91,13 +124,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeletedView dco_decode_deleted_view(dynamic raw);
 
   @protected
+  DesktopView dco_decode_desktop_view(dynamic raw);
+
+  @protected
+  DiffLineView dco_decode_diff_line_view(dynamic raw);
+
+  @protected
   EndpointForm dco_decode_endpoint_form(dynamic raw);
 
   @protected
   EndpointView dco_decode_endpoint_view(dynamic raw);
 
   @protected
+  EntryView dco_decode_entry_view(dynamic raw);
+
+  @protected
   double dco_decode_f_64(dynamic raw);
+
+  @protected
+  FileDiffView dco_decode_file_diff_view(dynamic raw);
 
   @protected
   FileView dco_decode_file_view(dynamic raw);
@@ -107,6 +152,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   HubHitView dco_decode_hub_hit_view(dynamic raw);
+
+  @protected
+  HunkView dco_decode_hunk_view(dynamic raw);
+
+  @protected
+  int dco_decode_i_32(dynamic raw);
 
   @protected
   PlatformInt64 dco_decode_i_64(dynamic raw);
@@ -124,7 +175,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<AttachmentView> dco_decode_list_attachment_view(dynamic raw);
 
   @protected
+  List<ContextFileView> dco_decode_list_context_file_view(dynamic raw);
+
+  @protected
+  List<DesktopView> dco_decode_list_desktop_view(dynamic raw);
+
+  @protected
+  List<DiffLineView> dco_decode_list_diff_line_view(dynamic raw);
+
+  @protected
   List<EndpointView> dco_decode_list_endpoint_view(dynamic raw);
+
+  @protected
+  List<EntryView> dco_decode_list_entry_view(dynamic raw);
+
+  @protected
+  List<FileDiffView> dco_decode_list_file_diff_view(dynamic raw);
 
   @protected
   List<FileView> dco_decode_list_file_view(dynamic raw);
@@ -134,6 +200,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<HubHitView> dco_decode_list_hub_hit_view(dynamic raw);
+
+  @protected
+  List<HunkView> dco_decode_list_hunk_view(dynamic raw);
 
   @protected
   List<LinkView> dco_decode_list_link_view(dynamic raw);
@@ -146,6 +215,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<NodeModelsView> dco_decode_list_node_models_view(dynamic raw);
+
+  @protected
+  List<NotificationView> dco_decode_list_notification_view(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -164,6 +236,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<RoleInfoView> dco_decode_list_role_info_view(dynamic raw);
+
+  @protected
+  List<RootView> dco_decode_list_root_view(dynamic raw);
 
   @protected
   List<SessionView> dco_decode_list_session_view(dynamic raw);
@@ -199,13 +274,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeModelsView dco_decode_node_models_view(dynamic raw);
 
   @protected
+  NotificationView dco_decode_notification_view(dynamic raw);
+
+  @protected
+  OpenedView dco_decode_opened_view(dynamic raw);
+
+  @protected
   String? dco_decode_opt_String(dynamic raw);
 
   @protected
   bool? dco_decode_opt_box_autoadd_bool(dynamic raw);
 
   @protected
+  ContextView? dco_decode_opt_box_autoadd_context_view(dynamic raw);
+
+  @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
+
+  @protected
+  int? dco_decode_opt_box_autoadd_i_32(dynamic raw);
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
@@ -215,6 +302,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NodeFitView? dco_decode_opt_box_autoadd_node_fit_view(dynamic raw);
+
+  @protected
+  ProjectView? dco_decode_opt_box_autoadd_project_view(dynamic raw);
+
+  @protected
+  ReviewView? dco_decode_opt_box_autoadd_review_view(dynamic raw);
 
   @protected
   TargetView? dco_decode_opt_box_autoadd_target_view(dynamic raw);
@@ -232,7 +325,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PaletteView dco_decode_palette_view(dynamic raw);
 
   @protected
+  ProjectView dco_decode_project_view(dynamic raw);
+
+  @protected
   QuantFitView dco_decode_quant_fit_view(dynamic raw);
+
+  @protected
+  ReviewView dco_decode_review_view(dynamic raw);
 
   @protected
   RoleColorView dco_decode_role_color_view(dynamic raw);
@@ -244,7 +343,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoleInfoView dco_decode_role_info_view(dynamic raw);
 
   @protected
+  RootView dco_decode_root_view(dynamic raw);
+
+  @protected
   SessionView dco_decode_session_view(dynamic raw);
+
+  @protected
+  ShellEventView dco_decode_shell_event_view(dynamic raw);
 
   @protected
   StateView dco_decode_state_view(dynamic raw);
@@ -293,12 +398,23 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  RustStreamSink<ShellEventView> sse_decode_StreamSink_shell_event_view_Sse(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   RustStreamSink<StateView> sse_decode_StreamSink_state_view_Sse(
     SseDeserializer deserializer,
   );
 
   @protected
   String sse_decode_String(SseDeserializer deserializer);
+
+  @protected
+  AnsweredView sse_decode_answered_view(SseDeserializer deserializer);
+
+  @protected
+  AppliedView sse_decode_applied_view(SseDeserializer deserializer);
 
   @protected
   AttachmentView sse_decode_attachment_view(SseDeserializer deserializer);
@@ -310,12 +426,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   bool sse_decode_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
+  ContextView sse_decode_box_autoadd_context_view(SseDeserializer deserializer);
+
+  @protected
   EndpointForm sse_decode_box_autoadd_endpoint_form(
     SseDeserializer deserializer,
   );
 
   @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
@@ -329,6 +451,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeFitView sse_decode_box_autoadd_node_fit_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  ProjectView sse_decode_box_autoadd_project_view(SseDeserializer deserializer);
+
+  @protected
+  ReviewView sse_decode_box_autoadd_review_view(SseDeserializer deserializer);
 
   @protected
   TargetView sse_decode_box_autoadd_target_view(SseDeserializer deserializer);
@@ -346,6 +474,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChatStarted sse_decode_chat_started(SseDeserializer deserializer);
 
   @protected
+  CodeAskView sse_decode_code_ask_view(SseDeserializer deserializer);
+
+  @protected
+  ContextFileView sse_decode_context_file_view(SseDeserializer deserializer);
+
+  @protected
+  ContextView sse_decode_context_view(SseDeserializer deserializer);
+
+  @protected
   ConversationView sse_decode_conversation_view(SseDeserializer deserializer);
 
   @protected
@@ -355,13 +492,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeletedView sse_decode_deleted_view(SseDeserializer deserializer);
 
   @protected
+  DesktopView sse_decode_desktop_view(SseDeserializer deserializer);
+
+  @protected
+  DiffLineView sse_decode_diff_line_view(SseDeserializer deserializer);
+
+  @protected
   EndpointForm sse_decode_endpoint_form(SseDeserializer deserializer);
 
   @protected
   EndpointView sse_decode_endpoint_view(SseDeserializer deserializer);
 
   @protected
+  EntryView sse_decode_entry_view(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_f_64(SseDeserializer deserializer);
+
+  @protected
+  FileDiffView sse_decode_file_diff_view(SseDeserializer deserializer);
 
   @protected
   FileView sse_decode_file_view(SseDeserializer deserializer);
@@ -371,6 +520,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   HubHitView sse_decode_hub_hit_view(SseDeserializer deserializer);
+
+  @protected
+  HunkView sse_decode_hunk_view(SseDeserializer deserializer);
+
+  @protected
+  int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64 sse_decode_i_64(SseDeserializer deserializer);
@@ -390,7 +545,28 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<ContextFileView> sse_decode_list_context_file_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<DesktopView> sse_decode_list_desktop_view(SseDeserializer deserializer);
+
+  @protected
+  List<DiffLineView> sse_decode_list_diff_line_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<EndpointView> sse_decode_list_endpoint_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<EntryView> sse_decode_list_entry_view(SseDeserializer deserializer);
+
+  @protected
+  List<FileDiffView> sse_decode_list_file_diff_view(
     SseDeserializer deserializer,
   );
 
@@ -404,6 +580,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<HubHitView> sse_decode_list_hub_hit_view(SseDeserializer deserializer);
 
   @protected
+  List<HunkView> sse_decode_list_hunk_view(SseDeserializer deserializer);
+
+  @protected
   List<LinkView> sse_decode_list_link_view(SseDeserializer deserializer);
 
   @protected
@@ -414,6 +593,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<NodeModelsView> sse_decode_list_node_models_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<NotificationView> sse_decode_list_notification_view(
     SseDeserializer deserializer,
   );
 
@@ -440,6 +624,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RoleInfoView> sse_decode_list_role_info_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  List<RootView> sse_decode_list_root_view(SseDeserializer deserializer);
 
   @protected
   List<SessionView> sse_decode_list_session_view(SseDeserializer deserializer);
@@ -479,13 +666,27 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeModelsView sse_decode_node_models_view(SseDeserializer deserializer);
 
   @protected
+  NotificationView sse_decode_notification_view(SseDeserializer deserializer);
+
+  @protected
+  OpenedView sse_decode_opened_view(SseDeserializer deserializer);
+
+  @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
 
   @protected
   bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer);
 
   @protected
+  ContextView? sse_decode_opt_box_autoadd_context_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
+
+  @protected
+  int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer);
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
@@ -497,6 +698,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NodeFitView? sse_decode_opt_box_autoadd_node_fit_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ProjectView? sse_decode_opt_box_autoadd_project_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  ReviewView? sse_decode_opt_box_autoadd_review_view(
     SseDeserializer deserializer,
   );
 
@@ -518,7 +729,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PaletteView sse_decode_palette_view(SseDeserializer deserializer);
 
   @protected
+  ProjectView sse_decode_project_view(SseDeserializer deserializer);
+
+  @protected
   QuantFitView sse_decode_quant_fit_view(SseDeserializer deserializer);
+
+  @protected
+  ReviewView sse_decode_review_view(SseDeserializer deserializer);
 
   @protected
   RoleColorView sse_decode_role_color_view(SseDeserializer deserializer);
@@ -530,7 +747,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoleInfoView sse_decode_role_info_view(SseDeserializer deserializer);
 
   @protected
+  RootView sse_decode_root_view(SseDeserializer deserializer);
+
+  @protected
   SessionView sse_decode_session_view(SseDeserializer deserializer);
+
+  @protected
+  ShellEventView sse_decode_shell_event_view(SseDeserializer deserializer);
 
   @protected
   StateView sse_decode_state_view(SseDeserializer deserializer);
@@ -566,9 +789,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_decode_unit(SseDeserializer deserializer);
 
   @protected
-  int sse_decode_i_32(SseDeserializer deserializer);
-
-  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -587,6 +807,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_StreamSink_shell_event_view_Sse(
+    RustStreamSink<ShellEventView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_StreamSink_state_view_Sse(
     RustStreamSink<StateView> self,
     SseSerializer serializer,
@@ -594,6 +820,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_String(String self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_answered_view(AnsweredView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_applied_view(AppliedView self, SseSerializer serializer);
 
   @protected
   void sse_encode_attachment_view(
@@ -608,6 +840,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_context_view(
+    ContextView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_endpoint_form(
     EndpointForm self,
     SseSerializer serializer,
@@ -615,6 +853,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_i_64(
@@ -631,6 +872,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_node_fit_view(
     NodeFitView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_project_view(
+    ProjectView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_review_view(
+    ReviewView self,
     SseSerializer serializer,
   );
 
@@ -653,6 +906,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_chat_started(ChatStarted self, SseSerializer serializer);
 
   @protected
+  void sse_encode_code_ask_view(CodeAskView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_context_file_view(
+    ContextFileView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_context_view(ContextView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_conversation_view(
     ConversationView self,
     SseSerializer serializer,
@@ -668,13 +933,25 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_deleted_view(DeletedView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_desktop_view(DesktopView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_diff_line_view(DiffLineView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_endpoint_form(EndpointForm self, SseSerializer serializer);
 
   @protected
   void sse_encode_endpoint_view(EndpointView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_entry_view(EntryView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_file_diff_view(FileDiffView self, SseSerializer serializer);
 
   @protected
   void sse_encode_file_view(FileView self, SseSerializer serializer);
@@ -684,6 +961,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_hub_hit_view(HubHitView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_hunk_view(HunkView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
   void sse_encode_i_64(PlatformInt64 self, SseSerializer serializer);
@@ -704,8 +987,38 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_context_file_view(
+    List<ContextFileView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_desktop_view(
+    List<DesktopView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_diff_line_view(
+    List<DiffLineView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_endpoint_view(
     List<EndpointView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_entry_view(
+    List<EntryView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_file_diff_view(
+    List<FileDiffView> self,
     SseSerializer serializer,
   );
 
@@ -725,6 +1038,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_hunk_view(List<HunkView> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_link_view(List<LinkView> self, SseSerializer serializer);
 
   @protected
@@ -742,6 +1058,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_node_models_view(
     List<NodeModelsView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_notification_view(
+    List<NotificationView> self,
     SseSerializer serializer,
   );
 
@@ -774,6 +1096,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     List<RoleInfoView> self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_root_view(List<RootView> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_session_view(
@@ -830,13 +1155,31 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_notification_view(
+    NotificationView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opened_view(OpenedView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_context_view(
+    ContextView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_i_64(
@@ -853,6 +1196,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_node_fit_view(
     NodeFitView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_project_view(
+    ProjectView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_review_view(
+    ReviewView? self,
     SseSerializer serializer,
   );
 
@@ -875,7 +1230,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_palette_view(PaletteView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_project_view(ProjectView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_quant_fit_view(QuantFitView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_review_view(ReviewView self, SseSerializer serializer);
 
   @protected
   void sse_encode_role_color_view(RoleColorView self, SseSerializer serializer);
@@ -887,7 +1248,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_role_info_view(RoleInfoView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_root_view(RootView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_session_view(SessionView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_shell_event_view(
+    ShellEventView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_state_view(StateView self, SseSerializer serializer);
@@ -927,9 +1297,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
-
-  @protected
-  void sse_encode_i_32(int self, SseSerializer serializer);
 }
 
 // Section: wire_class

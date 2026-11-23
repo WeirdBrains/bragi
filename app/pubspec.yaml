@@ -25,6 +25,8 @@ dependencies:
   # Audio files in a chat play through the platform player, in the platform audio session.
   just_audio: ^0.10.6
   audio_session: ^0.2.4
+  # Scans the desktop's pairing QR code (the desktop link).
+  mobile_scanner: ^7.5.0
 
 dev_dependencies:
   flutter_test:
