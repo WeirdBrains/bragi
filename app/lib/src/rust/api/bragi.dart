@@ -1058,6 +1058,9 @@ class MessageView {
 
   /// The answer came from an agent task on a node.
   final bool agent;
+
+  /// `chat` or `code`: the mode the turn was made in (one conversation holds both).
+  final String mode;
   final PlatformInt64 atMs;
 
   const MessageView({
@@ -1078,6 +1081,7 @@ class MessageView {
     required this.files,
     required this.tools,
     required this.agent,
+    required this.mode,
     required this.atMs,
   });
 
@@ -1100,6 +1104,7 @@ class MessageView {
       files.hashCode ^
       tools.hashCode ^
       agent.hashCode ^
+      mode.hashCode ^
       atMs.hashCode;
 
   @override
@@ -1124,6 +1129,7 @@ class MessageView {
           files == other.files &&
           tools == other.tools &&
           agent == other.agent &&
+          mode == other.mode &&
           atMs == other.atMs;
 }
 

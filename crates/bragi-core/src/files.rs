@@ -436,6 +436,7 @@ mod tests {
             tools: Vec::new(),
             agent: false,
             reactions: Vec::new(),
+            mode: Default::default(),
             at_ms: 0,
         }
     }

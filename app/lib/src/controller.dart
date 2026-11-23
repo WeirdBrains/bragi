@@ -608,6 +608,7 @@ class BragiController extends ChangeNotifier {
           files: last.files,
           tools: tools ?? last.tools,
           agent: last.agent,
+          mode: last.mode,
           atMs: last.atMs,
         );
     void replace(MessageView m) => messages = [...messages.take(messages.length - 1), m];

@@ -7,8 +7,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use bragi_core::{
-    AppState, Attachment, ChatEvent, ChatHandle, Conversation, Core, ErrorKind, Folder, KeyChange, LinkCheck, PairState, SessionSummary, Target,
-    TargetOption, TestReport,
+    AppState, Attachment, ChatEvent, ChatHandle, Conversation, Core, ErrorKind, Folder, KeyChange, LinkCheck, MessageState, Mode, PairState,
+    SessionSummary, Target, TargetOption, TestReport,
 };
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tokio::sync::{mpsc as tmpsc, watch};
@@ -491,7 +491,7 @@ impl App {
             (None, _) => self.notice_since = None,
             (Some(n), Some((seen, _))) if n == seen => {}
             (Some(n), _) => {
-                // Every notice is kept: the list (F9) and, in code mode, the transcript.
+                // Every notice is kept, for the list (F9).
                 let level = match self.notice_tone {
                     Tone::Info => bragi_core::notifications::Level::Info,
                     Tone::Ok => bragi_core::notifications::Level::Ok,
@@ -499,9 +499,6 @@ impl App {
                     Tone::Error => bragi_core::notifications::Level::Error,
                 };
                 self.notices.push(level, n);
-                if self.view == View::Code || self.back == View::Code && self.code.phase != Phase::Compose {
-                    self.code.note(n, self.notice_tone == Tone::Error);
-                }
                 self.notice_since = Some((n.clone(), Instant::now()));
                 changed = true;
             }
@@ -553,12 +550,7 @@ impl App {
                     Ok(out) => {
                         let ok = out.ok();
                         let line = format!("$ {} — {}", out.command, out.status());
-                        if self.view == View::Code {
-                            self.code.log.push(crate::code::Entry::Shell(out));
-                            self.scroll = 0;
-                        } else {
-                            self.shell_into_chat(out);
-                        }
+                        self.record_shell(out);
                         if ok { self.say(line) } else { self.fail(line) }
                     }
                     Err(e) => self.fail(e),
@@ -635,21 +627,34 @@ impl App {
                 };
             }
             (Purpose::Code, Ok(())) => {
-                let thinking_ms = s.thought_ms.or_else(|| s.thinking_since.map(|t| t.elapsed().as_millis() as u64));
                 let (reasoning, body) =
                     if s.reasoning.trim().is_empty() { bragi_core::think::split(&s.text) } else { (s.reasoning.clone(), s.text.clone()) };
-                self.code.log.push(crate::code::Entry::Answer {
-                    model: s.model.clone().unwrap_or_default(),
-                    text: bragi_core::code::prompt::explanation(&body),
-                    reasoning,
-                    thinking_ms: thinking_ms.filter(|_| !s.reasoning.is_empty()),
-                });
                 let note = self.code.answered(&body);
+                let mut text = bragi_core::code::prompt::explanation(&body);
+                if !self.code.diffs.is_empty() {
+                    let files: Vec<String> = self
+                        .code
+                        .diffs
+                        .iter()
+                        .map(|d| {
+                            let (a, r) = d.stats();
+                            format!("`{}` (+{a} -{r})", d.path)
+                        })
+                        .collect();
+                    text = format!("{}\n\nProposed changes: {}.", text.trim_end(), files.join(", "));
+                }
+                if text.trim().is_empty() {
+                    text = note.clone();
+                }
+                self.record_code_answer(&s, text, reasoning, MessageState::Complete);
                 self.scroll = 0;
                 self.say(note);
             }
             (Purpose::Code, Err((ErrorKind::Cancelled, _))) => {
                 self.code.failed();
+                let text = if s.text.trim().is_empty() { "(stopped)".to_string() } else { s.text.clone() };
+                let reasoning = s.reasoning.clone();
+                self.record_code_answer(&s, text, reasoning, MessageState::Stopped);
                 self.say("Stopped.".to_string());
             }
             (Purpose::Code, Err((_, m))) => {
@@ -659,10 +664,79 @@ impl App {
                         Ok(()) => self.say(format!("{why}…")),
                         Err(e) => self.fail(e),
                     },
-                    AfterError::Fail(m) => self.fail(m),
+                    AfterError::Fail(m) => {
+                        let reasoning = s.reasoning.clone();
+                        self.record_code_answer(&s, m.clone(), reasoning, MessageState::Failed);
+                        self.fail(m)
+                    }
                 }
             }
         }
+    }
+
+    /// Saves a finished code turn (the line typed and the answer, both marked code) in the
+    /// open conversation, or a new one, and shows it.
+    fn record_code_answer(&mut self, s: &Stream, text: String, reasoning: String, state: MessageState) {
+        let ask = std::mem::take(&mut self.code.asked_line);
+        let mut answer = bragi_core::ChatMessage::new(bragi_core::Role::Assistant, text, Mode::Code);
+        answer.thinking_ms = s.thought_ms.or_else(|| s.thinking_since.map(|t| t.elapsed().as_millis() as u64)).filter(|_| !reasoning.is_empty());
+        answer.reasoning = reasoning;
+        answer.model = s.model.clone();
+        answer.node = s.node.clone();
+        answer.state = state;
+        let mut turn = Vec::new();
+        if !ask.trim().is_empty() {
+            turn.push(bragi_core::ChatMessage::new(bragi_core::Role::User, ask, Mode::Code));
+        }
+        turn.push(answer);
+        self.record(turn);
+    }
+
+    /// A shell run, saved in the conversation as a turn of the mode it was run in.
+    fn record_shell(&mut self, out: bragi_core::shell::ShellOutput) {
+        let t = out.transcript();
+        let fence = if t.contains("```") { "~~~~" } else { "```" };
+        let text = format!("{fence}console\n{t}{fence}");
+        let msg = bragi_core::ChatMessage::new(bragi_core::Role::User, text, self.mode());
+        self.record(vec![msg]);
+    }
+
+    fn record(&mut self, messages: Vec<bragi_core::ChatMessage>) {
+        let conv = self.current.as_ref().map(|c| c.id.clone());
+        match self.core.record(conv.as_deref(), messages) {
+            Ok(id) => {
+                self.current = self.core.conversation(&id).ok();
+                self.reload();
+                if let Some(i) = self.rows.iter().position(|r| r.chat_id() == Some(id.as_str())) {
+                    self.chat_sel = i;
+                }
+                self.scroll = 0;
+            }
+            Err(e) => self.fail(e.message),
+        }
+    }
+
+    /// Chat or code: the conversation is the same in both.
+    pub fn mode(&self) -> Mode {
+        let base = if matches!(self.view, View::Help | View::Models | View::Status | View::Settings | View::Themes | View::Notifications) {
+            self.back
+        } else {
+            self.view
+        };
+        if base == View::Code { Mode::Code } else { Mode::Chat }
+    }
+
+    /// Switches to `mode` (the other one when `None`), keeping the conversation, its
+    /// transcript, the draft and the context.
+    pub fn set_mode(&mut self, mode: Option<Mode>) {
+        let mode = mode.unwrap_or_else(|| self.mode().other());
+        self.view = if mode == Mode::Code { View::Code } else { View::Chat };
+        self.auto_link = false;
+        self.focus = Focus::Input;
+        self.say(match mode {
+            Mode::Code => "Code mode: files as context, edits as diffs, !shell. Tab goes back to chat.",
+            Mode::Chat => "Chat mode: talk and plan. Tab goes to code.",
+        });
     }
 
     fn follow(&mut self, h: ChatHandle, purpose: Purpose) {
@@ -804,11 +878,15 @@ impl App {
                 self.show_thinking = !self.show_thinking;
                 // Ctrl-K sets every Thinking one way; clicks then flip single ones.
                 self.thinking_flipped.clear();
-                self.code.open_thinking.clear();
                 return self.say(if self.show_thinking { "Showing the reasoning." } else { "Reasoning folded." });
             }
             KeyCode::Char('n') if ctrl => {
-                self.open(View::Chat);
+                // A new conversation in the mode you are in.
+                if self.mode() == Mode::Code && self.code.phase == Phase::Compose {
+                    self.view = View::Code;
+                } else {
+                    self.open(View::Chat);
+                }
                 self.current = None;
                 self.target = None;
                 self.focus = Focus::Input;
@@ -1201,7 +1279,11 @@ impl App {
         if self.scroll_key(k.code) {
             return;
         }
+        // Tab (or Shift-Tab) switches to code mode; Ctrl-B moves between the chats and the box.
         if k.code == KeyCode::Tab || k.code == KeyCode::BackTab {
+            return self.set_mode(Some(Mode::Code));
+        }
+        if k.code == KeyCode::Char('b') && ctrl {
             self.focus = if self.focus == Focus::Input { Focus::Chats } else { Focus::Input };
             return;
         }
@@ -1291,13 +1373,6 @@ impl App {
         });
         self.shell = Some(stop);
         self.say(format!("Running {command}…"));
-    }
-
-    /// A command run from chat: its output goes in the input box as a block to send (or not).
-    fn shell_into_chat(&mut self, out: bragi_core::shell::ShellOutput) {
-        let t = out.transcript();
-        let fence = if t.contains("```") { "~~~~" } else { "```" };
-        self.input.set(&format!("{fence}console\n{t}{fence}\n"));
     }
 
     fn sidebar_key(&mut self, k: KeyEvent) {
@@ -1400,13 +1475,13 @@ impl App {
             }
             "/rename" => {
                 let Some(id) = self.rows.get(self.chat_sel).and_then(Row::folder_id).map(str::to_string) else {
-                    return Some(Err("Select a folder in the sidebar (Tab) first.".into()));
+                    return Some(Err("Select a folder in the sidebar (Ctrl-B) first.".into()));
                 };
                 self.core.rename_folder(&id, arg).map(|_| format!("Renamed to {arg}.")).map_err(err)
             }
             "/nest" => {
                 let Some(id) = self.rows.get(self.chat_sel).and_then(Row::folder_id).map(str::to_string) else {
-                    return Some(Err("Select a folder in the sidebar (Tab) first.".into()));
+                    return Some(Err("Select a folder in the sidebar (Ctrl-B) first.".into()));
                 };
                 let parent = match arg {
                     "" | "-" | "/" => None,
@@ -1443,6 +1518,10 @@ impl App {
         if text == "/notifications" || text == "/notices" {
             self.input.take();
             return self.open(View::Notifications);
+        }
+        if let Ok(crate::code::Command::Mode(m)) = crate::code::mode_command(&text) {
+            self.input.take();
+            return self.set_mode(m);
         }
         if let Some(path) = text.strip_prefix("/attach ") {
             match Attachment::from_path(&crate::code::expand(path.trim())) {
@@ -1537,6 +1616,7 @@ impl App {
                 }
             }
             Phase::Compose => match k.code {
+                KeyCode::Tab | KeyCode::BackTab => self.set_mode(Some(Mode::Chat)),
                 KeyCode::Esc if self.shell.is_some() => {
                     if let Some(stop) = &self.shell {
                         stop.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -1556,7 +1636,7 @@ impl App {
                         self.scroll = self.scroll.saturating_sub(1);
                     }
                 }
-                KeyCode::Esc if self.input.is_empty() => self.view = View::Chat,
+                KeyCode::Esc if self.input.is_empty() => self.set_mode(Some(Mode::Chat)),
                 KeyCode::Esc => {
                     self.input.take();
                 }
@@ -1583,7 +1663,8 @@ impl App {
     /// Sends an already fitted code request and follows its answer.
     fn code_send(&mut self, req: CodeRequest) -> Result<(), String> {
         let target = self.effective_target();
-        let h = CodeState::messages(&req).and_then(|m| self.core.complete_to(m, self.model.clone(), target).map_err(|e| e.message))?;
+        let h =
+            CodeState::messages(&req, &self.code.turns).and_then(|m| self.core.complete_to(m, self.model.clone(), target).map_err(|e| e.message))?;
         self.code.start(req);
         self.follow(h, Purpose::Code);
         Ok(())
@@ -1605,6 +1686,7 @@ impl App {
                 return self.run_shell(c, dir);
             }
             Command::Notifications => return self.open(View::Notifications),
+            Command::Mode(m) => return self.set_mode(m),
             Command::Add(paths) => self.code.add(&paths),
             Command::Drop(what) => self.code.drop_path(&what),
             Command::Pick => return self.open_picker(),
@@ -1630,8 +1712,17 @@ impl App {
                 let title = bragi_core::code::prompt::title(&req);
                 let model = self.code_model();
                 let listed = model.as_deref().and_then(|m| self.state.catalog.context_for(m));
+                // The conversation so far goes along (a plan made in chat, earlier code turns),
+                // within a third of the prompt's room.
+                let room = model.as_deref().and_then(|m| self.code.budget_for(m, listed)).map_or(8_000, |b| b.prompt_tokens() / 3);
+                let (turns, reserve) = match &self.current {
+                    Some(c) => crate::code::conversation_turns(&c.messages, room),
+                    None => (Vec::new(), 0),
+                };
+                self.code.turns = turns;
+                self.code.asked_line = line.trim().to_string();
                 let (req, left_out) = match model.as_deref() {
-                    Some(m) => match self.code.prepare(req, m, listed) {
+                    Some(m) => match self.code.prepare(req, m, listed, reserve) {
                         Ok(x) => x,
                         Err(e) => return self.fail(e),
                     },

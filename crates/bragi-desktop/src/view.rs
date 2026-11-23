@@ -1145,6 +1145,8 @@ impl BragiView {
             m.standin.as_ref().map(|s| format!("stand-in {s}")),
             (m.resumes > 0).then(|| if m.resumes == 1 { "moved to another node".to_string() } else { format!("moved nodes {}×", m.resumes) }),
             m.agent.then(|| if m.tools.is_empty() { "agent task".to_string() } else { format!("agent task · used {}", m.tools.join(", ")) }),
+            // A turn made in the terminal app's code mode (same conversation).
+            (m.mode == bragi_core::Mode::Code).then(|| "code mode".to_string()),
         ]
         .into_iter()
         .flatten()

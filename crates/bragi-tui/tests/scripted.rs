@@ -143,13 +143,13 @@ fn link_chat_models_status_help_and_code() {
     // The folder row: chevron, name, and its count on the right.
     let row = screen.lines().find(|l| l.contains("▾ Projects")).unwrap_or_default();
     assert!(row.split('│').nth(1).unwrap_or(row).trim_end().ends_with('1'), "{screen}");
-    h.key(KeyCode::Tab);
+    h.ctrl('b');
     assert_eq!(h.app.focus, bragi_tui::app::Focus::Chats);
     h.app.chat_sel = h.app.rows.iter().position(|r| r.folder_id().is_some()).unwrap();
     h.key(KeyCode::Enter);
     h.until("▸ Projects", |a| a.closed.len() == 1);
     h.key(KeyCode::Enter);
-    h.key(KeyCode::Tab);
+    h.ctrl('b');
 
     // Settings: add an endpoint; the key is typed masked and never drawn.
     h.ctrl('p');
@@ -186,7 +186,12 @@ fn link_chat_models_status_help_and_code() {
     h.app.model = None;
 
     // Help lists the keys; status lists nodes and models.
-    let screen = h.until("Keyboard", |a| a.view == View::Help);
+    let mut screen = h.until("Keyboard", |a| a.view == View::Help);
+    // The help is longer than the window: read it all.
+    for _ in 0..4 {
+        h.key(KeyCode::PageDown);
+        screen.push_str(&h.draw());
+    }
     assert!(screen.contains("Ctrl-L, F2") && screen.contains("/rewrite FILE[:A-B] how") && screen.contains("/folder NAME"), "{screen}");
     h.key(KeyCode::Esc);
     h.ctrl('t');
@@ -197,7 +202,7 @@ fn link_chat_models_status_help_and_code() {
 
     // Code mode: add the folder (target/ is ignored), rewrite two lines, review, write, undo.
     h.ctrl('e');
-    h.until("Code suggestions and rewrites", |a| a.view == View::Code);
+    h.until("Code · ", |a| a.view == View::Code);
     h.typed("/add .");
     h.key(KeyCode::Enter);
     let screen = h.until("Context (2 files", |_| true);

@@ -8,6 +8,7 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Changed
 
+- Chat and code are modes of one conversation in the terminal app, not separate screens. Tab (or Shift-Tab, `/chat`, `/code`, `/mode`) switches; the conversation, its transcript, the draft and the code context stay. A plan made in chat goes to the model with the next code request, and code turns (the ask, the answer with its Thinking, shell runs) are saved in the conversation, so chat sees them too. Code turns are marked `code` in the transcript (and on desktop and phone, which show the same conversations). The header shows which mode you are in. Ctrl-B now moves between the message box and the chats (Tab used to). Older conversations open as chat turns; nothing needs migrating.
 - `bragi` is now the terminal app as well: `bragi` with no arguments, or `bragi PATH`, runs it in the same program (no hand-off to another binary), and `bragi --help` lists everything. The desktop window opens with `bragi desktop` (the desktop entry, the macOS app and the Windows Start menu shortcut do this for you). A build without the window (BSD, servers) is the same `bragi`, terminal app only. `bragi serve` and `bragi mcp` are unchanged. `bragi-tui` still works as a thin alias (a symlink to `bragi` on Linux and macOS, a small program on Windows) for one release, then goes.
 - The packages keep the `bragi-tui` name for the terminal-only build: it installs `bragi` (no GUI libraries) and `bragi-tui` links to it.
 

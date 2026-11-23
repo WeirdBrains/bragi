@@ -28,7 +28,7 @@
 // Section: imports
 
 use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
 use flutter_rust_bridge::{Handler, IntoIntoDart};
 
 // Section: boilerplate
@@ -2988,6 +2988,7 @@ impl SseDecode for crate::api::bragi::MessageView {
         let mut var_files = <Vec<crate::api::bragi::FileView>>::sse_decode(deserializer);
         let mut var_tools = <Vec<String>>::sse_decode(deserializer);
         let mut var_agent = <bool>::sse_decode(deserializer);
+        let mut var_mode = <String>::sse_decode(deserializer);
         let mut var_atMs = <i64>::sse_decode(deserializer);
         return crate::api::bragi::MessageView {
             id: var_id,
@@ -3007,6 +3008,7 @@ impl SseDecode for crate::api::bragi::MessageView {
             files: var_files,
             tools: var_tools,
             agent: var_agent,
+            mode: var_mode,
             at_ms: var_atMs,
         };
     }
@@ -3810,6 +3812,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::MessageView {
             self.files.into_into_dart().into_dart(),
             self.tools.into_into_dart().into_dart(),
             self.agent.into_into_dart().into_dart(),
+            self.mode.into_into_dart().into_dart(),
             self.at_ms.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -4588,6 +4591,7 @@ impl SseEncode for crate::api::bragi::MessageView {
         <Vec<crate::api::bragi::FileView>>::sse_encode(self.files, serializer);
         <Vec<String>>::sse_encode(self.tools, serializer);
         <bool>::sse_encode(self.agent, serializer);
+        <String>::sse_encode(self.mode, serializer);
         <i64>::sse_encode(self.at_ms, serializer);
     }
 }
@@ -4932,7 +4936,7 @@ mod io {
 
     use super::*;
     use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate
@@ -4954,7 +4958,7 @@ mod web {
     use flutter_rust_bridge::for_generated::byteorder::{NativeEndian, ReadBytesExt, WriteBytesExt};
     use flutter_rust_bridge::for_generated::wasm_bindgen;
     use flutter_rust_bridge::for_generated::wasm_bindgen::prelude::*;
-    use flutter_rust_bridge::for_generated::{Lifetimeable, Lockable, transform_result_dco};
+    use flutter_rust_bridge::for_generated::{transform_result_dco, Lifetimeable, Lockable};
     use flutter_rust_bridge::{Handler, IntoIntoDart};
 
     // Section: boilerplate

@@ -3593,8 +3593,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   MessageView dco_decode_message_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 18)
-      throw Exception('unexpected arr length: expect 18 but see ${arr.length}');
+    if (arr.length != 19)
+      throw Exception('unexpected arr length: expect 19 but see ${arr.length}');
     return MessageView(
       id: dco_decode_String(arr[0]),
       hasReply: dco_decode_bool(arr[1]),
@@ -3613,7 +3613,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       files: dco_decode_list_file_view(arr[14]),
       tools: dco_decode_list_String(arr[15]),
       agent: dco_decode_bool(arr[16]),
-      atMs: dco_decode_i_64(arr[17]),
+      mode: dco_decode_String(arr[17]),
+      atMs: dco_decode_i_64(arr[18]),
     );
   }
 
@@ -4606,6 +4607,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_files = sse_decode_list_file_view(deserializer);
     var var_tools = sse_decode_list_String(deserializer);
     var var_agent = sse_decode_bool(deserializer);
+    var var_mode = sse_decode_String(deserializer);
     var var_atMs = sse_decode_i_64(deserializer);
     return MessageView(
       id: var_id,
@@ -4625,6 +4627,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       files: var_files,
       tools: var_tools,
       agent: var_agent,
+      mode: var_mode,
       atMs: var_atMs,
     );
   }
@@ -5646,6 +5649,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_list_file_view(self.files, serializer);
     sse_encode_list_String(self.tools, serializer);
     sse_encode_bool(self.agent, serializer);
+    sse_encode_String(self.mode, serializer);
     sse_encode_i_64(self.atMs, serializer);
   }
 
