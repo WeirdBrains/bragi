@@ -18,14 +18,17 @@ const siteDescription =
 const repoUrl = 'https://github.com/WeirdBrains/bragi';
 
 /// The latest release; bump with each release (docs/RELEASES.md).
-const latestVersion = '0.1.1';
-const latestDate = 'November 20, 2026';
+const latestVersion = '0.2.1';
+const latestDate = 'November 23, 2026';
 const releaseUrl = '$repoUrl/releases/tag/v$latestVersion';
 String releaseAsset(String name) => '$repoUrl/releases/download/v$latestVersion/$name';
 
 /// The Android apks' name suffix: `-debug-signed` until a release key signs them.
 const androidSuffix = '-debug-signed';
 const taurUrl = 'https://pkg.taur.weirdbrains.com';
+
+/// Installs bragi-bin from TAUR with yay, leaving yay's default AUR alone (TAUR docs/yay.md).
+const taurInstall = "yay --aururl $taurUrl --aurrpcurl '$taurUrl/rpc?' -S bragi-bin";
 const orgUrl = 'https://github.com/WeirdBrains';
 const weirdnetUrl = 'https://net.weirdbrains.com';
 const mainSiteUrl = 'https://weirdbrains.com';

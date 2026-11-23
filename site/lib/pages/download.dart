@@ -33,6 +33,20 @@ final List<_Row> _rows = [
     'Standalone packages without the desktop entry: bragi-standalone.',
   ),
   (
+    'Linux, terminal only',
+    'Terminal app',
+    [
+      ('tar.gz, x86_64', 'bragi-tui-$latestVersion-x86_64-unknown-linux-gnu.tar.gz'),
+      ('tar.gz, ARM64', 'bragi-tui-$latestVersion-aarch64-unknown-linux-gnu.tar.gz'),
+      ('deb, x86_64', 'bragi-tui_$latestVersion-1_amd64.deb'),
+      ('deb, ARM64', 'bragi-tui_$latestVersion-1_arm64.deb'),
+      ('rpm, x86_64', 'bragi-tui-$latestVersion-1.x86_64.rpm'),
+      ('Arch, x86_64', 'bragi-tui-$latestVersion-1-x86_64.pkg.tar.zst'),
+    ],
+    'The same bragi without GUI libraries, for servers and SSH. The desktop packages include it too: bragi with no '
+        'arguments is the terminal app, bragi desktop opens the window.',
+  ),
+  (
     'macOS (Apple silicon and Intel)',
     'Desktop, GPUI',
     [
@@ -126,7 +140,7 @@ class DownloadPage extends StatelessComponent {
           Component.text('Arch Linux, from '),
           a(href: '$taurUrl/packages/bragi-bin', [Component.text('TAUR')]),
           Component.text(': '),
-          code([Component.text('yay --aururl $taurUrl -S bragi-bin')]),
+          code([Component.text(taurInstall)]),
           Component.text('. Nix: '),
           code([Component.text('nix run github:WeirdBrains/bragi')]),
           Component.text(' (or '),

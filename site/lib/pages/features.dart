@@ -20,6 +20,22 @@ on use). With several inference nodes, Bragi shows one combined list (B2).</p>
 <strong>Continue</strong> picks the answer up again. A real model may
 rephrase a little at the seam, because the continue request carries the partial answer plus an instruction. History is saved
 locally, one file per conversation, and survives a restart. History syncs between your linked devices (B4).</p>
+<h2 id="modes">Chat and code, one conversation</h2>
+<p>Chat and Code are modes of the same conversation, not separate screens. Plan in chat, switch to code with
+<strong>Tab</strong> (or <code>/code</code>, <code>/chat</code>, <code>/mode</code>) and the plan comes along; switch back
+and the code work is still there. Each message is marked with the mode it was sent in. Code mode adds a project folder,
+files and folders as context (respecting <code>.gitignore</code>), suggested edits to review and apply, and shell commands
+(<code>!cmd</code> or <code>/shell cmd</code>) whose output stays in the conversation. Its prompt fits the model's real
+context window: files that don't fit are left out and named, and an over-long request is retried smaller instead of
+failing with raw JSON.</p>
+<h2 id="link">The desktop link</h2>
+<p><code>bragi linker pair</code> shares project folders on your computer with Bragi on your phone. It shows a QR code
+(and a code to type) to scan from the phone; after that the phone's code mode works on the desktop's folders, confined to
+the folders you shared. The link runs over Weirdnet, directly on your network or through a relay, with no open ports.</p>
+<h2 id="terminal">The terminal app</h2>
+<p><code>bragi</code> with no arguments is Bragi in a terminal, locally or over SSH: the same conversations, models and
+code mode. It keeps a prompt history (Up and Down), a list of past notifications (F9, <code>/notifications</code> or the
+bell), collapsed thinking you can open again, and every list takes the mouse.</p>
 <h2 id="platforms">Desktop and phone</h2>
 <p>The desktop app (GPUI: Linux, macOS and Windows) and the phone app (Flutter: Android and iOS) share one Rust core, so
 they pair, list models, stream, stop and continue the same way. Downloads for every platform are on the
@@ -34,7 +50,7 @@ class FeaturesPage extends StatelessComponent {
     return Component.fragment([
       pageHero(
         eyebrow: 'Features',
-        title: 'Pair, pick a model, chat',
+        title: 'Pair, pick a model, chat and code',
         lede: 'What Bragi does today, on both desktop and phone.',
       ),
       prose(_html.replaceAll(r'${download}', siteLink('/download'))),

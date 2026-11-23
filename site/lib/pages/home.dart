@@ -24,7 +24,8 @@ class Home extends StatelessComponent {
         p(classes: 'lede', [
           Component.text(
             'Bragi is the chat app for your own Ymir cloud. It pairs with your devices over Weirdnet, finds the models '
-            'on your own machines and streams their answers. Nothing goes through a hosted service.',
+            'on your own machines and streams their answers. Plan in chat, switch to code mode in the same '
+            'conversation, and reach your desktop projects from your phone. Nothing goes through a hosted service.',
           ),
         ]),
         div(classes: 'actions', [
