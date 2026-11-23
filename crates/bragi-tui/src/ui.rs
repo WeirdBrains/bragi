@@ -88,12 +88,12 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if area.width < MIN_SIZE.0 || area.height < MIN_SIZE.1 {
         return too_small(f, area);
     }
-    let modal = matches!(app.view, View::Link | View::Models | View::Settings | View::Themes | View::Status | View::Help);
+    let modal = matches!(app.view, View::Link | View::Models | View::Settings | View::Themes | View::Status | View::Help | View::Notifications);
     // What's under a window: the screen it was opened from.
     let base = match app.view {
         View::Link => View::Chat,
-        View::Models | View::Settings | View::Themes | View::Status | View::Help if app.back == View::Code => View::Code,
-        View::Models | View::Settings | View::Themes | View::Status | View::Help => View::Chat,
+        View::Models | View::Settings | View::Themes | View::Status | View::Help | View::Notifications if app.back == View::Code => View::Code,
+        View::Models | View::Settings | View::Themes | View::Status | View::Help | View::Notifications => View::Chat,
         v => v,
     };
     let input_h = match base {
@@ -135,7 +135,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         // may be waiting for the other device).
         hits.cover(covered);
         let closeable = match app.view {
-            View::Models | View::Status | View::Help => true,
+            View::Models | View::Status | View::Help | View::Notifications => true,
             View::Settings => app.settings.form.is_none(),
             View::Themes => app.themes.prompt.is_none() && app.themes.confirm.is_none() && app.themes.edit.is_none(),
             _ => false,
@@ -148,6 +148,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             View::Models => draw_models(f, app, &mut hits, body),
             View::Settings => draw_settings(f, app, &mut hits, body),
             View::Themes => draw_themes(f, app, &mut hits, body),
+            View::Notifications => draw_notifications(f, app, &mut hits, body),
             _ => draw_help(f, app, &mut hits, body),
         }
     }
@@ -332,6 +333,7 @@ fn view_name(v: View) -> &'static str {
         View::Settings => "Settings",
         View::Themes => "Theme",
         View::Help => "Help",
+        View::Notifications => "Notifications",
     }
 }
 
@@ -364,6 +366,17 @@ fn draw_header(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
         let start = line_width(&spans);
         spans.push(Span::styled(" + New ", t.pill(t.fg, t.raised)));
         hits.push(Rect { x: area.x + start as u16, width: 7, ..area }, Action::ctrl('n'));
+        spans.push(Span::raw(" "));
+    }
+    // The bell: past notices (F9), with how many came since the list was last opened.
+    {
+        let unread = app.notices.unread();
+        let start = line_width(&spans);
+        let (label, st) =
+            if unread > 0 { (format!(" 🔔 {unread} "), t.pill(t.bg, t.accent)) } else { (" 🔔 ".to_string(), t.muted().bg(t.surface)) };
+        spans.push(Span::styled(label, st));
+        let w = line_width(&spans) - start;
+        hits.push(Rect { x: area.x + start as u16, width: w as u16, ..area }, Action::code(KeyCode::F(9)));
         spans.push(Span::raw(" "));
     }
     let left = line_width(&spans);
@@ -427,6 +440,7 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
             ("Esc", "back"),
         ],
         View::Help => &[("↑↓", "scroll"), ("Esc", "back")],
+        View::Notifications => &[("↑↓", "pick"), ("y", "copy"), ("c", "clear"), ("Esc", "back")],
     }
 }
 
@@ -775,7 +789,7 @@ fn thinking(lines: &mut Vec<Line<'static>>, gutter: &Span<'static>, reasoning: &
     lines.push(Line::from(vec![
         gutter.clone(),
         Span::styled(format!("{fold} {title}"), t.muted().add_modifier(Modifier::ITALIC)),
-        Span::styled(if open { "  Ctrl-K folds it" } else { "  Ctrl-K shows it" }, t.dim()),
+        Span::styled(if open { "  click folds it · Ctrl-K all" } else { "  click shows it · Ctrl-K all" }, t.dim()),
     ]));
     if open {
         for l in crate::markdown::render(reasoning, width.saturating_sub(2)) {
@@ -900,12 +914,16 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
                         let ms = s.thought_ms.or_else(|| s.thinking_since.map(|x| x.elapsed().as_millis() as u64));
                         thinking(&mut lines, &gutter, &s.reasoning, ms, s.thought_ms.is_some() || !text.is_empty(), app.show_thinking, body_w);
                     }
-                    None => thinking(&mut lines, &gutter, &m.reasoning, m.thinking_ms, true, app.show_thinking, body_w),
+                    None => {
+                        let flipped = app.thinking_flipped.contains(&(c.id.clone(), i));
+                        thinking(&mut lines, &gutter, &m.reasoning, m.thinking_ms, true, app.show_thinking != flipped, body_w)
+                    }
                 }
                 if lines.len() > before {
-                    // The Thinking line folds and unfolds the reasoning, like Ctrl-K.
+                    // A click on the Thinking line folds or unfolds this one; Ctrl-K does all.
                     let w = lines[before].width() as u16 - gw;
-                    marks.push(Mark { line: before, col: gw, w, action: Action::ctrl('k') });
+                    let action = if live.is_some() { Action::ctrl('k') } else { Action::Thinking(i) };
+                    marks.push(Mark { line: before, col: gw, w, action });
                 }
                 let (body, body_marks) = crate::markdown::render_marked(&text, body_w, live.is_some());
                 let base = lines.len();
@@ -1552,6 +1570,46 @@ fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     }
 }
 
+/// Every notice shown (the toasts go away), newest first.
+fn draw_notifications(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
+    use bragi_core::notifications::Level;
+    let t = th();
+    let n = app.notices.entries().len();
+    let inner = window(f, hits, area, 100, area.height.saturating_sub(2), "Notifications", &format!("{n} kept · y copy · c clear"));
+    if n == 0 {
+        f.render_widget(Paragraph::new(Line::styled("Nothing yet: notices land here when they show.", t.dim())), inner);
+        return;
+    }
+    let now = bragi_core::history::now_ms();
+    let h = inner.height as usize;
+    app.notices_sel = app.notices_sel.min(n - 1);
+    let first = app.notices_sel.saturating_sub(h.saturating_sub(1));
+    let w = inner.width as usize;
+    let mut lines = Vec::new();
+    for (i, e) in app.notices.entries().iter().rev().enumerate().skip(first).take(h) {
+        let sel = i == app.notices_sel;
+        let base = if sel { t.selection() } else { Style::new() };
+        let (icon, st) = match e.level {
+            Level::Error => ("✗", t.fg(t.error)),
+            Level::Ok => ("✓", t.fg(t.success)),
+            Level::Ask => ("?", t.fg(t.warning)),
+            Level::Info => ("·", t.muted()),
+        };
+        let when = format!("{:>9} ", ago(e.at_ms, now));
+        let text = clip(&e.text.replace('\n', " "), w.saturating_sub(width(&when) + 3));
+        let pad = " ".repeat(w.saturating_sub(width(&when) + 2 + width(&text)));
+        lines.push(Line::from(vec![
+            Span::styled(when, if sel { base } else { t.dim() }),
+            Span::styled(format!("{icon} "), if sel { base } else { st }),
+            Span::styled(text, if sel { base } else { t.text() }),
+            Span::styled(pad, base),
+        ]));
+    }
+    f.render_widget(Paragraph::new(lines), inner);
+    list_hits(hits, inner, 0, &vec![1; n.saturating_sub(first)], |i| Action::NoticeRow(first + i));
+    hits.wheel(inner, Wheel::Notices);
+}
+
 fn draw_help(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let row = |k: &str, v: &str| Line::from(vec![Span::styled(format!("  {k:<26}"), t.accent()), Span::styled(v.to_string(), t.text())]);
@@ -1647,6 +1705,79 @@ fn clip(s: &str, width: usize) -> String {
     out
 }
 
+/// The code-mode transcript as lines, with its clickable spots: every ask, answer (its Thinking
+/// folded unless opened), shell run and note, oldest first.
+fn code_transcript(app: &App, w: usize) -> (Vec<Line<'static>>, Vec<Mark>) {
+    use crate::code::Entry;
+    let t = th();
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut marks = Vec::new();
+    let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
+    for (i, e) in app.code.log.iter().enumerate() {
+        match e {
+            Entry::Asked { title, line } => {
+                lines.push(Line::raw(""));
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {} ", t.icons.brand), t.pill(t.bg, t.accent)),
+                    Span::styled(format!(" {title}"), t.text().add_modifier(Modifier::BOLD)),
+                ]));
+                if !line.trim().is_empty() && line.trim() != title.trim() {
+                    lines.extend(wrap(line, w.saturating_sub(2)).into_iter().map(|l| Line::from(vec![gutter.clone(), Span::styled(l, t.muted())])));
+                }
+            }
+            Entry::Answer { model, text, reasoning, thinking_ms } => {
+                let mut head = vec![Span::styled("Bragi", t.fg(t.header).add_modifier(Modifier::BOLD))];
+                if !model.is_empty() {
+                    head.push(Span::styled(format!(" · {model}"), t.muted()));
+                }
+                let at = line_width(&head);
+                head.push(Span::styled("  copy", t.dim()));
+                marks.push(Mark { line: lines.len(), col: at as u16 + 2, w: 4, action: Action::Copy(text.clone()) });
+                lines.push(Line::from(head));
+                let open = app.show_thinking != app.code.open_thinking.contains(&i);
+                let before = lines.len();
+                thinking(&mut lines, &gutter, reasoning, *thinking_ms, true, open, w.saturating_sub(2));
+                if lines.len() > before {
+                    marks.push(Mark { line: before, col: 2, w: lines[before].width().saturating_sub(2) as u16, action: Action::CodeThinking(i) });
+                }
+                let at = lines.len();
+                let (body, m) = crate::markdown::render_marked(text, w.saturating_sub(2), false);
+                for l in body {
+                    let mut spans = vec![gutter.clone()];
+                    spans.extend(l.spans);
+                    lines.push(Line::from(spans));
+                }
+                marks.extend(m.into_iter().map(|m| Mark { line: m.line + at, col: m.col + 2, ..m }));
+            }
+            Entry::Shell(out) => {
+                lines.push(Line::raw(""));
+                let st = if out.ok() { t.fg(t.add) } else { t.fg(t.remove) };
+                let at = lines.len();
+                lines.push(Line::from(vec![
+                    Span::styled(format!("$ {}", out.command), t.text().add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("  {}", out.status()), st),
+                    Span::styled("  copy", t.dim()),
+                ]));
+                let cw = (width(&out.command) + 4 + width(&out.status())) as u16;
+                marks.push(Mark { line: at, col: cw, w: 4, action: Action::Copy(out.transcript()) });
+                for (part, style) in [(&out.stdout, t.text()), (&out.stderr, t.fg(t.remove))] {
+                    for l in part.lines() {
+                        lines.push(Line::from(vec![gutter.clone(), Span::styled(clip(&l.replace('\t', "    "), w.saturating_sub(2)), style)]));
+                    }
+                }
+                if out.truncated {
+                    lines.push(Line::styled("  [output cut: only its end is kept]", t.dim()));
+                }
+            }
+            Entry::Note { text, error } => {
+                let st = if *error { t.fg(t.remove) } else { t.dim() };
+                lines.extend(wrap(text, w.saturating_sub(2)).into_iter().map(|l| Line::styled(format!("· {l}"), st)));
+            }
+        }
+    }
+    (lines, marks)
+}
+
 fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let (side, main) = if area.width >= 96 {
@@ -1719,13 +1850,8 @@ fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     hits.push(main, Action::FocusInput);
     let w = inner.width as usize;
     match app.code.phase {
-        Phase::Compose => {
+        Phase::Compose if app.code.log.is_empty() => {
             let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
-            if !app.code.explanation.is_empty() {
-                lines.push(Line::styled("Last answer", t.fg(t.header).add_modifier(Modifier::BOLD)));
-                lines.extend(wrap(&app.code.explanation, w).into_iter().map(|l| Line::styled(l, t.text())));
-                lines.push(Line::raw(""));
-            }
             for (k, v) in CODE_HELP.iter().take(6) {
                 lines.push(Line::from(vec![
                     Span::styled(format!(" {k} "), t.pill(t.fg, t.raised)),
@@ -1736,13 +1862,17 @@ fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
             }
             f.render_widget(Paragraph::new(lines), inner);
         }
-        Phase::Asking => {
-            let mut lines: Vec<Line<'static>> = Vec::new();
-            if let Some(s) = &app.stream {
+        Phase::Compose | Phase::Asking => {
+            // The whole code-mode transcript stays, scrollable; the answer coming in is last.
+            let (mut lines, mut marks) = code_transcript(app, w);
+            if app.code.phase == Phase::Asking
+                && let Some(s) = &app.stream
+            {
                 let secs = s.started.elapsed().as_millis();
                 let what = match s.queued {
                     Some(p) => format!("Waiting for a free node (position {p})…"),
-                    None if s.text.is_empty() => "asking".into(),
+                    None if s.text.is_empty() && s.reasoning.is_empty() => "asking".into(),
+                    None if s.text.is_empty() => "thinking".into(),
                     None => "writing the change".into(),
                 };
                 lines.push(Line::from(vec![
@@ -1750,17 +1880,22 @@ fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
                     Span::styled(what, t.muted().add_modifier(Modifier::ITALIC)),
                     Span::styled(format!(" · {:.1}s", secs as f64 / 1000.0), t.dim()),
                 ]));
-                lines.push(Line::raw(""));
-                lines.extend(crate::markdown::render_streaming(&s.text, w));
-            }
-            let marks = match &app.stream {
-                Some(s) => {
-                    // The spinner and a blank line come before the markdown.
-                    let (_, marks) = crate::markdown::render_marked(&s.text, w, true);
-                    marks.into_iter().map(|m| Mark { line: m.line + 2, ..m }).collect()
+                let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
+                let ms = s.thought_ms.or_else(|| s.thinking_since.map(|x| x.elapsed().as_millis() as u64));
+                let before = lines.len();
+                thinking(&mut lines, &gutter, &s.reasoning, ms, s.thought_ms.is_some() || !s.text.is_empty(), app.show_thinking, w.saturating_sub(2));
+                if lines.len() > before {
+                    marks.push(Mark { line: before, col: 2, w: lines[before].width().saturating_sub(2) as u16, action: Action::ctrl('k') });
                 }
-                None => Vec::new(),
-            };
+                lines.push(Line::raw(""));
+                let at = lines.len();
+                lines.extend(crate::markdown::render_streaming(&s.text, w));
+                let (_, m) = crate::markdown::render_marked(&s.text, w, true);
+                marks.extend(m.into_iter().map(|m| Mark { line: m.line + at, ..m }));
+            }
+            if app.shell.is_some() {
+                lines.push(Line::styled(format!("{} running… Esc stops it", t.spinner(0)), t.muted().add_modifier(Modifier::ITALIC)));
+            }
             bottom(f, hits, lines, &marks, inner, &mut app.scroll);
         }
         Phase::Review => {
@@ -1911,7 +2046,10 @@ fn draw_themes(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
             }
             lines.push(Line::from(spans));
         }
-        f.render_widget(Paragraph::new(lines), Rect { height: left.height.saturating_sub(2), ..left });
+        let list = Rect { height: left.height.saturating_sub(2), ..left };
+        f.render_widget(Paragraph::new(lines), list);
+        list_hits(hits, list, 0, &vec![1; st.rows.len().saturating_sub(first)], |i| Action::ThemeRow(first + i));
+        hits.wheel(list, Wheel::Themes);
         let mode = |m: ModePref, name: &str| {
             if st.mode == m { Span::styled(format!(" {name} "), t.pill(t.bg, t.accent)) } else { Span::styled(format!(" {name} "), t.muted()) }
         };
@@ -2128,9 +2266,12 @@ fn draw_picker(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
         ]));
     }
     if lines.is_empty() {
-        let what = if flat { "No file matches that." } else { "No files here: everything is ignored, hidden or empty." };
+        let what = if flat { "Nothing matches that." } else { "No files here: everything is ignored, hidden or empty." };
         lines.push(Line::styled(what, t.dim()));
+    } else {
+        list_hits(hits, list, 0, &vec![1; rows.len()], |i| Action::FileRow(first + i));
     }
+    hits.wheel(list, Wheel::Files);
     f.render_widget(Paragraph::new(lines), list);
     // The context against its limits.
     let ratio = used as f64 / limits.max_total_bytes as f64;

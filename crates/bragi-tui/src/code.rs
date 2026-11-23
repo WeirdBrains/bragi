@@ -2,7 +2,7 @@
 //! the prompt, parsing, diff and undo logic is `bragi_core::code`, shared with the editor
 //! extension; this only keeps track of what the user picked.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use bragi_core::code::budget::{Overflow, TokenBudget, fit, request_tokens, thousands};
@@ -38,9 +38,29 @@ pub struct CodeState {
     pub journal: Journal,
     /// The request as asked (before fitting), for one retry when a server says it's too big.
     pub asked: Option<Asked>,
+    /// Everything that happened in code mode, oldest first: what was asked, the answers (with
+    /// their Thinking), shell runs and notes. Nothing is cleared between turns.
+    pub log: Vec<Entry>,
+    /// Log entries whose Thinking is unfolded.
+    pub open_thinking: HashSet<usize>,
+    /// Prompts typed in code mode, for Up and Down (this project's history).
+    pub history: bragi_core::prompt_history::PromptHistory,
     /// Per model: the context window a server reported, and how far its token count ran over
     /// the estimate. Wins over the catalog, which only says what the node was configured with.
     pub learned: HashMap<String, Learned>,
+}
+
+/// One item of the code-mode transcript.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Entry {
+    /// What was asked (its title) and the line as typed.
+    Asked { title: String, line: String },
+    /// The model's answer: its explanation (the edits are reviewed as diffs) and its Thinking.
+    Answer { model: String, text: String, reasoning: String, thinking_ms: Option<u64> },
+    /// A shell command the user ran, with its output.
+    Shell(bragi_core::shell::ShellOutput),
+    /// A notice (context changes, writes, errors), kept in place.
+    Note { text: String, error: bool },
 }
 
 /// A request that is out, as the user asked it.
@@ -78,7 +98,13 @@ pub enum Command {
     Root(String),
     Pick,
     Ask(CodeRequest),
-    Undo { force: bool },
+    Undo {
+        force: bool,
+    },
+    /// `!cmd` or `/shell cmd`: run it in the root.
+    Shell(String),
+    /// `/notifications`: the notification list.
+    Notifications,
     Nothing,
 }
 
@@ -100,6 +126,9 @@ impl CodeState {
             journal: Journal::new(journal_dir),
             asked: None,
             learned: HashMap::new(),
+            log: Vec::new(),
+            open_thinking: HashSet::new(),
+            history: bragi_core::prompt_history::PromptHistory::in_memory(),
         }
     }
 
@@ -278,6 +307,11 @@ impl CodeState {
         if line.is_empty() {
             return Ok(Command::Nothing);
         }
+        if bragi_core::shell::is_shell_line(line) {
+            return bragi_core::shell::parse(line)
+                .map(|c| Command::Shell(c.to_string()))
+                .ok_or_else(|| "usage: !COMMAND or /shell COMMAND".to_string());
+        }
         let (cmd, rest) = match line.strip_prefix('/') {
             Some(c) => c.split_once(char::is_whitespace).map(|(a, b)| (a, b.trim())).unwrap_or((c, "")),
             None => ("suggest", line),
@@ -287,6 +321,7 @@ impl CodeState {
             "drop" | "d" if !rest.is_empty() => Command::Drop(rest.to_string()),
             "clear" => Command::Clear,
             "files" | "pick" | "f" => Command::Pick,
+            "notifications" | "notices" => Command::Notifications,
             "root" if !rest.is_empty() => Command::Root(rest.to_string()),
             "undo" => Command::Undo { force: false },
             "undo!" => Command::Undo { force: true },
@@ -304,13 +339,34 @@ impl CodeState {
             }
             "suggest" | "s" => {
                 self.refresh()?;
-                if self.gathered.files.is_empty() {
-                    return Err("add files or a folder first: /add src".into());
+                // No context: the model may still create files, so the ask has to say what.
+                if self.gathered.files.is_empty() && rest.is_empty() {
+                    return Err("add files or a folder first (/add src), or say what to create".into());
                 }
                 Command::Ask(CodeRequest { task: CodeTask::Suggest, instruction: rest.to_string(), files: self.gathered.files.clone() })
             }
             _ => return Err(format!("unknown command /{cmd}; F1 lists them")),
         })
+    }
+
+    /// Works in `dir` from now on: made (with starter files) when it doesn't exist or is
+    /// empty, the context emptied and this project's prompt history loaded.
+    pub fn set_root(&mut self, dir: PathBuf, home: &Path) -> Result<String, String> {
+        let started = bragi_core::project::ensure(&dir).map_err(|e| e.message)?;
+        let dir = dir.canonicalize().unwrap_or(dir);
+        self.root = dir;
+        self.context.clear();
+        self.history = bragi_core::prompt_history::PromptHistory::open(bragi_core::prompt_history::file_for(home, Some(&self.root)));
+        self.refresh()?;
+        let note = started.note(&self.root);
+        Ok(if note.is_empty() { format!("Working in {}", self.root.display()) } else { note })
+    }
+
+    /// Adds a note to the transcript.
+    pub fn note(&mut self, text: &str, error: bool) {
+        if !text.trim().is_empty() {
+            self.log.push(Entry::Note { text: text.to_string(), error });
+        }
     }
 
     pub fn drop_path(&mut self, what: &str) -> Result<String, String> {
@@ -329,6 +385,15 @@ impl CodeState {
     }
 
     pub fn start(&mut self, req: CodeRequest) {
+        let title = bragi_core::code::prompt::title(&req);
+        // A retry of the same request (no answer since it was asked) isn't a new turn.
+        let last_ask = self.log.iter().rposition(|e| matches!(e, Entry::Asked { .. }));
+        let retry = last_ask.is_some_and(|i| {
+            matches!(&self.log[i], Entry::Asked { title: t, .. } if *t == title) && !self.log[i..].iter().any(|e| matches!(e, Entry::Answer { .. }))
+        });
+        if !retry {
+            self.log.push(Entry::Asked { title, line: req.instruction.clone() });
+        }
         self.request = Some(req);
         self.answer.clear();
         self.explanation.clear();
@@ -482,7 +547,13 @@ mod tests {
         let (_d, mut s) = project();
         assert_eq!(s.parse("/add src").unwrap(), Command::Add(vec!["src".into()]));
         assert!(matches!(s.parse("/undo!").unwrap(), Command::Undo { force: true }));
-        assert!(s.parse("tidy it").is_err(), "suggest needs context");
+        assert!(s.parse("/suggest").is_err(), "a bare suggest needs context");
+        // With no context the ask can still create files.
+        assert!(matches!(s.parse("make a hello world").unwrap(), Command::Ask(CodeRequest { ref files, .. }) if files.is_empty()));
+        assert_eq!(s.parse("!ls -la").unwrap(), Command::Shell("ls -la".into()));
+        assert_eq!(s.parse("/shell git status").unwrap(), Command::Shell("git status".into()));
+        assert!(s.parse("!").is_err());
+        assert_eq!(s.parse("/notifications").unwrap(), Command::Notifications);
         s.add(&["src".into()]).unwrap();
         assert!(matches!(s.parse("tidy it").unwrap(), Command::Ask(CodeRequest { task: CodeTask::Suggest, .. })));
         let Command::Ask(r) = s.parse("/rewrite src/a.rs:2-3 shorter").unwrap() else { panic!() };
@@ -592,5 +663,41 @@ mod tests {
         assert!(m.contains("too big for inkling-2-mini") && !m.contains('{'), "{m}");
         // Other errors pass through.
         assert_eq!(s.after_error("no inference node answered"), AfterError::Fail("no inference node answered".into()));
+    }
+
+    #[test]
+    fn a_new_root_is_made_with_starter_files_and_its_own_history() {
+        let home = tempfile::tempdir().unwrap();
+        let (d, mut s) = project();
+        let fresh = d.path().join("brand-new");
+        let note = s.set_root(fresh.clone(), home.path()).unwrap();
+        assert!(note.contains("created the folder"), "{note}");
+        assert!(fresh.join("README.md").exists() && fresh.join(".gitignore").exists());
+        s.history.push("make it say hi");
+        let again = bragi_core::prompt_history::PromptHistory::open(bragi_core::prompt_history::file_for(home.path(), Some(&fresh)));
+        assert_eq!(again.entries(), ["make it say hi"]);
+        // An existing project is opened as it is.
+        let note = s.set_root(d.path().to_path_buf(), home.path()).unwrap();
+        assert!(note.starts_with("Working in"), "{note}");
+        assert!(!d.path().join("README.md").exists());
+    }
+
+    #[test]
+    fn the_transcript_keeps_every_turn() {
+        let (_d, mut s) = project();
+        s.add(&["src".into()]).unwrap();
+        let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
+        s.start(req.clone());
+        s.note("No node answered", true);
+        s.start(req.clone());
+        s.log.push(Entry::Answer { model: "m".into(), text: "Nothing to change.".into(), reasoning: "hm".into(), thinking_ms: Some(10) });
+        s.answered("Nothing to change.");
+        let asked = s.log.iter().filter(|e| matches!(e, Entry::Asked { .. })).count();
+        assert_eq!(asked, 1, "a retry of the same request is the same turn");
+        // After an answer, the same ask again is a new turn; nothing before it goes away.
+        s.start(req);
+        assert_eq!(s.log.iter().filter(|e| matches!(e, Entry::Asked { .. })).count(), 2);
+        assert_eq!(s.log.len(), 4);
+        assert!(s.log.iter().any(|e| matches!(e, Entry::Note { .. })));
     }
 }

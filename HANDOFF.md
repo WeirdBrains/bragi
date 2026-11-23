@@ -2,6 +2,14 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-23: prompt history, notifications, shell, scaffolding, folders, clickable lists, kept Thinking, a code transcript (branch `feature/project-scaffold-shell`)
+
+Michael's t134u–t140u. New in `bragi-core`: `project` (scaffold a missing or empty folder: README.md and .gitignore, never overwrite), `shell` (run `!cmd` under `sh -c` with a time limit, stop flag and 64 KiB tail per stream; only user-typed lines reach it), `prompt_history` (JSONL per profile, global or per project by path hash, cap 1000), `notifications` (JSONL log, cap 200, unread count). `attach::from_path` takes a folder. `agent::pump` now keeps reasoning and its timing with the saved answer.
+
+Terminal app: Up/Down history (first/last line only); F9 / `/notifications` / header bell; toasts pause while hovered; `!cmd` in chat and code; `/root` scaffolds; picker filter matches folders; theme, file and notice rows clickable with wheel; code mode keeps a transcript (`CodeState::log`: asks, answers with Thinking, shell runs, notes) rendered with `bottom()` so it scrolls; Thinking folds per message (click) with Ctrl-K resetting all.
+
+Not done in this branch: the desktop and phone apps have no code mode, so t140 is terminal-only; prompt history, the notification list and clickable Thinking per message on desktop/phone are still to do (folder attach works there through `from_path`). Tests: `code::tests` (transcript, new root), `tests/mouse.rs::prompt_history_notifications_lists_and_the_shell`, core unit tests for each module.
+
 ## 2026-11-22: code mode fits the model's context window (branch `fix/code-context-budget`)
 
 **What changed**

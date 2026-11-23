@@ -126,8 +126,19 @@ fn summary(p: &ApprovalPrompt, tool: &str) -> String {
     }
 }
 
-/// Turns the task's events into [`ChatEvent`]s: text coalesced like a chat answer, the rest sent
-/// in order after the text before it. Returns the text and the tools used.
+/// What a task's events added up to.
+#[derive(Debug, Default)]
+struct Pumped {
+    text: String,
+    tools: Vec<String>,
+    /// The model's reasoning across the task's turns (kept with the answer, like a chat's).
+    reasoning: String,
+    thinking_ms: Option<u64>,
+}
+
+/// Turns the task's events into [`ChatEvent`]s: text coalesced like a chat answer, reasoning
+/// streamed apart (and timed, like a chat's Thinking), the rest sent in order after the text
+/// before it.
 async fn pump(
     mut rx: mpsc::UnboundedReceiver<AgentEvent>,
     out: mpsc::UnboundedSender<ChatEvent>,
@@ -135,9 +146,12 @@ async fn pump(
     companion: String,
     cards: Arc<Cards>,
     queue: mpsc::UnboundedSender<(u64, oneshot::Receiver<ApprovalAnswer>)>,
-) -> (String, Vec<String>) {
+) -> Pumped {
     let (mut text, mut pending, mut pieces, mut at) = (String::new(), String::new(), 0usize, 0u64);
     let mut tools: Vec<String> = Vec::new();
+    let (mut reasoning, mut reasoning_at) = (String::new(), 0u64);
+    let mut thinking_since: Option<std::time::Instant> = None;
+    let mut thinking_ms: Option<u64> = None;
     let flush = |pending: &mut String, at: &mut u64| {
         if !pending.is_empty() {
             let t = std::mem::take(pending);
@@ -152,7 +166,26 @@ async fn pump(
         tokio::select! {
             ev = rx.recv() => {
                 let Some(ev) = ev else { break };
+                if let AgentEvent::ReasoningDelta(t) = &ev {
+                    if t.is_empty() {
+                        continue;
+                    }
+                    flush(&mut pending, &mut at);
+                    pieces = 0;
+                    thinking_since.get_or_insert_with(std::time::Instant::now);
+                    reasoning.push_str(t);
+                    let n = t.chars().count() as u64;
+                    let _ = out.send(ChatEvent::Reasoning { offset: reasoning_at, text: t.clone() });
+                    reasoning_at += n;
+                    continue;
+                }
                 if let AgentEvent::TextDelta(t) = ev {
+                    // The first answer text after reasoning ends that Thinking spell.
+                    if let Some(since) = thinking_since.take() {
+                        let ms = since.elapsed().as_millis() as u64;
+                        thinking_ms = Some(thinking_ms.unwrap_or(0) + ms);
+                        let _ = out.send(ChatEvent::Thought { elapsed_ms: thinking_ms.unwrap_or(ms) });
+                    }
                     text.push_str(&t);
                     pending.push_str(&t);
                     pieces += 1;
@@ -199,7 +232,12 @@ async fn pump(
         }
     }
     flush(&mut pending, &mut at);
-    (text, tools)
+    if let Some(since) = thinking_since.take() {
+        let ms = since.elapsed().as_millis() as u64;
+        thinking_ms = Some(thinking_ms.unwrap_or(0) + ms);
+        let _ = out.send(ChatEvent::Thought { elapsed_ms: thinking_ms.unwrap_or(ms) });
+    }
+    Pumped { text, tools, reasoning, thinking_ms }
 }
 
 impl Core {
@@ -376,7 +414,7 @@ impl Core {
             let approver = CardApprover { queue: AsyncMutex::new(q_rx), out: out.clone(), cards: cards.clone(), always, on_always };
             let pump = tokio::spawn(pump(ev_rx, out.clone(), node.clone(), companion.clone(), cards, q_tx));
             let result = run(input, messages, ev_tx, approver, cancel, out.clone()).await;
-            let (text, tools) = pump.await.unwrap_or_default();
+            let Pumped { text, tools, reasoning, thinking_ms } = pump.await.unwrap_or_default();
             let (state, last) = match &result {
                 Ok(StopReason::Completed) => (MessageState::Complete, ChatEvent::Done { finish_reason: Some("agent".into()) }),
                 Ok(StopReason::Cancelled) => {
@@ -391,7 +429,7 @@ impl Core {
                     (state, ChatEvent::Error { kind: e.kind, message: e.message.clone(), partial: text.clone() })
                 }
             };
-            core.finish_agent(&conv, text, state, node, companion, tools);
+            core.finish_agent(&conv, Pumped { text, tools, reasoning, thinking_ms }, state, node, companion);
             lock(&core.inner.requests).remove(&rid);
             lock(&core.inner.cards).remove(&rid);
             let _ = out.send(last);
@@ -415,18 +453,23 @@ impl Core {
         tx.send(answer).is_ok()
     }
 
-    fn finish_agent(&self, conversation: &str, text: String, state: MessageState, node: String, companion: String, tools: Vec<String>) {
+    fn finish_agent(&self, conversation: &str, p: Pumped, state: MessageState, node: String, companion: String) {
         let Ok(mut c) = self.inner.history.load(conversation) else { return };
         // The answer was deleted while the task ran: nothing to write.
         let Some(m) = c.messages.last_mut().filter(|m| m.role == crate::history::Role::Assistant && m.state == MessageState::Streaming) else {
             return;
         };
         {
-            m.text = text;
+            m.text = p.text;
+            // The Thinking stays with the answer after it ends, folded, like a chat's.
+            m.reasoning.push_str(&p.reasoning);
+            if let Some(ms) = p.thinking_ms {
+                m.thinking_ms = Some(m.thinking_ms.unwrap_or(0) + ms);
+            }
             m.state = state;
             m.node = Some(node);
             m.model = Some(companion);
-            m.tools = tools;
+            m.tools = p.tools;
             m.agent = true;
         }
         c.updated_ms = crate::history::now_ms();
@@ -444,4 +487,32 @@ fn agent_error(e: &RemoteError) -> CoreError {
         c.message = format!("that node can't run agent tasks ({e})");
     }
     c
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reasoning_in_a_task_is_streamed_timed_and_kept() {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (out, mut events) = mpsc::unbounded_channel();
+        let (q, _q_rx) = mpsc::unbounded_channel();
+        tx.send(AgentEvent::ReasoningDelta("let me ".into())).unwrap();
+        tx.send(AgentEvent::ReasoningDelta("think".into())).unwrap();
+        tx.send(AgentEvent::TextDelta("391".into())).unwrap();
+        drop(tx);
+        let p = pump(rx, out, "node".into(), "assistant".into(), Arc::new(Cards::default()), q).await;
+        assert_eq!(p.text, "391");
+        assert_eq!(p.reasoning, "let me think");
+        assert!(p.thinking_ms.is_some());
+        let mut seen = Vec::new();
+        while let Ok(e) = events.try_recv() {
+            seen.push(e);
+        }
+        assert!(matches!(&seen[0], ChatEvent::Reasoning { offset: 0, text } if text == "let me "), "{seen:?}");
+        assert!(matches!(&seen[1], ChatEvent::Reasoning { offset: 7, text } if text == "think"), "{seen:?}");
+        assert!(matches!(&seen[2], ChatEvent::Thought { .. }), "{seen:?}");
+        assert!(seen.iter().any(|e| matches!(e, ChatEvent::Delta { text, .. } if text == "391")), "{seen:?}");
+    }
 }

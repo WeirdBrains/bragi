@@ -154,10 +154,14 @@ impl Attachment {
         }
     }
 
-    /// Reads `path` (at most [`MAX_BYTES`]) as an attachment.
+    /// Reads `path` (at most [`MAX_BYTES`]) as an attachment. A folder is read with
+    /// [`from_folder`](Self::from_folder).
     pub fn from_path(path: &Path) -> Result<Self> {
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let meta = std::fs::metadata(path).map_err(|e| CoreError::new(ErrorKind::Storage, format!("{}: {e}", path.display())))?;
+        if meta.is_dir() {
+            return Self::from_folder(path);
+        }
         if !meta.is_file() {
             return Err(bad(format!("{} is not a file", path.display())));
         }
@@ -166,6 +170,31 @@ impl Attachment {
         }
         let bytes = std::fs::read(path).map_err(|e| CoreError::new(ErrorKind::Storage, format!("{}: {e}", path.display())))?;
         Self::from_bytes(&name, &bytes)
+    }
+}
+
+impl Attachment {
+    /// A folder as one text attachment named `name/`: the text files under it that git would
+    /// track (`.gitignore` respected; binaries and likely secrets skipped), each under a
+    /// `==> path <==` line, up to [`MAX_BYTES`] in all. Files that didn't fit are named at the end.
+    pub fn from_folder(dir: &Path) -> Result<Self> {
+        use crate::code::context::{Limits, gather};
+        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir.display().to_string());
+        let limits = Limits { max_files: 200, max_file_bytes: MAX_BYTES, max_total_bytes: MAX_BYTES - 4096 };
+        let g = gather(dir, &[std::path::PathBuf::from(".")], limits)?;
+        if g.files.is_empty() {
+            return Err(bad(format!("{name}/ has no text files to attach")));
+        }
+        let mut text = String::new();
+        for f in &g.files {
+            text.push_str(&format!("==> {} <==\n{}{}\n", f.path, f.text, if f.text.ends_with('\n') { "" } else { "\n" }));
+        }
+        if !g.skipped.is_empty() {
+            let names: Vec<String> = g.skipped.iter().take(20).map(|(p, why)| format!("{p} ({why})")).collect();
+            let more = g.skipped.len().saturating_sub(names.len());
+            text.push_str(&format!("[left out: {}{}]\n", names.join(", "), if more > 0 { format!(" and {more} more") } else { String::new() }));
+        }
+        Ok(Attachment { name: format!("{name}/"), text, media: None })
     }
 }
 
@@ -294,5 +323,29 @@ mod tests {
         assert!(r.starts_with("[attached file: a.md]\n````\n```rust"), "{r}");
         assert!(r.ends_with("````\n\nwhat is this?"), "{r}");
         assert_eq!(render("hi", &[]), "hi");
+    }
+
+    #[test]
+    fn a_folder_attaches_as_one_text_file_respecting_gitignore() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("proj");
+        std::fs::create_dir_all(root.join("src/deep")).unwrap();
+        std::fs::write(root.join(".gitignore"), "out/\n").unwrap();
+        std::fs::create_dir_all(root.join("out")).unwrap();
+        std::fs::write(root.join("out/junk.txt"), "junk").unwrap();
+        std::fs::write(root.join("src/a.rs"), "fn a() {}\n").unwrap();
+        std::fs::write(root.join("src/deep/b.rs"), "fn b() {}").unwrap();
+        std::fs::write(root.join(".env"), "TOKEN=x").unwrap();
+        std::fs::write(root.join("blob.bin"), [0u8, 1]).unwrap();
+        let a = Attachment::from_path(&root).unwrap();
+        assert_eq!(a.name, "proj/");
+        assert!(a.media.is_none());
+        assert!(a.text.contains("==> src/a.rs <==\nfn a() {}\n") && a.text.contains("==> src/deep/b.rs <==\nfn b() {}\n"), "{}", a.text);
+        assert!(!a.text.contains("junk") && !a.text.contains("TOKEN"));
+        assert!(a.text.contains("blob.bin (binary)"), "{}", a.text);
+        assert!(a.text.len() <= MAX_BYTES);
+        let empty = d.path().join("empty");
+        std::fs::create_dir_all(&empty).unwrap();
+        assert!(Attachment::from_path(&empty).unwrap_err().message.contains("no text files"));
     }
 }

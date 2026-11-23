@@ -308,3 +308,65 @@ fn code_review_buttons() {
     h.click(Action::code(KeyCode::Esc));
     assert_eq!(h.app.code.phase, bragi_tui::code::Phase::Compose);
 }
+
+#[test]
+fn prompt_history_notifications_lists_and_the_shell() {
+    let dir = root();
+    std::fs::write(dir.path().join("a.txt"), "one\n").unwrap();
+    let mut h = Harness::linked(dir.path());
+
+    // Up and Down walk the prompts sent, and give back what was being typed.
+    for p in ["first question", "second question"] {
+        h.typed(p);
+        h.key(KeyCode::Enter);
+        h.until("", |a| a.stream.is_none() && a.input.text().is_empty());
+    }
+    h.typed("draft");
+    h.key(KeyCode::Up);
+    assert_eq!(h.app.input.text(), "second question");
+    h.key(KeyCode::Up);
+    assert_eq!(h.app.input.text(), "first question");
+    h.key(KeyCode::Down);
+    h.key(KeyCode::Down);
+    assert_eq!(h.app.input.text(), "draft");
+    h.app.input.take();
+
+    // Every notice is kept; the bell (F9) lists them, newest first.
+    let kept = h.app.notices.entries().len();
+    assert!(kept > 0, "linking said things");
+    h.click(Action::code(KeyCode::F(9)));
+    let screen = h.draw();
+    assert_eq!(h.app.view, View::Notifications);
+    assert!(screen.contains("Notifications"), "{screen}");
+    assert_eq!(h.app.notices.unread(), 0);
+    h.click(Action::NoticeRow(0));
+    assert_eq!(h.app.notices_sel, 0);
+    h.key(KeyCode::Esc);
+
+    // A theme is picked with a click.
+    h.click(Action::Goto(View::Themes));
+    h.click(Action::ThemeRow(1));
+    assert_eq!(h.app.themes.sel, 1);
+    h.key(KeyCode::Esc);
+
+    // In code mode a `!command` runs in the project and its output stays in the transcript.
+    h.key(KeyCode::F(4));
+    h.typed("!echo from-the-shell && ls");
+    h.key(KeyCode::Enter);
+    let screen = h.until("from-the-shell", |a| a.shell.is_none());
+    assert!(screen.contains("$ echo from-the-shell") && screen.contains("a.txt") && screen.contains("exit 0"), "{screen}");
+    // The next turn doesn't clear it.
+    h.typed("!echo again");
+    h.key(KeyCode::Enter);
+    let screen = h.until("again", |a| a.shell.is_none());
+    assert!(screen.contains("from-the-shell"), "{screen}");
+    // And the prompt history there is the project's own.
+    h.key(KeyCode::Up);
+    assert_eq!(h.app.input.text(), "!echo again");
+    h.app.input.take();
+
+    // The file picker's rows take clicks; a click on the picked one (the first) adds it.
+    h.key(KeyCode::Char('f'));
+    h.click(Action::FileRow(0));
+    assert!(h.app.code.has_file("a.txt"), "{:?}", h.app.code.context);
+}
