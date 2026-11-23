@@ -103,6 +103,25 @@ A marker shows what is in the context, and the bottom line shows its size agains
 
 The prompts, the diffs and the undo journal are `bragi_core::code`, shared with the editor extension.
 
+## Code mode on a phone (the desktop link)
+
+A phone has no project folder or shell, so Bragi on the phone runs code mode against a desktop.
+On the desktop, `bragi linker pair` shows a QR code. Scan it in the phone app with **Pair with
+desktop**, or type the code shown under it. From then on, the phone reads and writes files in the
+folders the desktop shares, and runs shell commands there as you, with their output streamed back.
+It connects directly over your LAN or VPN, or through the Weirdnet relay when it is away. Both
+routes are encrypted end to end, and nothing outside the shared folders is reachable.
+
+```sh
+bragi linker roots add ~/src/myapp   # share a folder (or --root DIR on pair/serve)
+bragi linker pair                    # QR code and typed code; keeps serving (Enter: a new code)
+bragi linker devices                 # paired phones
+bragi linker revoke ID               # unpair one
+bragi linker confirm on              # shell commands from a phone wait for a yes here
+```
+
+[docs/desktop-link.md](docs/desktop-link.md) describes the pairing, the routes and the protocol.
+
 ## MCP server
 
 `bragi mcp` serves Bragi over the [Model Context Protocol](https://modelcontextprotocol.io) so Cursor,

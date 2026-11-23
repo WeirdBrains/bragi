@@ -1,4 +1,4 @@
-//! `bragi-tui linker …`: the desktop side of the desktop link, so a paired phone runs code mode
+//! `bragi linker …`: the desktop side of the desktop link, so a paired phone runs code mode
 //! on this computer's projects (see `bragi_core::link` and `docs/desktop-link.md`).
 
 use std::io::{BufRead, Write};
@@ -10,7 +10,7 @@ use bragi_core::link::server::{self, DEFAULT_PORT, OFFER_TTL, link_dir};
 use bragi_core::link::{Confirm, LinkEvent, LinkServer, ServerOptions, Settings, ShellAsk};
 
 pub const USAGE: &str = "\
-usage: bragi-tui linker COMMAND
+usage: bragi linker COMMAND   (bragi-tui linker works too)
   pair [serve options]             share this computer with a phone: shows a QR code (and a code to
                                    type) for Bragi on the phone (Code > Pair with desktop), then keeps
                                    serving. Enter shows a new code, q quits
@@ -93,7 +93,7 @@ pub fn run(home: &Path, sub: Sub) -> Result<(), String> {
         Sub::Devices => {
             let d = server::devices(&dir);
             if d.is_empty() {
-                println!("No paired phones. `bragi-tui linker pair` shows a code to pair one.");
+                println!("No paired phones. `bragi linker pair` shows a code to pair one.");
             }
             for d in d {
                 println!("{}  {}  paired {}, last seen {}", d.id, d.label, when(d.paired_ms), when(d.last_seen_ms));
@@ -109,7 +109,7 @@ pub fn run(home: &Path, sub: Sub) -> Result<(), String> {
         Sub::Roots => {
             let s = Settings::load(&dir);
             if s.roots.is_empty() {
-                println!("No project folders are shared. `bragi-tui linker roots add DIR` shares one.");
+                println!("No project folders are shared. `bragi linker roots add DIR` shares one.");
             }
             for (i, r) in s.roots.iter().enumerate() {
                 println!("{i}  {}", r.display());
@@ -285,7 +285,7 @@ fn serve(dir: &Path, pair: bool, roots: Vec<PathBuf>, port: u16, weirdnet: bool,
                 }
             }
             Input::Event(e) => match e {
-                LinkEvent::Paired(d) => println!("Paired {} ({}). `bragi-tui linker revoke {}` unpairs it.", d.label, d.id, d.id),
+                LinkEvent::Paired(d) => println!("Paired {} ({}). `bragi linker revoke {}` unpairs it.", d.label, d.id, d.id),
                 LinkEvent::Unpaired(d) => println!("{} unpaired itself.", d.label),
                 LinkEvent::Refused(why) => println!("Refused: {why}"),
                 LinkEvent::Shell { device, command } => println!("{device} ran: {command}"),

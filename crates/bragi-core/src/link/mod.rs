@@ -1,6 +1,6 @@
 //! The desktop link: a phone runs code mode against a project on a desktop.
 //!
-//! The desktop (`bragi-tui linker`) serves the code tools ([`workspace`]) on a Weirdnet node of
+//! The desktop (`bragi linker`) serves the code tools ([`workspace`]) on a Weirdnet node of
 //! its own ([`server`]); the phone ([`client`]) pairs once from a QR code or typed code and then
 //! calls it directly over the LAN or VPN, or through a Weirdnet relay. Every connection is
 //! Noise-encrypted end to end and authenticated by both peer ids; every call also carries the

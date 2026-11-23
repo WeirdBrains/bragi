@@ -163,7 +163,7 @@ async fn revoked_phones_and_stolen_tokens_are_refused() {
     std::fs::copy(f.phone.dir().join("client.json"), thief_dir.join("client.json")).unwrap();
     let thief = LinkClient::open(&thief_dir, true);
     assert_eq!(thief.hello(&id).await.unwrap_err().kind, ErrorKind::NotPaired);
-    // Revoked on the desktop (as `bragi-tui linker revoke` does, while the server runs).
+    // Revoked on the desktop (as `bragi linker revoke` does, while the server runs).
     let gone = server::revoke(&f.desk_dir, "Test phone").unwrap();
     assert_eq!(gone.len(), 1);
     tokio::time::sleep(Duration::from_millis(20)).await;

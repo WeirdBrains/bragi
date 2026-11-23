@@ -1,4 +1,4 @@
-//! The desktop side of the link (`bragi-tui linker`): a Weirdnet node of its own that serves the
+//! The desktop side of the link (`bragi linker`): a Weirdnet node of its own that serves the
 //! code tools to paired phones as app calls (`bragi-link`), over the LAN or VPN directly or
 //! through a Weirdnet relay. Noise authenticates both ends on every connection and encrypts end
 //! to end, so a relay only forwards bytes it can't read or change.
