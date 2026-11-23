@@ -1683,6 +1683,9 @@ fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
         if !app.code.gathered.skipped.is_empty() {
             lines.push(Line::styled(format!("{} left out", app.code.gathered.skipped.len()), t.dim()));
         }
+        if !app.code.gathered.files.is_empty() {
+            lines.push(Line::styled(clip(&context_tokens(app), sw), t.dim()));
+        }
         let mut file_lines: Vec<usize> = Vec::new();
         if !app.code.diffs.is_empty() {
             lines.push(Line::raw(""));
@@ -2033,6 +2036,17 @@ fn draw_theme_side(f: &mut Frame, app: &App, area: Rect, editing: bool) {
     f.render_widget(Paragraph::new(lines), area);
 }
 
+/// The context in tokens against what the model the request goes to can take.
+fn context_tokens(app: &App) -> String {
+    match app.code_model() {
+        Some(m) => {
+            let listed = app.state.catalog.context_for(&m);
+            app.code.token_summary(&m, listed)
+        }
+        None => app.code.token_summary("the model", None),
+    }
+}
+
 /// The file picker: a window over code mode with the tree (or the filter's matches), what is
 /// in the context marked, sizes, and the context against its limit.
 fn draw_picker(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
@@ -2041,7 +2055,7 @@ fn draw_picker(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let limits = bragi_core::code::Limits::default();
     let used = app.code.gathered.total_bytes();
     let n_files = app.code.gathered.files.len();
-    let right = format!("{} (at most {} files)", app.code.summary(), limits.max_files);
+    let right = format!("{} (at most {} files) · {}", app.code.summary(), limits.max_files, context_tokens(app));
     let inner = window(f, hits, area, 100, area.height.saturating_sub(2), "Files", "Space select · Enter open · / filter");
     if inner.height < 4 {
         return;

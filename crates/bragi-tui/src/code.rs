@@ -2,8 +2,10 @@
 //! the prompt, parsing, diff and undo logic is `bragi_core::code`, shared with the editor
 //! extension; this only keeps track of what the user picked.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use bragi_core::code::budget::{Overflow, TokenBudget, fit, request_tokens, thousands};
 use bragi_core::code::prompt::{self, explanation, parse_edits, proposals};
 use bragi_core::code::{CodeRequest, CodeTask, FileChange, FileDiff, Gathered, Journal, Limits, gather, parse_target};
 
@@ -34,6 +36,37 @@ pub struct CodeState {
     pub hunk: usize,
     pub side_by_side: bool,
     pub journal: Journal,
+    /// The request as asked (before fitting), for one retry when a server says it's too big.
+    pub asked: Option<Asked>,
+    /// Per model: the context window a server reported, and how far its token count ran over
+    /// the estimate. Wins over the catalog, which only says what the node was configured with.
+    pub learned: HashMap<String, Learned>,
+}
+
+/// A request that is out, as the user asked it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Asked {
+    pub request: CodeRequest,
+    pub model: String,
+    /// The window it was fitted to, if one was known.
+    pub budget: Option<TokenBudget>,
+    /// Whether this is already the retry.
+    pub retried: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Learned {
+    pub context: Option<u32>,
+    pub ratio: f64,
+}
+
+/// What to do after a code request failed.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AfterError {
+    /// Ask again with this (smaller) request; the string says why.
+    Retry(CodeRequest, String),
+    /// Show this and stop.
+    Fail(String),
 }
 
 /// What a typed line in code mode asks for.
@@ -65,6 +98,8 @@ impl CodeState {
             hunk: 0,
             side_by_side: false,
             journal: Journal::new(journal_dir),
+            asked: None,
+            learned: HashMap::new(),
         }
     }
 
@@ -149,6 +184,84 @@ impl CodeState {
         let l = Limits::default();
         let n = self.gathered.files.len();
         format!("{n} file{}, {} KiB of {} KiB", plural(n), self.gathered.total_bytes().div_ceil(1024), l.max_total_bytes / 1024)
+    }
+
+    /// The context's estimated tokens against what `model` can take: `~95.7k tokens; inkling-2-mini
+    /// takes ~23k (32.8k context)`. `context` is what the catalog lists for it.
+    pub fn token_summary(&self, model: &str, context: Option<u32>) -> String {
+        let n: usize = self.gathered.files.iter().map(bragi_core::code::budget::file_tokens).sum();
+        match self.budget_for(model, context) {
+            Some(b) => format!(
+                "~{} tokens; {model} takes ~{} ({} context)",
+                thousands(b.scaled(n)),
+                thousands(b.prompt_tokens()),
+                thousands(b.context as usize)
+            ),
+            None => format!("~{} tokens", thousands(n)),
+        }
+    }
+
+    /// The budget for `model`: what a server reported beats what the catalog lists.
+    pub fn budget_for(&self, model: &str, listed: Option<u32>) -> Option<TokenBudget> {
+        let learned = self.learned.get(model);
+        let context = learned.and_then(|l| l.context).or(listed)?;
+        Some(TokenBudget::for_context(context).with_ratio(learned.map(|l| l.ratio).unwrap_or(1.0)))
+    }
+
+    /// Fits `req` into `model`'s window (`listed` is the catalog's figure) and remembers it for
+    /// a retry. Returns what to send and a note about files left out (empty when none were).
+    pub fn prepare(&mut self, req: CodeRequest, model: &str, listed: Option<u32>) -> Result<(CodeRequest, String), String> {
+        let budget = self.budget_for(model, listed);
+        let (send, note) = match budget {
+            Some(b) => {
+                let f = fit(&req, b, model).map_err(|e| e.message)?;
+                let note = f.note(model);
+                (f.request, note)
+            }
+            None => (req.clone(), String::new()),
+        };
+        self.asked = Some(Asked { request: req, model: model.to_string(), budget, retried: false });
+        Ok((send, note))
+    }
+
+    /// After a failed request: when the server said the prompt was too big for its context,
+    /// learn its window and ratio and fit the request again (once); otherwise a plain message.
+    pub fn after_error(&mut self, message: &str) -> AfterError {
+        let Some(o) = Overflow::parse(message) else { return AfterError::Fail(message.to_string()) };
+        let Some(asked) = self.asked.clone() else { return AfterError::Fail(o.message("the model")) };
+        let model = asked.model.clone();
+        if asked.retried {
+            return AfterError::Fail(o.message(&model));
+        }
+        // How far the server's count ran over the estimate of what was actually sent.
+        let sent = self.request.as_ref().and_then(|r| request_tokens(r).ok()).unwrap_or(0);
+        let old = self.learned.get(&model).copied().unwrap_or(Learned { context: None, ratio: 1.0 });
+        let mut ratio = old.ratio;
+        if let (Some(p), true) = (o.prompt_tokens, sent > 0) {
+            ratio = ratio.max(p as f64 / sent as f64 * 1.05);
+        } else if o.context.is_none() {
+            // No numbers at all: be half again as strict.
+            ratio *= 1.5;
+        }
+        let context = o.context.or(asked.budget.map(|b| b.context));
+        let Some(context) = context else { return AfterError::Fail(o.message(&model)) };
+        self.learned.insert(model.clone(), Learned { context: Some(context), ratio });
+        let budget = TokenBudget::for_context(context).with_ratio(ratio);
+        match fit(&asked.request, budget, &model) {
+            Ok(f) => {
+                let total = asked.request.files.len();
+                let kept = f.request.files.len();
+                self.asked = Some(Asked { budget: Some(budget), retried: true, ..asked });
+                let why = format!(
+                    "{model} has a {} context; asking again with {kept} of {total} file{} (~{} tokens)",
+                    thousands(context as usize),
+                    plural(total),
+                    thousands(f.tokens)
+                );
+                AfterError::Retry(f.request, why)
+            }
+            Err(e) => AfterError::Fail(e.message),
+        }
     }
 
     pub fn skipped_note(&self) -> String {
@@ -427,5 +540,57 @@ mod tests {
         std::fs::write(root.join("m2.txt"), "y".repeat(200 * 1024)).unwrap();
         assert!(st.set_file("m2.txt", true).unwrap_err().contains("past 512 KiB"));
         assert!(!st.has_file("m2.txt"));
+    }
+
+    fn big_project(files: usize, bytes: usize) -> (tempfile::TempDir, CodeState) {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(d.path().join("ld4")).unwrap();
+        let line = "    total = compute(values, weights)  # pad\n";
+        for i in 0..files {
+            std::fs::write(d.path().join(format!("ld4/m{i:02}.py")), line.repeat(bytes / line.len())).unwrap();
+        }
+        let mut s = CodeState::new(d.path().to_path_buf(), d.path().join(".journal"));
+        s.add(&["ld4".into()]).unwrap();
+        (d, s)
+    }
+
+    const LLAMA_OVERFLOW: &str = r#"bad request 400: {"error":{"code":400,"message":"request (91723 tokens) exceeds the available context size (32768 tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":91723,"n_ctx":32768}}"#;
+
+    #[test]
+    fn a_request_is_fitted_to_the_listed_context() {
+        let (_d, mut s) = big_project(22, 10 * 1024);
+        let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
+        let (sent, note) = s.prepare(req.clone(), "inkling-2-mini", Some(32_768)).unwrap();
+        assert!(sent.files.len() < 22 && !sent.files.is_empty());
+        assert!(note.contains("of 22 files") && note.contains("inkling-2-mini"), "{note}");
+        assert!(request_tokens(&sent).unwrap() <= TokenBudget::for_context(32_768).prompt_tokens());
+        assert!(s.token_summary("inkling-2-mini", Some(32_768)).contains("32.8k context"));
+        // No window known: sent as is (a server refusal teaches it).
+        let (sent, note) = s.prepare(req.clone(), "unknown", None).unwrap();
+        assert_eq!(sent, req);
+        assert!(note.is_empty());
+    }
+
+    #[test]
+    fn a_context_overflow_retries_once_with_what_the_server_said() {
+        let (_d, mut s) = big_project(22, 10 * 1024);
+        let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
+        // The catalog said nothing, so all 22 files went out and the server refused.
+        let (sent, _) = s.prepare(req, "inkling-2-mini", None).unwrap();
+        assert_eq!(sent.files.len(), 22);
+        s.start(sent);
+        s.failed();
+        let AfterError::Retry(again, why) = s.after_error(LLAMA_OVERFLOW) else { panic!("no retry") };
+        assert!(again.files.len() < 22, "{why}");
+        assert!(why.contains("32.8k context") && why.contains("of 22 files"), "{why}");
+        assert_eq!(s.learned["inkling-2-mini"].context, Some(32_768));
+        // The next request is fitted before it goes out.
+        assert!(s.budget_for("inkling-2-mini", None).is_some());
+        // A second refusal is a plain message, not raw JSON and not another retry.
+        s.start(again);
+        let AfterError::Fail(m) = s.after_error(LLAMA_OVERFLOW) else { panic!("retried twice") };
+        assert!(m.contains("too big for inkling-2-mini") && !m.contains('{'), "{m}");
+        // Other errors pass through.
+        assert_eq!(s.after_error("no inference node answered"), AfterError::Fail("no inference node answered".into()));
     }
 }

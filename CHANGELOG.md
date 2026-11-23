@@ -26,6 +26,10 @@ All notable changes to Bragi are listed here. The format follows
   to accept or reject, and a chat panel that uses the editor's context.
 - Rewrites in the editor extension are reviewed hunk by hunk: Accept and Reject over each hunk, Accept All and Reject All, and the editor's undo takes an accepted hunk back. The hunks come from `bragi serve` (new `/v1/code/hunks` and `/v1/code/apply` routes), the same `bragi_core::code` hunks the terminal app reviews.
 
+### Fixed
+
+- Code mode fits its prompt to the model's context window: files that don't fit are left out (and named), and a "request exceeds the available context size" refusal is retried once with fewer files or shown as a plain message instead of raw JSON.
+
 ## [0.1.1] - 2026-11-21
 
 ### Added
