@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-23
+
 ### Changed
 
 - Chat and code are modes of one conversation in the terminal app, not separate screens. Tab (or Shift-Tab, `/chat`, `/code`, `/mode`) switches; the conversation, its transcript, the draft and the code context stay. A plan made in chat goes to the model with the next code request, and code turns (the ask, the answer with its Thinking, shell runs) are saved in the conversation, so chat sees them too. Code turns are marked `code` in the transcript (and on desktop and phone, which show the same conversations). The header shows which mode you are in. Ctrl-B now moves between the message box and the chats (Tab used to). Older conversations open as chat turns; nothing needs migrating.
