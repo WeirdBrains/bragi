@@ -12,7 +12,7 @@ Not done: the desktop and phone apps have no code mode (no project, files or she
 
 ## 2026-11-23: prompt history, notifications, shell, scaffolding, folders, clickable lists, kept Thinking, a code transcript (branch `feature/project-scaffold-shell`)
 
-Michael's t134u–t140u. New in `bragi-core`: `project` (scaffold a missing or empty folder: README.md and .gitignore, never overwrite), `shell` (run `!cmd` under `sh -c` with a time limit, stop flag and 64 KiB tail per stream; only user-typed lines reach it), `prompt_history` (JSONL per profile, global or per project by path hash, cap 1000), `notifications` (JSONL log, cap 200, unread count). `attach::from_path` takes a folder. `agent::pump` now keeps reasoning and its timing with the saved answer.
+Michael's t134u–t140u. New in `bragi-core`: `project` (scaffold a missing or empty folder: a starter readme and `.gitignore`, never overwrite), `shell` (run `!cmd` under `sh -c` with a time limit, stop flag and 64 KiB tail per stream; only user-typed lines reach it), `prompt_history` (JSONL per profile, global or per project by path hash, cap 1000), `notifications` (JSONL log, cap 200, unread count). `attach::from_path` takes a folder. `agent::pump` now keeps reasoning and its timing with the saved answer.
 
 Terminal app: Up/Down history (first/last line only); F9 / `/notifications` / header bell; toasts pause while hovered; `!cmd` in chat and code; `/root` scaffolds; picker filter matches folders; theme, file and notice rows clickable with wheel; code mode keeps a transcript (`CodeState::log`: asks, answers with Thinking, shell runs, notes) rendered with `bottom()` so it scrolls; Thinking folds per message (click) with Ctrl-K resetting all.
 
@@ -156,7 +156,7 @@ Not done in this branch: the desktop and phone apps have no code mode, so t140 i
 
 **Checks:** none needed (docs only); the doc was scanned for host names, addresses and home paths.
 
-**Next:** Ymir's side is in `ymir/docs/design/video.md`. The wish list goes to the Weirdnet Lead.
+**Next:** Ymir's side is in [ymir/docs/design/video.md](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md). The wish list goes to the Weirdnet Lead.
 
 
 ## 2026-11-22: LF-34, `bragi PATH` opens the terminal app on a folder or file (branch `feature/tui-path`)
