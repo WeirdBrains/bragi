@@ -12,8 +12,8 @@ repository = "https://github.com/WeirdBrains/bragi"
 homepage = "https://github.com/WeirdBrains/bragi"
 
 [workspace.dependencies]
-bragi-core = { path = "crates/bragi-core", version = "0.1.0" }
-bragi-serve = { path = "crates/bragi-serve", version = "0.1.0" }
+bragi-core = { path = "crates/bragi-core" }
+bragi-serve = { path = "crates/bragi-serve" }
 bragi-mcp = { path = "crates/bragi-mcp" }
 
 # Published Weirdnet crates, used as they are.
