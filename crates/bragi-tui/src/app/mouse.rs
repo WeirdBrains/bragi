@@ -156,11 +156,6 @@ impl App {
                     }
                 }
             }
-            Action::CodeThinking(i) => {
-                if !self.code.open_thinking.remove(&i) {
-                    self.code.open_thinking.insert(i);
-                }
-            }
             Action::FocusInput => {
                 if self.view == View::Chat {
                     self.focus = Focus::Input;

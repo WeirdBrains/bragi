@@ -680,6 +680,7 @@ impl Core {
             tools: Vec::new(),
             agent: false,
             reactions: Vec::new(),
+            mode: Default::default(),
             at_ms: now,
         });
         let messages = agent_messages(&c.messages);
@@ -699,11 +700,28 @@ impl Core {
             tools: Vec::new(),
             agent: false,
             reactions: Vec::new(),
+            mode: Default::default(),
             at_ms: now,
         });
         c.updated_ms = now;
         self.inner.history.save(&c)?;
         Ok((c.id, messages))
+    }
+
+    /// Saves turns made outside a chat request (code-mode asks and answers, shell runs) at the end
+    /// of `conversation`, or of a new one titled after the first message. Returns its id. They are
+    /// the conversation's like any other: the next chat turn sends them to the model too.
+    pub fn record(&self, conversation: Option<&str>, messages: Vec<ChatMessage>) -> Result<String> {
+        let first = messages.first().ok_or_else(|| CoreError::new(ErrorKind::BadRequest, "nothing to save"))?;
+        let now = now_ms();
+        let mut c = match conversation {
+            Some(id) => self.inner.history.load(id)?,
+            None => Conversation { id: random_id("c"), title: title_for(&first.text), created_ms: now, updated_ms: now, messages: Vec::new() },
+        };
+        c.messages.extend(messages);
+        c.updated_ms = now;
+        self.inner.history.save(&c)?;
+        Ok(c.id)
     }
 
     /// Continues the cut-off answer at the end of `conversation` from where it stopped: the
@@ -1203,13 +1221,36 @@ impl Core {
 /// Earlier turns as the model sees them: finished and cut-off answers count, empty ones don't.
 /// Reasoning stays out: models expect only the answers of earlier turns, and it would fill the context.
 pub(crate) fn agent_messages(msgs: &[ChatMessage]) -> Vec<Message> {
-    msgs.iter()
+    merge_turns(msgs)
+        .iter()
         .filter(|m| !(m.role == Role::Assistant && m.text.is_empty()))
         .map(|m| match m.role {
             Role::User => Message::user(user_content(m)),
             Role::Assistant => Message::assistant(crate::reactions::with_note(m, m.text.clone()), Vec::new()),
         })
         .collect()
+}
+
+/// Messages in a row from the same side (a shell run recorded after a question, say) joined into
+/// one, since many chat templates insist on user and assistant taking turns. Messages carrying
+/// attachments are left as they are.
+pub fn merge_turns(msgs: &[ChatMessage]) -> Vec<ChatMessage> {
+    let mut out: Vec<ChatMessage> = Vec::with_capacity(msgs.len());
+    for m in msgs {
+        if let Some(last) = out.last_mut()
+            && last.role == m.role
+            && last.attachments.is_empty()
+            && m.attachments.is_empty()
+            && !(m.role == Role::Assistant && (last.text.is_empty() || m.text.is_empty()))
+        {
+            last.text = format!("{}\n\n{}", last.text, m.text);
+            last.reactions.extend(m.reactions.iter().cloned());
+            last.state = m.state;
+            continue;
+        }
+        out.push(m.clone());
+    }
+    out
 }
 
 /// What a model needs to read the whole conversation: text unless some message has images or audio.
@@ -1406,6 +1447,7 @@ mod context_tests {
             tools: Vec::new(),
             agent: false,
             reactions: Vec::new(),
+            mode: Default::default(),
             at_ms: 0,
         };
         let question = ChatMessage { role: Role::User, text: "17*23?".into(), reasoning: String::new(), thinking_ms: None, ..answer.clone() };
@@ -1439,6 +1481,7 @@ mod reaction_context_tests {
             tools: Vec::new(),
             agent: false,
             reactions: reactions.iter().map(|s| s.to_string()).collect(),
+            mode: Default::default(),
             at_ms: 1,
         }
     }

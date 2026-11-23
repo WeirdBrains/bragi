@@ -2,6 +2,14 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-23: chat and code as modes of one conversation (branch `feature/chat-code-modes`)
+
+Michael's t141u/t142u. Core: `history::Mode { Chat, Code }` on `ChatMessage.mode` (serde default chat; stored as `ext.mode` only when code, so old records and other apps read as chat); `ChatMessage::new`; `Core::record(conversation, messages)` saves turns made outside a chat request (new conversation when `None`); `merge_turns` joins consecutive same-role messages (used by `agent_messages`, so a recorded shell run after a question still alternates). Bridge `MessageView.mode` (regenerated with frb 2.13.0); desktop and phone show "code mode" in a code turn's meta line.
+
+Terminal app: `View::Chat`/`View::Code` are now the two modes of the same conversation (`App::mode()`, `App::set_mode()`); both draw `ui::draw_transcript`; code mode puts the Context panel where the sidebar is, and the diff review replaces the transcript only while reviewing. Code requests send the conversation (newest turns within a third of the prompt budget, `code::conversation_turns`, reserved out of the window before fitting files). Finished, stopped and failed code turns are recorded; shell runs are recorded as a turn of the current mode (folded to their last 30 lines on screen). Tab/Shift-Tab switch modes (there is no completion popup to defer to); Ctrl-B moves focus to the sidebar. Review keeps Tab as next hunk.
+
+Not done: the desktop and phone apps have no code mode (no project, files or shell there), so they show code turns but can't make them. Flutter `theme_test` and `scenario_test` fail locally with a setState-during-build in `AppearanceController.previewPalette` and a scenario error; this branch only added a field and a label there, and I didn't check them on `main`.
+
 ## 2026-11-23: prompt history, notifications, shell, scaffolding, folders, clickable lists, kept Thinking, a code transcript (branch `feature/project-scaffold-shell`)
 
 Michael's t134u–t140u. New in `bragi-core`: `project` (scaffold a missing or empty folder: README.md and .gitignore, never overwrite), `shell` (run `!cmd` under `sh -c` with a time limit, stop flag and 64 KiB tail per stream; only user-typed lines reach it), `prompt_history` (JSONL per profile, global or per project by path hash, cap 1000), `notifications` (JSONL log, cap 200, unread count). `attach::from_path` takes a folder. `agent::pump` now keeps reasoning and its timing with the saved answer.

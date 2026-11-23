@@ -441,7 +441,7 @@ fn code(
         }
     };
     s.ready(Duration::from_secs(45))?;
-    let messages = CodeState::messages(&req)?;
+    let messages = CodeState::messages(&req, &[])?;
     let mut h = s.core.complete(messages, model).map_err(|e| e.message)?;
     let rt = s.core.handle().clone();
     let mut text = String::new();

@@ -48,12 +48,12 @@ pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;
 pub use crate::core::{
     AppState, ChatHandle, Config, Core, LinkCheck, NODE_ADDED, NODE_FOUND_SHOWN, NODE_SEARCH_LIMIT, NodeSearch, PEERS_FILE, PairState, SCHEME,
-    Transport, is_node_address, node_config, normalize_link,
+    Transport, is_node_address, merge_turns, node_config, normalize_link,
 };
 pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
 pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::files::{ChatFile, FileKind, FileOrigin};
-pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Role, UNDO_MS};
+pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Mode, Role, UNDO_MS};
 pub use crate::mcp_servers::{McpScope, McpSecrets, McpServer, McpServerInput, McpServerView, McpTestReport, McpTransport};
 pub use crate::models::{
     HubHit, ModelNode, ModelsEvent, NodeFit, NodeModels, NodeStatus, PullSpec, PullTarget, PulledView, QuantFit, StoredView, Verdict, human_bytes,

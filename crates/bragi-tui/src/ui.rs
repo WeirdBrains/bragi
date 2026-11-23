@@ -6,7 +6,7 @@
 //! dimmed view; notices show as toasts in the top right.
 
 use bragi_core::code::{HunkLine, LineTag};
-use bragi_core::{MessageState, ModePref, ModelStatus, PairState, Role};
+use bragi_core::{MessageState, Mode, ModePref, ModelStatus, PairState, Role};
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -36,7 +36,12 @@ pub const HELP: &[(&str, &str)] = &[
     ("Enter", "send the message (code mode: run the line)"),
     ("Alt-Enter, Ctrl-J", "new line in the message"),
     ("Esc", "stop the answer · close a screen · discard proposed changes"),
-    ("Tab", "switch between the message box and the sidebar (folders and chats)"),
+    ("Tab, Shift-Tab", "switch modes: chat (talk, plan) and code (files, diffs, shell), same conversation"),
+    ("/chat · /code · /mode", "switch modes by name (or to the other one)"),
+    ("Ctrl-B", "switch between the message box and the sidebar (folders and chats)"),
+    ("↑ ↓ (first/last line)", "earlier prompts sent (history); PgUp PgDn scroll"),
+    ("!CMD · /shell CMD", "run a command in the project folder; its output is kept in the chat"),
+    ("F9 · /notifications", "past notifications (the bell shows how many are new)"),
     ("↑ ↓ / j k", "move in lists and hunks; scroll the chat when the box is empty"),
     ("PgUp PgDn", "scroll the chat or the answer"),
     ("Ctrl-N", "new chat"),
@@ -44,7 +49,7 @@ pub const HELP: &[(&str, &str)] = &[
     ("Ctrl-K", "show or fold the models' reasoning (Thinking)"),
     ("Ctrl-L, F2", "link this terminal: show a code, open one, or add a node address"),
     ("Ctrl-O, F3", "pick where chats go (Weirdnet pool or an endpoint) and the model"),
-    ("Ctrl-E, F4", "code mode: suggestions and rewrites on files"),
+    ("Ctrl-E, F4", "code mode (like Tab): suggestions and rewrites on files"),
     ("Ctrl-T, F5", "status: this device, linked nodes and models"),
     ("Ctrl-P, F6", "settings: OpenAI-compatible endpoints and node addresses"),
     ("Ctrl-Y", "copy (link code, last answer, or the diff) to the terminal's clipboard"),
@@ -113,7 +118,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         hits.push(input, Action::FocusInput);
         let streaming = app.streaming();
         let (title, placeholder) = match base {
-            View::Code => ("Code".to_string(), "f files · /rewrite FILE:A-B how · or ask for suggestions across the context"),
+            View::Code => ("Code mode · Tab for chat".to_string(), "ask for changes · f files · /rewrite FILE:A-B how · !cmd runs a command"),
             _ if streaming => (
                 format!("{} Bragi is answering · Esc stops it", t.spinner(app.stream.as_ref().map_or(0, |s| s.started.elapsed().as_millis()))),
                 "Type the next message…",
@@ -122,7 +127,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 format!("Message · {} attachment{}", app.attachments.len(), crate::code::plural(app.attachments.len())),
                 "Say what to do with the files…",
             ),
-            _ => ("Message".to_string(), "Ask Bragi anything…  /attach PATH adds a file"),
+            _ => ("Chat mode · Tab for code".to_string(), "Ask or plan anything…  /attach PATH adds a file"),
         };
         let focused = !modal && (app.focus == Focus::Input || base != View::Chat);
         let keys = if base == View::Code { "Enter run" } else { "Enter send · Alt-Enter new line" };
@@ -342,8 +347,9 @@ fn draw_header(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     f.render_widget(Block::default().style(Style::new().bg(t.surface)), area);
     let mut spans = vec![Span::styled(format!(" {} Bragi ", t.icons.brand), t.pill(t.bg, t.accent)), Span::raw(" ")];
     let tabs = [
-        (View::Chat, "Chat", "^N"),
-        (View::Code, "Code", "^E"),
+        // The two modes of the conversation: Tab switches.
+        (View::Chat, "Chat", "Tab"),
+        (View::Code, "Code", "Tab"),
         (View::Status, "Status", "^T"),
         (View::Settings, "Settings", "^P"),
         (View::Themes, "Theme", "^G"),
@@ -351,7 +357,9 @@ fn draw_header(f: &mut Frame, app: &App, hits: &mut HitMap, area: Rect) {
     ];
     let wide = area.width >= 100;
     for (v, name, key) in tabs {
-        let on = app.view == v || (app.view == View::Models && v == View::Chat);
+        let on = app.view == v
+            || (v == View::Chat && app.mode() == Mode::Chat && !matches!(app.view, View::Status | View::Settings | View::Themes | View::Link))
+            || (v == View::Code && app.mode() == Mode::Code && !matches!(app.view, View::Status | View::Settings | View::Themes | View::Link));
         let st = if on { t.bold_accent().bg(t.raised) } else { t.muted().bg(t.surface) };
         let start = line_width(&spans);
         spans.push(Span::styled(format!(" {name} "), st));
@@ -406,16 +414,16 @@ fn hints(app: &App) -> &'static [(&'static str, &'static str)] {
     match app.view {
         View::Chat if app.streaming() => &[("Esc", "stop"), ("PgUp", "up"), ("PgDn", "down"), ("F1", "help")],
         View::Chat if app.focus == Focus::Chats => {
-            &[("↑↓", "move"), ("Enter", "open/fold"), ("n", "folder"), ("m", "move"), ("r", "rename"), ("d", "delete"), ("Tab", "back")]
+            &[("↑↓", "move"), ("Enter", "open/fold"), ("n", "folder"), ("m", "move"), ("r", "rename"), ("d", "delete"), ("^B", "back")]
         }
-        View::Chat => &[("Enter", "send"), ("Tab", "chats"), ("^O", "target"), ("^K", "thinking"), ("F1", "help"), ("^Q", "quit")],
+        View::Chat => &[("Enter", "send"), ("Tab", "code mode"), ("^B", "chats"), ("^O", "target"), ("^K", "thinking"), ("F1", "help")],
         View::Link => &[("s", "show a code"), ("c", "copy"), ("Enter", "open/add"), ("Esc", "back")],
         View::Code => match app.code.phase {
             Phase::Review => {
                 &[("y", "accept"), ("n", "reject"), ("↑↓", "hunks"), ("a", "all"), ("r", "none"), ("v", "view"), ("w", "write"), ("Esc", "discard")]
             }
             Phase::Asking => &[("Esc", "stop")],
-            Phase::Compose => &[("Enter", "run"), ("^F", "files"), ("/undo", "undo"), ("Esc", "back"), ("F1", "help")],
+            Phase::Compose => &[("Enter", "run"), ("Tab", "chat mode"), ("^F", "files"), ("!", "shell"), ("/undo", "undo"), ("F1", "help")],
         },
         View::Status => &[("r", "sync now"), ("Esc", "back")],
         View::Models => &[("↑↓", "move"), ("Tab", "targets/models"), ("Enter", "use"), ("a", "automatic"), ("Esc", "back")],
@@ -807,7 +815,6 @@ fn tip(key: &str, what: &str) -> Line<'static> {
 }
 
 fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active: bool) {
-    let t = th();
     // The sidebar folds away in narrow terminals.
     let (list, main) = if area.width >= 90 {
         let side = if area.width >= 140 { 34 } else { 30 };
@@ -819,10 +826,18 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
     if let Some(list) = list {
         draw_sidebar(f, app, hits, list);
     }
+    draw_transcript(f, app, hits, main, active, Mode::Chat);
+}
+
+/// The open conversation, the same in both modes: every turn (each marked with its mode when
+/// it was code), the answer coming in, a shell command running. Scrolls from the bottom.
+fn draw_transcript(f: &mut Frame, app: &mut App, hits: &mut HitMap, main: Rect, active: bool, mode: Mode) {
+    let t = th();
     hits.push(main, Action::FocusInput);
     let title = app.current.as_ref().map(|c| c.title.clone()).unwrap_or_else(|| "New chat".into());
     let title = clip(&title, (main.width as usize).saturating_sub(30).max(8));
-    let block = pane(&title, active && app.focus == Focus::Input)
+    let title = format!("{} · {title}", if mode == Mode::Code { "Code" } else { "Chat" });
+    let block = pane(&title, active && (app.focus == Focus::Input || mode == Mode::Code))
         .title_top(Line::from(Span::styled(format!(" {} · {} ", app.target_label(), app.model_label()), t.dim())).right_aligned())
         .padding(Padding::new(1, 1, 0, 0));
     let inner = block.inner(main);
@@ -833,7 +848,24 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
     let streaming_here =
         app.stream.as_ref().filter(|s| s.purpose == Purpose::Chat && app.current.as_ref().is_some_and(|c| c.id == s.conversation_id));
     let now = bragi_core::history::now_ms();
+    let code_live = app.stream.as_ref().filter(|s| s.purpose == Purpose::Code);
     match &app.current {
+        None if mode == Mode::Code && code_live.is_none() && app.shell.is_none() => {
+            let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
+            lines.push(Line::styled(format!("Code mode in {}", clip(&app.code.root.display().to_string(), w.saturating_sub(13))), t.muted()));
+            lines.push(Line::raw(""));
+            for (k, v) in CODE_HELP.iter().take(7) {
+                lines.push(Line::from(vec![
+                    Span::styled(format!(" {k} "), t.pill(t.fg, t.raised)),
+                    Span::raw(" ".repeat(26usize.saturating_sub(width(k) + 2))),
+                    Span::styled(v.to_string(), t.muted()),
+                ]));
+                lines.push(Line::raw(""));
+            }
+            f.render_widget(Paragraph::new(lines), inner);
+            return;
+        }
+        None if code_live.is_some() || app.shell.is_some() => {}
         None => {
             let mut card = vec![
                 Line::styled(format!("{}  B R A G I", t.icons.brand), t.bold_accent()),
@@ -878,6 +910,8 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
             for (i, m) in c.messages.iter().enumerate() {
                 let live = streaming_here.filter(|_| i + 1 == n && m.role == Role::Assistant);
                 let when = Span::styled(format!(" · {}", ago(m.at_ms, now)), t.dim());
+                // Code turns carry a marker; chat turns are plain.
+                let when = if m.mode == Mode::Code { Span::styled(format!(" · code{}", when.content), t.dim()) } else { when };
                 if m.role == Role::User {
                     user_bubble(&mut lines, m, when, w);
                     lines.push(Line::raw(""));
@@ -891,6 +925,9 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
                     _ => String::new(),
                 };
                 let mut head = vec![Span::styled(format!("{} Bragi", t.icons.bot), t.bold_accent())];
+                if m.mode == Mode::Code {
+                    head.push(Span::styled(" code ", t.pill(t.bg, t.accent)));
+                }
                 if !model.is_empty() {
                     head.push(Span::styled(format!(" · {model}{node}{flags}"), t.muted()));
                 }
@@ -964,6 +1001,51 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
             }
         }
     }
+    // A code request out: what was asked, then its answer as it comes.
+    if let Some(s) = code_live {
+        if !app.code.asked_line.is_empty() {
+            let m = bragi_core::ChatMessage::new(Role::User, app.code.asked_line.clone(), Mode::Code);
+            user_bubble(&mut lines, &m, Span::styled(" · code · now", t.dim()), w);
+            lines.push(Line::raw(""));
+        }
+        let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
+        let mut head = vec![Span::styled(format!("{} Bragi", t.icons.bot), t.bold_accent()), Span::styled(" code ", t.pill(t.bg, t.accent))];
+        if let Some(m) = &s.model {
+            head.push(Span::styled(format!(" · {m}"), t.muted()));
+        }
+        lines.push(Line::from(head));
+        let ms = s.thought_ms.or_else(|| s.thinking_since.map(|x| x.elapsed().as_millis() as u64));
+        let before = lines.len();
+        thinking(&mut lines, &gutter, &s.reasoning, ms, s.thought_ms.is_some() || !s.text.is_empty(), app.show_thinking, w.saturating_sub(2));
+        if lines.len() > before {
+            marks.push(Mark { line: before, col: 2, w: lines[before].width().saturating_sub(2) as u16, action: Action::ctrl('k') });
+        }
+        let at = lines.len();
+        for l in crate::markdown::render_streaming(&s.text, w.saturating_sub(2)) {
+            let mut spans = vec![gutter.clone()];
+            spans.extend(l.spans);
+            lines.push(Line::from(spans));
+        }
+        let (_, m) = crate::markdown::render_marked(&s.text, w.saturating_sub(2), true);
+        marks.extend(m.into_iter().map(|m| Mark { line: m.line + at, col: m.col + 2, ..m }));
+        let secs = s.started.elapsed().as_millis();
+        let what = match s.queued {
+            Some(p) => format!("waiting for a free node (position {p})"),
+            None if s.text.is_empty() && s.reasoning.is_empty() => "asking".into(),
+            None if s.text.is_empty() => "thinking".into(),
+            None => "writing the change".into(),
+        };
+        lines.push(Line::from(vec![
+            gutter.clone(),
+            Span::styled(format!("{} ", t.spinner(secs)), t.bold_accent()),
+            Span::styled(what, t.muted().add_modifier(Modifier::ITALIC)),
+            Span::styled(format!(" · {:.1}s · Esc stops it", secs as f64 / 1000.0), t.dim()),
+        ]));
+    }
+    if app.shell.is_some() {
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(format!("{} running a command… Esc stops it", t.spinner(0)), t.muted().add_modifier(Modifier::ITALIC)));
+    }
     while lines.last().is_some_and(|l| l.width() == 0) {
         lines.pop();
     }
@@ -978,7 +1060,14 @@ fn user_bubble(lines: &mut Vec<Line<'static>>, m: &bragi_core::ChatMessage, when
     for a in &m.attachments {
         body.push((format!("{} attached {}", t.icons.attach, a.label()), t.muted()));
     }
-    for l in wrap(&m.text, max.saturating_sub(4)) {
+    let wrapped = wrap(&m.text, max.saturating_sub(4));
+    // Long items (a shell run's output) fold to their end; copy gets all of it.
+    const KEEP: usize = 30;
+    let skip = if wrapped.len() > KEEP + 10 { wrapped.len() - KEEP } else { 0 };
+    if skip > 0 {
+        body.push((format!("… {skip} earlier lines folded (kept in the chat)"), t.dim()));
+    }
+    for l in wrapped.into_iter().skip(skip) {
         body.push((l, t.text()));
     }
     let inner = body.iter().map(|(l, _)| width(l)).max().unwrap_or(0);
@@ -1619,7 +1708,7 @@ fn draw_help(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     lines.push(section("Sidebar and chat box"));
     lines.extend(CHAT_HELP.iter().map(|(k, v)| row(k, v)));
     lines.push(Line::raw(""));
-    lines.push(section("Code mode (Ctrl-E)"));
+    lines.push(section("Code mode (Tab)"));
     lines.extend(CODE_HELP.iter().map(|(k, v)| row(k, v)));
     let inner = window(f, hits, area, 112, (lines.len() + 2) as u16, "Help", "↑↓ scroll · Esc back");
     hits.wheel(inner, Wheel::Help);
@@ -1705,79 +1794,6 @@ fn clip(s: &str, width: usize) -> String {
     out
 }
 
-/// The code-mode transcript as lines, with its clickable spots: every ask, answer (its Thinking
-/// folded unless opened), shell run and note, oldest first.
-fn code_transcript(app: &App, w: usize) -> (Vec<Line<'static>>, Vec<Mark>) {
-    use crate::code::Entry;
-    let t = th();
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    let mut marks = Vec::new();
-    let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
-    for (i, e) in app.code.log.iter().enumerate() {
-        match e {
-            Entry::Asked { title, line } => {
-                lines.push(Line::raw(""));
-                lines.push(Line::from(vec![
-                    Span::styled(format!(" {} ", t.icons.brand), t.pill(t.bg, t.accent)),
-                    Span::styled(format!(" {title}"), t.text().add_modifier(Modifier::BOLD)),
-                ]));
-                if !line.trim().is_empty() && line.trim() != title.trim() {
-                    lines.extend(wrap(line, w.saturating_sub(2)).into_iter().map(|l| Line::from(vec![gutter.clone(), Span::styled(l, t.muted())])));
-                }
-            }
-            Entry::Answer { model, text, reasoning, thinking_ms } => {
-                let mut head = vec![Span::styled("Bragi", t.fg(t.header).add_modifier(Modifier::BOLD))];
-                if !model.is_empty() {
-                    head.push(Span::styled(format!(" · {model}"), t.muted()));
-                }
-                let at = line_width(&head);
-                head.push(Span::styled("  copy", t.dim()));
-                marks.push(Mark { line: lines.len(), col: at as u16 + 2, w: 4, action: Action::Copy(text.clone()) });
-                lines.push(Line::from(head));
-                let open = app.show_thinking != app.code.open_thinking.contains(&i);
-                let before = lines.len();
-                thinking(&mut lines, &gutter, reasoning, *thinking_ms, true, open, w.saturating_sub(2));
-                if lines.len() > before {
-                    marks.push(Mark { line: before, col: 2, w: lines[before].width().saturating_sub(2) as u16, action: Action::CodeThinking(i) });
-                }
-                let at = lines.len();
-                let (body, m) = crate::markdown::render_marked(text, w.saturating_sub(2), false);
-                for l in body {
-                    let mut spans = vec![gutter.clone()];
-                    spans.extend(l.spans);
-                    lines.push(Line::from(spans));
-                }
-                marks.extend(m.into_iter().map(|m| Mark { line: m.line + at, col: m.col + 2, ..m }));
-            }
-            Entry::Shell(out) => {
-                lines.push(Line::raw(""));
-                let st = if out.ok() { t.fg(t.add) } else { t.fg(t.remove) };
-                let at = lines.len();
-                lines.push(Line::from(vec![
-                    Span::styled(format!("$ {}", out.command), t.text().add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("  {}", out.status()), st),
-                    Span::styled("  copy", t.dim()),
-                ]));
-                let cw = (width(&out.command) + 4 + width(&out.status())) as u16;
-                marks.push(Mark { line: at, col: cw, w: 4, action: Action::Copy(out.transcript()) });
-                for (part, style) in [(&out.stdout, t.text()), (&out.stderr, t.fg(t.remove))] {
-                    for l in part.lines() {
-                        lines.push(Line::from(vec![gutter.clone(), Span::styled(clip(&l.replace('\t', "    "), w.saturating_sub(2)), style)]));
-                    }
-                }
-                if out.truncated {
-                    lines.push(Line::styled("  [output cut: only its end is kept]", t.dim()));
-                }
-            }
-            Entry::Note { text, error } => {
-                let st = if *error { t.fg(t.remove) } else { t.dim() };
-                lines.extend(wrap(text, w.saturating_sub(2)).into_iter().map(|l| Line::styled(format!("· {l}"), st)));
-            }
-        }
-    }
-    (lines, marks)
-}
-
 fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let (side, main) = if area.width >= 96 {
@@ -1839,65 +1855,17 @@ fn draw_code(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
             hits.row(Rect { y: inner.y + *l as u16, height: 1, ..inner }, Action::CodeFile(i));
         }
     }
-    let title = match app.code.phase {
-        Phase::Compose => "Code suggestions and rewrites".to_string(),
-        Phase::Asking => app.code.request.as_ref().map(bragi_core::code::prompt::title).unwrap_or_else(|| "Asking".into()),
-        Phase::Review => "Review the proposed change".to_string(),
-    };
-    let block = pane(&clip(&title, (main.width as usize).saturating_sub(6)), app.code.phase != Phase::Compose).padding(Padding::horizontal(1));
+    if app.code.phase != Phase::Review {
+        // Asking and composing: the conversation itself, in code mode.
+        return draw_transcript(f, app, hits, main, true, Mode::Code);
+    }
+    let block = pane("Review the proposed change", true).padding(Padding::horizontal(1));
     let inner = block.inner(main);
     f.render_widget(block, main);
     hits.push(main, Action::FocusInput);
     let w = inner.width as usize;
     match app.code.phase {
-        Phase::Compose if app.code.log.is_empty() => {
-            let mut lines: Vec<Line<'static>> = vec![Line::raw("")];
-            for (k, v) in CODE_HELP.iter().take(6) {
-                lines.push(Line::from(vec![
-                    Span::styled(format!(" {k} "), t.pill(t.fg, t.raised)),
-                    Span::raw(" ".repeat(26usize.saturating_sub(width(k) + 2))),
-                    Span::styled(v.to_string(), t.muted()),
-                ]));
-                lines.push(Line::raw(""));
-            }
-            f.render_widget(Paragraph::new(lines), inner);
-        }
-        Phase::Compose | Phase::Asking => {
-            // The whole code-mode transcript stays, scrollable; the answer coming in is last.
-            let (mut lines, mut marks) = code_transcript(app, w);
-            if app.code.phase == Phase::Asking
-                && let Some(s) = &app.stream
-            {
-                let secs = s.started.elapsed().as_millis();
-                let what = match s.queued {
-                    Some(p) => format!("Waiting for a free node (position {p})…"),
-                    None if s.text.is_empty() && s.reasoning.is_empty() => "asking".into(),
-                    None if s.text.is_empty() => "thinking".into(),
-                    None => "writing the change".into(),
-                };
-                lines.push(Line::from(vec![
-                    Span::styled(format!("{} ", t.spinner(secs)), t.bold_accent()),
-                    Span::styled(what, t.muted().add_modifier(Modifier::ITALIC)),
-                    Span::styled(format!(" · {:.1}s", secs as f64 / 1000.0), t.dim()),
-                ]));
-                let gutter = Span::styled(format!("{} ", t.icons.sep), t.fg(t.border));
-                let ms = s.thought_ms.or_else(|| s.thinking_since.map(|x| x.elapsed().as_millis() as u64));
-                let before = lines.len();
-                thinking(&mut lines, &gutter, &s.reasoning, ms, s.thought_ms.is_some() || !s.text.is_empty(), app.show_thinking, w.saturating_sub(2));
-                if lines.len() > before {
-                    marks.push(Mark { line: before, col: 2, w: lines[before].width().saturating_sub(2) as u16, action: Action::ctrl('k') });
-                }
-                lines.push(Line::raw(""));
-                let at = lines.len();
-                lines.extend(crate::markdown::render_streaming(&s.text, w));
-                let (_, m) = crate::markdown::render_marked(&s.text, w, true);
-                marks.extend(m.into_iter().map(|m| Mark { line: m.line + at, ..m }));
-            }
-            if app.shell.is_some() {
-                lines.push(Line::styled(format!("{} running… Esc stops it", t.spinner(0)), t.muted().add_modifier(Modifier::ITALIC)));
-            }
-            bottom(f, hits, lines, &marks, inner, &mut app.scroll);
-        }
+        Phase::Compose | Phase::Asking => {}
         Phase::Review => {
             let (inner, btns) = {
                 let [a, b] = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(inner);

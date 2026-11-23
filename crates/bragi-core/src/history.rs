@@ -78,7 +78,66 @@ pub struct ChatMessage {
     /// the user's other devices and a Ymir pool reading the context see them too.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<String>,
+    /// The mode the message was written in: a chat (or plan) turn, or a code turn (files as
+    /// context, edits reviewed as diffs, shell runs). One conversation holds both; records
+    /// written before modes existed are chat.
+    #[serde(default, skip_serializing_if = "Mode::is_chat")]
+    pub mode: Mode,
     pub at_ms: i64,
+}
+
+/// Chat or code: how a turn was made. Switching keeps the conversation.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Mode {
+    #[default]
+    Chat,
+    Code,
+}
+
+impl Mode {
+    pub fn is_chat(&self) -> bool {
+        *self == Mode::Chat
+    }
+
+    pub fn other(self) -> Self {
+        match self {
+            Mode::Chat => Mode::Code,
+            Mode::Code => Mode::Chat,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Mode::Chat => "chat",
+            Mode::Code => "code",
+        }
+    }
+}
+
+impl ChatMessage {
+    /// A whole message written now (no id until saved).
+    pub fn new(role: Role, text: impl Into<String>, mode: Mode) -> Self {
+        Self {
+            id: String::new(),
+            role,
+            text: text.into(),
+            reasoning: String::new(),
+            thinking_ms: None,
+            state: MessageState::Complete,
+            model: None,
+            node: None,
+            cache_hit: false,
+            standin: None,
+            resumes: 0,
+            attachments: Vec::new(),
+            tools: Vec::new(),
+            agent: false,
+            reactions: Vec::new(),
+            mode,
+            at_ms: now_ms(),
+        }
+    }
 }
 
 fn is_zero(n: &u32) -> bool {
@@ -199,6 +258,9 @@ fn to_stored(m: &ChatMessage, id: String) -> Stored {
     if !m.reactions.is_empty() {
         ext.insert("reactions".into(), serde_json::to_value(&m.reactions).unwrap_or_default());
     }
+    if !m.mode.is_chat() {
+        ext.insert("mode".into(), m.mode.name().into());
+    }
     Stored { id, role: role_str(m.role).into(), text: m.text.clone(), model: m.model.clone(), at_ms: m.at_ms, ext }
 }
 
@@ -228,6 +290,7 @@ fn from_stored(m: &Stored) -> ChatMessage {
         tools: get("tools").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         agent: get("agent").and_then(|v| v.as_bool()).unwrap_or(false),
         reactions: get("reactions").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
+        mode: get("mode").and_then(|v| serde_json::from_value(v.clone()).ok()).unwrap_or_default(),
         at_ms: m.at_ms,
     }
 }
@@ -389,6 +452,7 @@ mod tests {
                 tools: Vec::new(),
                 agent: false,
                 reactions: Vec::new(),
+                mode: Default::default(),
                 // The same millisecond for all of them: the order must still hold.
                 at_ms: 1000,
             })
@@ -528,6 +592,7 @@ mod reaction_tests {
             tools: Vec::new(),
             agent: false,
             reactions: Vec::new(),
+            mode: Default::default(),
             at_ms: 5,
         };
         let mut c = Conversation {
@@ -547,5 +612,19 @@ mod reaction_tests {
         // Old JSON without the field still parses.
         let j = r#"{"role":"user","text":"x","state":"complete","at_ms":1}"#;
         assert!(serde_json::from_str::<ChatMessage>(j).unwrap().reactions.is_empty());
+    }
+
+    #[test]
+    fn a_message_keeps_its_mode_in_the_store_and_old_ones_are_chat() {
+        let m = ChatMessage::new(Role::User, "make it", Mode::Code);
+        let stored = to_stored(&m, "x".into());
+        assert_eq!(stored.ext.get("mode").and_then(|v| v.as_str()), Some("code"));
+        assert_eq!(from_stored(&stored).mode, Mode::Code);
+        let chat = to_stored(&ChatMessage::new(Role::User, "hi", Mode::Chat), "y".into());
+        assert!(!chat.ext.contains_key("mode"), "chat is the default and isn't written");
+        assert_eq!(from_stored(&chat).mode, Mode::Chat);
+        // JSON from before modes.
+        let old: ChatMessage = serde_json::from_str(r#"{"role":"user","text":"hi","state":"complete","at_ms":1}"#).unwrap();
+        assert_eq!(old.mode, Mode::Chat);
     }
 }

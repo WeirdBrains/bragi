@@ -193,6 +193,8 @@ pub struct MessageView {
     pub tools: Vec<String>,
     /// The answer came from an agent task on a node.
     pub agent: bool,
+    /// `chat` or `code`: the mode the turn was made in (one conversation holds both).
+    pub mode: String,
     pub at_ms: i64,
 }
 
@@ -440,6 +442,7 @@ fn conversation_view(c: &Conversation) -> ConversationView {
                 files: bragi_core::files::describe(m).iter().map(file_view).collect(),
                 tools: m.tools.clone(),
                 agent: m.agent,
+                mode: m.mode.name().to_string(),
                 at_ms: m.at_ms,
             })
             .collect(),

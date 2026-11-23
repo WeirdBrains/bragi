@@ -364,6 +364,8 @@ class _Bubble extends StatelessWidget {
       if (message.standin != null) 'stand-in ${message.standin}',
       if (message.resumes == 1) 'moved to another node' else if (message.resumes > 1) 'moved nodes ${message.resumes}×',
       if (message.agent) message.tools.isEmpty ? 'agent task' : 'agent task · used ${message.tools.join(', ')}',
+      // A turn made in code mode (the terminal app's), in the same conversation.
+      if (message.mode == 'code') 'code mode',
     ];
     final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(

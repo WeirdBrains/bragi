@@ -20,7 +20,7 @@ use crate::error::{CoreError, ErrorKind, Result};
 const BYTES_PER_TOKEN_NUM: usize = 5;
 const BYTES_PER_TOKEN_DEN: usize = 2;
 /// Tokens a chat template adds around each message.
-const PER_MESSAGE: usize = 8;
+pub const PER_MESSAGE: usize = 8;
 
 /// A rough, high-side token count for `text`.
 pub fn estimate_tokens(text: &str) -> usize {

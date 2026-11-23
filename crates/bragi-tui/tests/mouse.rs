@@ -217,7 +217,9 @@ fn a_question_has_buttons_and_other_clicks_keep_things() {
     h.typed("Delete me");
     h.key(KeyCode::Enter);
     h.until("Bragi asks the inference nodes", |a| !a.streaming());
-    h.key(KeyCode::Tab);
+    // Ctrl-B moves to the chats (Tab switches modes).
+    h.app.on_event(Event::Key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL)));
+    assert_eq!(h.app.focus, Focus::Chats);
     h.app.chat_sel = h.app.rows.iter().position(|r| r.chat_id().is_some()).unwrap();
     h.key(KeyCode::Char('d'));
     let screen = h.draw();
@@ -289,8 +291,15 @@ fn code_review_buttons() {
     std::fs::create_dir_all(dir.path().join("src")).unwrap();
     std::fs::write(dir.path().join("src/lib.rs"), "pub fn add(a: i32, b: i32) -> i32 {\n    a + b\n}\n").unwrap();
     let mut h = Harness::linked(dir.path());
-    h.click(Action::Goto(View::Code));
-    h.until("Code suggestions and rewrites", |a| a.view == View::Code);
+    // Plan in chat first.
+    h.typed("plan: make add saturating");
+    h.key(KeyCode::Enter);
+    h.until("answering", |a| !a.streaming() && a.current.as_ref().is_some_and(|c| c.messages.len() == 2));
+    let planned = h.app.current.as_ref().unwrap().id.clone();
+    // Tab: code mode, the same conversation on screen.
+    h.key(KeyCode::Tab);
+    let screen = h.until("Code · ", |a| a.view == View::Code);
+    assert!(screen.contains("plan: make add saturating"), "{screen}");
     h.typed("/add .");
     h.key(KeyCode::Enter);
     h.typed("/rewrite src/lib.rs:1-3 make add saturating");
@@ -307,6 +316,28 @@ fn code_review_buttons() {
     assert_eq!(h.app.code.counts().0, h.app.code.counts().1, "All accepted everything");
     h.click(Action::code(KeyCode::Esc));
     assert_eq!(h.app.code.phase, bragi_tui::code::Phase::Compose);
+
+    // The code turn is in the same conversation, marked code, after the plan.
+    let c = h.app.current.clone().unwrap();
+    assert_eq!(c.id, planned);
+    let modes: Vec<bragi_core::Mode> = c.messages.iter().map(|m| m.mode).collect();
+    assert_eq!(modes, [bragi_core::Mode::Chat, bragi_core::Mode::Chat, bragi_core::Mode::Code, bragi_core::Mode::Code]);
+    assert!(c.messages[2].text.starts_with("/rewrite src/lib.rs:1-3"));
+    let screen = h.draw();
+    assert!(screen.contains(" code ") && screen.contains("plan: make add saturating"), "both turns stay on screen:\n{screen}");
+
+    // Back to chat with Tab (or /chat): still the same conversation, both modes in it.
+    h.key(KeyCode::Tab);
+    assert_eq!(h.app.view, View::Chat);
+    assert_eq!(h.app.current.as_ref().unwrap().id, planned);
+    let screen = h.draw();
+    assert!(screen.contains("Chat · ") && screen.contains("/rewrite src/lib.rs:1-3"), "{screen}");
+    h.typed("/code");
+    h.key(KeyCode::Enter);
+    assert_eq!(h.app.view, View::Code);
+    h.typed("/mode");
+    h.key(KeyCode::Enter);
+    assert_eq!(h.app.view, View::Chat);
 }
 
 #[test]

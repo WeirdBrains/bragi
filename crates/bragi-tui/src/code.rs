@@ -2,7 +2,7 @@
 //! the prompt, parsing, diff and undo logic is `bragi_core::code`, shared with the editor
 //! extension; this only keeps track of what the user picked.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use bragi_core::code::budget::{Overflow, TokenBudget, fit, request_tokens, thousands};
@@ -38,29 +38,15 @@ pub struct CodeState {
     pub journal: Journal,
     /// The request as asked (before fitting), for one retry when a server says it's too big.
     pub asked: Option<Asked>,
-    /// Everything that happened in code mode, oldest first: what was asked, the answers (with
-    /// their Thinking), shell runs and notes. Nothing is cleared between turns.
-    pub log: Vec<Entry>,
-    /// Log entries whose Thinking is unfolded.
-    pub open_thinking: HashSet<usize>,
+    /// The conversation sent along with the request that is out (kept for a retry).
+    pub turns: Vec<bragi_core::code::PromptMessage>,
+    /// The line typed for the request that is out (saved in the conversation with its answer).
+    pub asked_line: String,
     /// Prompts typed in code mode, for Up and Down (this project's history).
     pub history: bragi_core::prompt_history::PromptHistory,
     /// Per model: the context window a server reported, and how far its token count ran over
     /// the estimate. Wins over the catalog, which only says what the node was configured with.
     pub learned: HashMap<String, Learned>,
-}
-
-/// One item of the code-mode transcript.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Entry {
-    /// What was asked (its title) and the line as typed.
-    Asked { title: String, line: String },
-    /// The model's answer: its explanation (the edits are reviewed as diffs) and its Thinking.
-    Answer { model: String, text: String, reasoning: String, thinking_ms: Option<u64> },
-    /// A shell command the user ran, with its output.
-    Shell(bragi_core::shell::ShellOutput),
-    /// A notice (context changes, writes, errors), kept in place.
-    Note { text: String, error: bool },
 }
 
 /// A request that is out, as the user asked it.
@@ -72,6 +58,8 @@ pub struct Asked {
     pub budget: Option<TokenBudget>,
     /// Whether this is already the retry.
     pub retried: bool,
+    /// Tokens the conversation sent along takes.
+    pub reserve: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -105,6 +93,8 @@ pub enum Command {
     Shell(String),
     /// `/notifications`: the notification list.
     Notifications,
+    /// `/chat`, `/code` or `/mode` (the other one): switch modes in the same conversation.
+    Mode(Option<bragi_core::Mode>),
     Nothing,
 }
 
@@ -126,8 +116,8 @@ impl CodeState {
             journal: Journal::new(journal_dir),
             asked: None,
             learned: HashMap::new(),
-            log: Vec::new(),
-            open_thinking: HashSet::new(),
+            asked_line: String::new(),
+            turns: Vec::new(),
             history: bragi_core::prompt_history::PromptHistory::in_memory(),
         }
     }
@@ -239,8 +229,9 @@ impl CodeState {
 
     /// Fits `req` into `model`'s window (`listed` is the catalog's figure) and remembers it for
     /// a retry. Returns what to send and a note about files left out (empty when none were).
-    pub fn prepare(&mut self, req: CodeRequest, model: &str, listed: Option<u32>) -> Result<(CodeRequest, String), String> {
-        let budget = self.budget_for(model, listed);
+    /// `reserve` is what the conversation sent along takes (estimated tokens).
+    pub fn prepare(&mut self, req: CodeRequest, model: &str, listed: Option<u32>, reserve: usize) -> Result<(CodeRequest, String), String> {
+        let budget = self.budget_for(model, listed).map(|b| less(b, reserve));
         let (send, note) = match budget {
             Some(b) => {
                 let f = fit(&req, b, model).map_err(|e| e.message)?;
@@ -249,7 +240,7 @@ impl CodeState {
             }
             None => (req.clone(), String::new()),
         };
-        self.asked = Some(Asked { request: req, model: model.to_string(), budget, retried: false });
+        self.asked = Some(Asked { request: req, model: model.to_string(), budget, retried: false, reserve });
         Ok((send, note))
     }
 
@@ -275,7 +266,7 @@ impl CodeState {
         let context = o.context.or(asked.budget.map(|b| b.context));
         let Some(context) = context else { return AfterError::Fail(o.message(&model)) };
         self.learned.insert(model.clone(), Learned { context: Some(context), ratio });
-        let budget = TokenBudget::for_context(context).with_ratio(ratio);
+        let budget = less(TokenBudget::for_context(context).with_ratio(ratio), asked.reserve);
         match fit(&asked.request, budget, &model) {
             Ok(f) => {
                 let total = asked.request.files.len();
@@ -322,6 +313,7 @@ impl CodeState {
             "clear" => Command::Clear,
             "files" | "pick" | "f" => Command::Pick,
             "notifications" | "notices" => Command::Notifications,
+            "chat" | "plan" | "code" | "mode" => return mode_command(line),
             "root" if !rest.is_empty() => Command::Root(rest.to_string()),
             "undo" => Command::Undo { force: false },
             "undo!" => Command::Undo { force: true },
@@ -362,13 +354,6 @@ impl CodeState {
         Ok(if note.is_empty() { format!("Working in {}", self.root.display()) } else { note })
     }
 
-    /// Adds a note to the transcript.
-    pub fn note(&mut self, text: &str, error: bool) {
-        if !text.trim().is_empty() {
-            self.log.push(Entry::Note { text: text.to_string(), error });
-        }
-    }
-
     pub fn drop_path(&mut self, what: &str) -> Result<String, String> {
         let before = self.context.len();
         match what.parse::<usize>() {
@@ -385,15 +370,6 @@ impl CodeState {
     }
 
     pub fn start(&mut self, req: CodeRequest) {
-        let title = bragi_core::code::prompt::title(&req);
-        // A retry of the same request (no answer since it was asked) isn't a new turn.
-        let last_ask = self.log.iter().rposition(|e| matches!(e, Entry::Asked { .. }));
-        let retry = last_ask.is_some_and(|i| {
-            matches!(&self.log[i], Entry::Asked { title: t, .. } if *t == title) && !self.log[i..].iter().any(|e| matches!(e, Entry::Answer { .. }))
-        });
-        if !retry {
-            self.log.push(Entry::Asked { title, line: req.instruction.clone() });
-        }
         self.request = Some(req);
         self.answer.clear();
         self.explanation.clear();
@@ -502,9 +478,69 @@ impl CodeState {
     }
 
     /// The prompt messages for `req`, for `Core::complete`.
-    pub fn messages(req: &CodeRequest) -> Result<Vec<bragi_core::code::PromptMessage>, String> {
-        prompt::build(req).map_err(|e| e.message)
+    /// The prompt: the code instructions, then the conversation so far (a plan made in chat
+    /// mode, earlier code turns), then the files and the ask.
+    pub fn messages(req: &CodeRequest, conversation: &[bragi_core::code::PromptMessage]) -> Result<Vec<bragi_core::code::PromptMessage>, String> {
+        let mut m = prompt::build(req).map_err(|e| e.message)?;
+        let at = m.iter().take_while(|x| x.role == bragi_core::code::PromptRole::System).count();
+        m.splice(at..at, conversation.iter().cloned());
+        Ok(m)
     }
+}
+
+/// `/chat`, `/plan`, `/code` or `/mode [chat|code]`; an error for any other line.
+pub fn mode_command(line: &str) -> Result<Command, String> {
+    let line = line.trim();
+    let (cmd, rest) = line.split_once(char::is_whitespace).map(|(a, b)| (a, b.trim())).unwrap_or((line, ""));
+    let mode = |w: &str| match w {
+        "chat" | "plan" => Some(bragi_core::Mode::Chat),
+        "code" => Some(bragi_core::Mode::Code),
+        _ => None,
+    };
+    match cmd {
+        "/chat" | "/plan" | "/code" if rest.is_empty() => Ok(Command::Mode(mode(&cmd[1..]))),
+        "/mode" if rest.is_empty() => Ok(Command::Mode(None)),
+        "/mode" => mode(rest).map(|m| Command::Mode(Some(m))).ok_or_else(|| "usage: /mode [chat|code]".into()),
+        _ => Err(format!("{line} isn't a mode command")),
+    }
+}
+
+/// `b` with `reserve` tokens of its window already taken.
+fn less(b: TokenBudget, reserve: usize) -> TokenBudget {
+    TokenBudget { context: b.context.saturating_sub(b.scaled(reserve) as u32), ..b }
+}
+
+/// The conversation as prompt turns, newest kept, within `max` estimated tokens: text only,
+/// streaming and empty answers left out, turns from the same side joined. Returns the turns and
+/// their estimate.
+pub fn conversation_turns(messages: &[bragi_core::ChatMessage], max: usize) -> (Vec<bragi_core::code::PromptMessage>, usize) {
+    use bragi_core::code::budget::{PER_MESSAGE, estimate_tokens};
+    use bragi_core::code::{PromptMessage, PromptRole};
+    let done: Vec<bragi_core::ChatMessage> =
+        messages.iter().filter(|m| m.state != bragi_core::MessageState::Streaming && !m.text.trim().is_empty()).cloned().collect();
+    let mut merged = bragi_core::merge_turns(&done);
+    // The ask that follows is a user turn: the history has to end with an answer.
+    while merged.last().is_some_and(|m| m.role == bragi_core::Role::User) {
+        merged.pop();
+    }
+    let mut out = Vec::new();
+    let mut used = 0;
+    for m in merged.iter().rev() {
+        let n = estimate_tokens(&m.text) + PER_MESSAGE;
+        if used + n > max {
+            break;
+        }
+        used += n;
+        let role = if m.role == bragi_core::Role::User { PromptRole::User } else { PromptRole::Assistant };
+        out.push(PromptMessage { role, content: m.text.clone() });
+    }
+    out.reverse();
+    // And start with a question.
+    while out.first().is_some_and(|m| m.role == PromptRole::Assistant) {
+        let m = out.remove(0);
+        used = used.saturating_sub(estimate_tokens(&m.content) + PER_MESSAGE);
+    }
+    (out, used)
 }
 
 /// `diffs` with their `accepted` hunks as file writes under `root` (files with none accepted are left out).
@@ -554,6 +590,9 @@ mod tests {
         assert_eq!(s.parse("/shell git status").unwrap(), Command::Shell("git status".into()));
         assert!(s.parse("!").is_err());
         assert_eq!(s.parse("/notifications").unwrap(), Command::Notifications);
+        assert_eq!(s.parse("/chat").unwrap(), Command::Mode(Some(bragi_core::Mode::Chat)));
+        assert_eq!(s.parse("/mode").unwrap(), Command::Mode(None));
+        assert!(s.parse("/mode sideways").is_err());
         s.add(&["src".into()]).unwrap();
         assert!(matches!(s.parse("tidy it").unwrap(), Command::Ask(CodeRequest { task: CodeTask::Suggest, .. })));
         let Command::Ask(r) = s.parse("/rewrite src/a.rs:2-3 shorter").unwrap() else { panic!() };
@@ -631,13 +670,13 @@ mod tests {
     fn a_request_is_fitted_to_the_listed_context() {
         let (_d, mut s) = big_project(22, 10 * 1024);
         let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
-        let (sent, note) = s.prepare(req.clone(), "inkling-2-mini", Some(32_768)).unwrap();
+        let (sent, note) = s.prepare(req.clone(), "inkling-2-mini", Some(32_768), 0).unwrap();
         assert!(sent.files.len() < 22 && !sent.files.is_empty());
         assert!(note.contains("of 22 files") && note.contains("inkling-2-mini"), "{note}");
         assert!(request_tokens(&sent).unwrap() <= TokenBudget::for_context(32_768).prompt_tokens());
         assert!(s.token_summary("inkling-2-mini", Some(32_768)).contains("32.8k context"));
         // No window known: sent as is (a server refusal teaches it).
-        let (sent, note) = s.prepare(req.clone(), "unknown", None).unwrap();
+        let (sent, note) = s.prepare(req.clone(), "unknown", None, 0).unwrap();
         assert_eq!(sent, req);
         assert!(note.is_empty());
     }
@@ -647,7 +686,7 @@ mod tests {
         let (_d, mut s) = big_project(22, 10 * 1024);
         let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
         // The catalog said nothing, so all 22 files went out and the server refused.
-        let (sent, _) = s.prepare(req, "inkling-2-mini", None).unwrap();
+        let (sent, _) = s.prepare(req, "inkling-2-mini", None, 0).unwrap();
         assert_eq!(sent.files.len(), 22);
         s.start(sent);
         s.failed();
@@ -683,21 +722,25 @@ mod tests {
     }
 
     #[test]
-    fn the_transcript_keeps_every_turn() {
-        let (_d, mut s) = project();
-        s.add(&["src".into()]).unwrap();
-        let Command::Ask(req) = s.parse("tidy it").unwrap() else { panic!() };
-        s.start(req.clone());
-        s.note("No node answered", true);
-        s.start(req.clone());
-        s.log.push(Entry::Answer { model: "m".into(), text: "Nothing to change.".into(), reasoning: "hm".into(), thinking_ms: Some(10) });
-        s.answered("Nothing to change.");
-        let asked = s.log.iter().filter(|e| matches!(e, Entry::Asked { .. })).count();
-        assert_eq!(asked, 1, "a retry of the same request is the same turn");
-        // After an answer, the same ask again is a new turn; nothing before it goes away.
-        s.start(req);
-        assert_eq!(s.log.iter().filter(|e| matches!(e, Entry::Asked { .. })).count(), 2);
-        assert_eq!(s.log.len(), 4);
-        assert!(s.log.iter().any(|e| matches!(e, Entry::Note { .. })));
+    fn the_conversation_goes_along_newest_first_and_ends_on_an_answer() {
+        use bragi_core::{ChatMessage, Mode, Role};
+        let msgs = vec![
+            ChatMessage::new(Role::User, "plan it", Mode::Chat),
+            ChatMessage::new(Role::Assistant, "a plan", Mode::Chat),
+            ChatMessage::new(Role::User, "make it", Mode::Code),
+            ChatMessage::new(Role::User, "$ ls", Mode::Code),
+            ChatMessage::new(Role::Assistant, "done", Mode::Code),
+            ChatMessage::new(Role::User, "and a test?", Mode::Code),
+        ];
+        let (turns, used) = conversation_turns(&msgs, 10_000);
+        let texts: Vec<&str> = turns.iter().map(|m| m.content.as_str()).collect();
+        assert_eq!(texts, ["plan it", "a plan", "make it\n\n$ ls", "done"]);
+        assert!(used > 0);
+        // A small budget keeps the newest whole turns only.
+        let (turns, _) = conversation_turns(&msgs, 30);
+        assert_eq!(turns.iter().map(|m| m.content.as_str()).collect::<Vec<_>>(), ["make it\n\n$ ls", "done"]);
+        let req = CodeRequest { task: CodeTask::Suggest, instruction: "x".into(), files: Vec::new() };
+        let m = CodeState::messages(&req, &turns).unwrap();
+        assert_eq!(m[1].content, "make it\n\n$ ls", "the conversation comes right after the system prompt");
     }
 }

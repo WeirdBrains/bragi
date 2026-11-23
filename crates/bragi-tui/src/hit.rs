@@ -44,8 +44,6 @@ pub enum Action {
     NoticeRow(usize),
     /// The Thinking header of message `i` in the open chat: fold or unfold it.
     Thinking(usize),
-    /// The Thinking header of code-mode transcript entry `i`.
-    CodeThinking(usize),
     /// The message box and the chat pane: type here.
     FocusInput,
     /// Close the toast.
