@@ -2,6 +2,12 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: v0.5.0 released
+
+`release: v0.5.0` (`bd6e41e`, tag `v0.5.0`) with cert-only links for Ymir servers (`bragi-tui link CODE --server inference|model`, Ymir's M10) and `weirdnet-sync` 0.7.1 / `weirdnet-device-link` 0.4.2. The feature work is on `feat/cert-only-servers`, merged in `b3e130b`. The Release workflow passed on every platform ([run 45412760862](https://github.com/WeirdBrains/bragi/actions/runs/45412760862)). Artifacts scanned: the only match was the RPM packager field (the public maintainer address); no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.5.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.5.0-1 on TAUR (`ac101f5`); `packaging/nix/release.json` and the site's `latestVersion` at 0.5.0.
+
+Not decided: whether Bragi should link a Ymir server cert-only by default once a Ymir with M10 is released (now opt-in with `--server`).
+
 ## 2026-11-24: v0.4.0 released
 
 `release: v0.4.0` (`268ff23`, tag `v0.4.0`) with a collapsible history sidebar (the choice is remembered) and switching between more than one Ymir pool. Feature work is on `feat/history-bar-and-pools`, merged in `b3bdcf4`. The Release workflow passed on every platform ([run 45405900042](https://github.com/WeirdBrains/bragi/actions/runs/45405900042)); artifacts scanned (only the CI cargo-registry paths, as in 0.3.0; no host names); [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.4.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.4.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.4.0.
