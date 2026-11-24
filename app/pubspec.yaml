@@ -1,7 +1,7 @@
 name: bragi
 description: "Bragi: chat with your own cloud over Weirdnet."
 publish_to: "none"
-version: 0.3.0+6
+version: 0.4.0+7
 homepage: https://github.com/WeirdBrains/bragi
 repository: https://github.com/WeirdBrains/bragi
 
