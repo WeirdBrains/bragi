@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Ymir rollouts (Ymir's training plan P4b): the versions of a rollout (`support@2`, `support@3`) are folded under its name in the model list, so the picker shows one row, and picking the name lets the pool choose a version for each conversation. The terminal app lists the versions after the name so one can be pinned; a pinned version keeps its nodes and context limit.
+
 ## [0.5.0] - 2026-11-24
 
 ### Added

@@ -286,7 +286,7 @@ impl BragiView {
 
     fn on_state(&mut self, s: AppState, cx: &mut Context<Self>) {
         if let Some(m) = &self.model
-            && !s.catalog.models.iter().any(|x| &x.id == m)
+            && s.catalog.model(m).is_none()
         {
             self.model = None;
         }

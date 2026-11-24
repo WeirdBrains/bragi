@@ -14,7 +14,7 @@ Weirdnet crates: `weirdnet-agent`, `weirdnet-device-link`, `weirdnet-sync`, `wei
 
 ## B2 Pool client (Done)
 
-Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells.
+Use several inference nodes at once: one combined model list, retries, and automatic mid-answer failover, with the stand-in and cache flags shown in both shells. A Ymir rollout shows as one row, with its versions under it.
 
 Weirdnet crates: `weirdnet-agent`.
 

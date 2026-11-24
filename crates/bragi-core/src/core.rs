@@ -751,7 +751,7 @@ impl Core {
     pub(crate) fn pick_model(&self, model: Option<String>, needed: Modalities) -> Result<String> {
         let catalog = self.state().catalog;
         match model {
-            Some(m) if !m.is_empty() => match catalog.models.iter().find(|i| i.id == m) {
+            Some(m) if !m.is_empty() => match catalog.model(&m) {
                 Some(info) if !info.takes(needed) => Err(CoreError::new(ErrorKind::BadRequest, catalog.refusal(&m, needed))),
                 _ => Ok(m),
             },
