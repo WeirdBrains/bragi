@@ -8,13 +8,18 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Added
 
-- The conversation history sidebar can be hidden, and the choice is remembered. In the terminal app: F10, Ctrl-B when it is hidden, or `/sidebar`. In the desktop window: History in the title bar, or Hide on the sidebar. On a wide Flutter layout (a tablet or a desktop window), the same Hide control folds the bar away; on a phone the history stays in the drawer.
-- A device can be linked to more than one Ymir pool and can switch which one chats go to. Each pool keeps its own identity, history and node addresses. Settings lists them, and can add, rename, switch or forget a pool. The terminal app also has `bragi pool list|add|switch|rename|remove` (and `/pool` in the app). Adding a pool shows the same link code as the first pairing.
 - Cert-only links for Ymir servers (Ymir's M10): `bragi-tui link CODE --server inference|model` links a server shown by `ymirctl pool link --cert-only` with a certificate and a service grant signed with your identity, never the identity seed. An inference server also gets the keys for the pool's conversations; a model server gets no data keys. `Core::pair_accept_confirm_server` does the same for the other shells.
 
 ### Changed
 
 - `weirdnet-sync` 0.7.1 and `weirdnet-device-link` 0.4.2, so Bragi syncs with servers linked cert-only (including roster-only model nodes).
+
+## [0.4.0] - 2026-11-24
+
+### Added
+
+- The conversation history sidebar can be hidden, and the choice is remembered. In the terminal app: F10, Ctrl-B when it is hidden, or `/sidebar`. In the desktop window: History in the title bar, or Hide on the sidebar. On a wide Flutter layout (a tablet or a desktop window), the same Hide control folds the bar away; on a phone the history stays in the drawer.
+- A device can be linked to more than one Ymir pool and can switch which one chats go to. Each pool keeps its own identity, history and node addresses. Settings lists them, and can add, rename, switch or forget a pool. The terminal app also has `bragi pool list|add|switch|rename|remove` (and `/pool` in the app). Adding a pool shows the same link code as the first pairing.
 
 ## [0.3.0] - 2026-11-24
 
