@@ -2,6 +2,20 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: v0.4.0 released
+
+`release: v0.4.0` (`268ff23`, tag `v0.4.0`) with a collapsible history sidebar (the choice is remembered) and switching between more than one Ymir pool. Feature work is on `feat/history-bar-and-pools`, merged in `b3bdcf4`. The Release workflow passed on every platform ([run 45405900042](https://github.com/WeirdBrains/bragi/actions/runs/45405900042)); artifacts scanned (only the CI cargo-registry paths, as in 0.3.0; no host names); [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.4.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.4.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.4.0.
+
+## 2026-11-24: collapsible history sidebar and more than one Ymir pool (branch `feat/history-bar-and-pools`)
+
+Michael's pt169u (alternate Ymir and Bragi phases; make Bragi's history bar collapsible; switch which Ymir pool the device is linked to). Core [`pools`](crates/bragi-core/src/pools.rs): more than one saved identity (the first stays at the profile root; later ones under `pools/<id>/`); `add_pool`, `switch_pool`, `rename_pool`, `remove_pool`; a switch goes offline, changes the active pool, and reloads history and node addresses. Pairing a new pool uses the existing link-code offer. [`appearance`](crates/bragi-core/src/appearance.rs): `Preference.sidebar_collapsed`, remembered. History can `switch_root`. Bridge, Flutter, GPUI and the terminal app all list, add, switch, rename and forget pools, and can hide the history bar (F10 / Ctrl-B / `/sidebar` in the terminal; History in the desktop title bar; Hide on a wide Flutter layout; a phone keeps the drawer). CLI: `bragi pool list|add|switch|rename|remove`. Docs: [CHANGELOG.md](CHANGELOG.md), [roadmap.toml](roadmap.toml) (v0.4; [ROADMAP.md](ROADMAP.md) and the site regenerated).
+
+Checks: `cargo fmt --all --check`; clippy `--locked --workspace --all-targets -D warnings`; `cargo test --locked --workspace` (0 failed, including new `pools` tests); `flutter test --dart-define=BRAGI_DEMO=true` with the bridge library: settings, scenario, code, theme and models all passed (the scenario now scrolls Settings so Clear all history is tappable on a phone).
+
+Not tested: a real desktop window, the phone app on a device, or switching real Ymir pools (core and the terminal app were tried against demo/memory nodes; Flutter against the in-process demo).
+
+Next: after v0.4.0, the unreleased cert-only server link work already on main.
+
 ## 2026-11-24: cert-only Ymir servers (branch `feat/cert-only-servers`)
 
 Michael's pt169u (alternate Ymir and Bragi phases); the Bragi side of Ymir M10, which is on Ymir main (`cf5c1ba`, not yet released). Workspace: `weirdnet-sync` 0.7.1 (service devices) and `weirdnet-device-link` 0.4.2 (`Pairing::send_credential`), `zeroize`. Core [`identity`](crates/bragi-core/src/identity.rs): the seed is optional in sync 0.7, `user_keypair()`, `service_bundle(peer, roles, types)` (zeroized, saved), `is_service(peer)`. [`core`](crates/bragi-core/src/core.rs): `ServerRole { Inference, Model }` (Ymir's role and type names: inference gets `ymir.pool` and `ymir.context`, model none); `pair_accept_confirm_server(matches, role)` grants the server a scoped certificate and sends only the user key and the bundle, never the seed. A Ymir from before M10 (device-link 0.3.2) can't take a credential and the error says to update it and link again; there is no fallback that sends the seed. Terminal: `bragi-tui link CODE --server inference|model` (a code, not an address). Docs: README, the site's getting-started page, [roadmap.toml](roadmap.toml) (B1; ROADMAP.md and the site regenerated), CHANGELOG.

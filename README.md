@@ -11,7 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B1, B2 and B6 done; B3, B4, B5 and B7 in progress** (see [Bragi milestones](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) in Ymir's design doc). Pairing, the catalog from your inference nodes, streaming chat with stop and continue, and history that syncs between your devices, on Linux, macOS and Windows (GPUI) and on Android and iOS (Flutter). A device can hide the history bar (the choice is remembered) and can switch between more than one Ymir pool. Released: [v0.3.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.3.0) ([downloads](https://bragi.weirdbrains.com/download/)).
+Status: **B1, B2 and B6 done; B3, B4, B5 and B7 in progress** (see [Bragi milestones](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) in Ymir's design doc). Pairing, the catalog from your inference nodes, streaming chat with stop and continue, and history that syncs between your devices, on Linux, macOS and Windows (GPUI) and on Android and iOS (Flutter). A device can hide the history bar (the choice is remembered) and can switch between more than one Ymir pool. Released: [v0.4.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.4.0) ([downloads](https://bragi.weirdbrains.com/download/)).
 
 ## Layout
 
