@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: v0.3.0 released
+
+`release: v0.3.0` (`4595f13`, tag `v0.3.0`) with the training consent; the Release workflow passed on every platform; artifacts scanned (only the CI cargo-registry paths and the rpm packager line, as in 0.2.1); [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.3.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.3.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.3.0.
+
 ## 2026-11-24: training consent per chat (branch `feat/training-consent`)
 
 Michael's pt169u (alternate Ymir and Bragi phases for full support); the Bragi side of Ymir's training plan P2, whose Ymir side (the export) is on Ymir main. Core [`context`](crates/bragi-core/src/context.rs): `Train { on, at_ms }` in Ymir's `{conversation}/train` record (its own register, so a `meta` rewrite never clears it), `set_train`, read into `StoredConversation::train`; [`history`](crates/bragi-core/src/history.rs): `Conversation::training`, `History::set_training`; [`core`](crates/bragi-core/src/core.rs): `Core::set_training`. Bridge: `ConversationView.training`, `set_training(id, marked)` (regenerated with frb 2.13.0). Flutter: [`training_ui.dart`](app/lib/src/training_ui.dart), a cap button in the chat's app bar that asks before marking (no tooltip: its long-press overlay broke the message menu's delete dialog in the scenario). GPUI: a Training button next to Agent, with a notice. Terminal: `/train`, `/train off`, `· training` in the chat's title, help line. Also the bridge's `set_theme_preference` updates the two fields it sets (clippy `needless_update`). Docs: [CHANGELOG.md](CHANGELOG.md), [roadmap.toml](roadmap.toml) (B4; [ROADMAP.md](ROADMAP.md) and the site regenerated), the site's features page.
