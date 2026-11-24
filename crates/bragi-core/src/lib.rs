@@ -35,6 +35,7 @@ pub mod models;
 mod models_core;
 pub mod notifications;
 pub mod openai;
+pub mod pools;
 pub mod project;
 pub mod prompt_history;
 pub mod reactions;
@@ -63,6 +64,7 @@ pub use crate::models::{
 };
 pub use crate::models_core::ModelsRun;
 pub use crate::openai::TestReport;
+pub use crate::pools::{PoolRef, PoolView};
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};
 pub use crate::sessions::{Folder, SessionMeta, Target};
 pub use crate::targets::{DeleteReport, LinkView, SessionSummary, TargetOption};

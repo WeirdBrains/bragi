@@ -202,7 +202,7 @@ pub fn title_for(prompt: &str) -> String {
 /// Conversations by id, over the context store once the device is linked. Before that there is
 /// no history: chatting needs a link anyway.
 pub struct History {
-    dir: PathBuf,
+    dir: Mutex<PathBuf>,
     store: RwLock<Option<Arc<ContextStore>>>,
     /// Ids handed to messages this `History` saved; none is reused.
     seq: Mutex<u16>,
@@ -314,7 +314,24 @@ fn from_conversation(c: &StoredConversation) -> Conversation {
 impl History {
     /// `dir` is the app's data directory: B1's files, if any, are in `<dir>/history/`.
     pub fn open(dir: &Path) -> Result<Self> {
-        Ok(Self { dir: dir.join("history"), store: RwLock::new(None), seq: Mutex::new(0), undo: Mutex::new(None) })
+        Ok(Self { dir: Mutex::new(dir.join("history")), store: RwLock::new(None), seq: Mutex::new(0), undo: Mutex::new(None) })
+    }
+
+    fn history_dir(&self) -> PathBuf {
+        self.dir.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Drops the context store so a different identity can be attached.
+    pub fn detach(&self) {
+        *self.store.write().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.undo.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        *self.seq.lock().unwrap_or_else(|e| e.into_inner()) = 0;
+    }
+
+    /// Points history at another pool's directory. The store is cleared until the next [`attach`].
+    pub fn switch_root(&self, dir: &Path) {
+        self.detach();
+        *self.dir.lock().unwrap_or_else(|e| e.into_inner()) = dir.join("history");
     }
 
     /// Puts history on `identity`'s context store (the device is linked), importing B1's local
@@ -338,7 +355,8 @@ impl History {
 
     /// Reads B1's per-conversation files into the store and moves the directory aside.
     fn import_local(&self) -> usize {
-        let Ok(rd) = std::fs::read_dir(&self.dir) else { return 0 };
+        let dir = self.history_dir();
+        let Ok(rd) = std::fs::read_dir(&dir) else { return 0 };
         let mut n = 0;
         for e in rd.flatten() {
             let p = e.path();
@@ -353,8 +371,8 @@ impl History {
                 }
             }
         }
-        let aside = self.dir.with_file_name("history.imported");
-        if let Err(e) = std::fs::rename(&self.dir, &aside) {
+        let aside = dir.with_file_name("history.imported");
+        if let Err(e) = std::fs::rename(&dir, &aside) {
             tracing::warn!("moving the imported history aside: {e}");
         }
         n

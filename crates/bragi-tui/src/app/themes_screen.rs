@@ -187,7 +187,7 @@ impl App {
     fn apply_theme(&mut self) {
         let Some(row) = self.themes.selected().cloned() else { return };
         let a = self.appearance();
-        let p = Preference { theme: row.name.clone(), mode: self.themes.mode };
+        let p = Preference { theme: row.name.clone(), mode: self.themes.mode, ..self.core.appearance().preference() };
         match a.set_preference(&p) {
             Ok(()) => {
                 self.themes.saved = p;

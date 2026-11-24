@@ -219,6 +219,7 @@ impl BragiView {
             .flex_1()
             .overflow_y_scroll()
             .child(div().text_size(px(18.)).child("Settings"))
+            .child(self.pools_section(cx))
             .child(self.endpoints_section(cx))
             .child(self.links_section(cx))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))

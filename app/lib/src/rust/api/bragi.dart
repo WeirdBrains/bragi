@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pref_view`, `register`, `running_parts`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `variant_of`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `variant_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -329,6 +329,23 @@ Future<String> editLink({required String old, required String new_}) =>
 Future<void> removeLink({required String address}) =>
     RustLib.instance.api.crateApiBragiRemoveLink(address: address);
 
+Future<List<PoolView>> pools() => RustLib.instance.api.crateApiBragiPools();
+
+Future<PoolView?> activePool() =>
+    RustLib.instance.api.crateApiBragiActivePool();
+
+/// Starts a link to another Ymir pool. The current pool stays in use until pairing finishes.
+Future<String> addPool() => RustLib.instance.api.crateApiBragiAddPool();
+
+Future<PoolView> switchPool({required String id}) =>
+    RustLib.instance.api.crateApiBragiSwitchPool(id: id);
+
+Future<PoolView> renamePool({required String id, required String name}) =>
+    RustLib.instance.api.crateApiBragiRenamePool(id: id, name: name);
+
+Future<void> removePool({required String id}) =>
+    RustLib.instance.api.crateApiBragiRemovePool(id: id);
+
 /// What a new session can be bound to: the pool, and endpoints offered alongside it.
 Future<List<TargetView>> targets() =>
     RustLib.instance.api.crateApiBragiTargets();
@@ -440,6 +457,12 @@ Future<ThemePrefView> setThemePreference({
   theme: theme,
   mode: mode,
 );
+
+/// Whether the conversation history sidebar is hidden (remembered in the profile).
+bool sidebarCollapsed() => RustLib.instance.api.crateApiBragiSidebarCollapsed();
+
+void setSidebarCollapsed({required bool collapsed}) =>
+    RustLib.instance.api.crateApiBragiSetSidebarCollapsed(collapsed: collapsed);
 
 /// The palette to draw with now; `system_dark` is the platform's brightness, for system mode.
 PaletteView currentPalette({bool? systemDark}) =>
@@ -1441,6 +1464,46 @@ class PaletteView {
           dark == other.dark &&
           roles == other.roles &&
           raised == other.raised;
+}
+
+/// A saved Ymir pool this device can switch to.
+class PoolView {
+  final String id;
+  final String name;
+  final String user;
+  final String device;
+  final bool active;
+  final bool linked;
+
+  const PoolView({
+    required this.id,
+    required this.name,
+    required this.user,
+    required this.device,
+    required this.active,
+    required this.linked,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      name.hashCode ^
+      user.hashCode ^
+      device.hashCode ^
+      active.hashCode ^
+      linked.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PoolView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          name == other.name &&
+          user == other.user &&
+          device == other.device &&
+          active == other.active &&
+          linked == other.linked;
 }
 
 class QuantFitView {

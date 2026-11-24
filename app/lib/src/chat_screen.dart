@@ -54,7 +54,8 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Up and Down on a hardware keyboard walk the prompts sent before (the chat's, or the open
   /// project's), as in the terminal app; only while the box holds one line.
   KeyEventResult _historyKey(FocusNode _, KeyEvent e) {
-    if (e is! KeyDownEvent || _prompt.text.contains('\n')) return KeyEventResult.ignored;
+    if (e is! KeyDownEvent || _prompt.text.contains('\n'))
+      return KeyEventResult.ignored;
     final code = widget.controller.code;
     final String? next;
     if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -74,7 +75,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _onScroll() {
     if (!_scroll.hasClients) return;
-    final atBottom = _scroll.position.maxScrollExtent - _scroll.position.pixels <= 24;
+    final atBottom =
+        _scroll.position.maxScrollExtent - _scroll.position.pixels <= 24;
     if (atBottom != _stick) setState(() => _stick = atBottom);
   }
 
@@ -96,7 +98,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _attach() async {
     final c = widget.controller;
     if (_scripted) {
-      c.attachFile('sample-notes.md', utf8.encode('# Notes\n- buy milk\n- write the B5 milestone\n'));
+      c.attachFile(
+        'sample-notes.md',
+        utf8.encode('# Notes\n- buy milk\n- write the B5 milestone\n'),
+      );
       return;
     }
     final r = await FilePicker.platform.pickFiles(withData: true);
@@ -127,16 +132,45 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_stick && _scroll.hasClients) _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      if (_stick && _scroll.hasClients)
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
     });
+    final wide = MediaQuery.sizeOf(context).width >= 1024;
+    final showSidebar = wide && !c.sidebarCollapsed;
+    rust.PoolView? pool;
+    for (final p in c.pools) {
+      if (p.active) {
+        pool = p;
+        break;
+      }
+    }
     return Scaffold(
       appBar: AppBar(
-        title: Text(c.current?.title ?? 'Bragi', overflow: TextOverflow.ellipsis),
+        leading: wide
+            ? IconButton(
+                key: const Key('toggle-sidebar'),
+                tooltip: c.sidebarCollapsed ? 'Show history' : 'Hide history',
+                onPressed: c.toggleSidebar,
+                icon: Icon(c.sidebarCollapsed ? Icons.menu : Icons.menu_open),
+              )
+            : null,
+        title: Text(
+          [
+            c.current?.title ?? 'Bragi',
+            if (pool != null) pool.name,
+          ].join(' · '),
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           ModeToggle(code: c.code),
           TrainingToggle(controller: c),
           NotificationBell(code: c.code),
-          IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
+          IconButton(
+            key: const Key('new-chat'),
+            tooltip: 'New chat',
+            onPressed: c.newChat,
+            icon: const Icon(Icons.add_comment_outlined),
+          ),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(92),
@@ -148,145 +182,228 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       ),
-      drawer: _History(controller: c, link: _link),
+      drawer: showSidebar ? null : _History(controller: c, link: _link),
       body: SafeArea(
-        child: Column(
+        child: Row(
           children: [
+            if (showSidebar) ...[
+              SizedBox(
+                width: 280,
+                child: _History(controller: c, link: _link, persistent: true),
+              ),
+              VerticalDivider(width: 1, color: BragiColors.border),
+            ],
             Expanded(
-              child: c.messages.isEmpty
-                  ? Center(
-                      child: Text('Ask your own cloud something.', style: TextStyle(color: BragiColors.textSecondary)),
-                    )
-                  // Replies stay selectable; each reply's copy button gives its raw Markdown.
-                  : Stack(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: c.messages.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Ask your own cloud something.',
+                              style: TextStyle(
+                                color: BragiColors.textSecondary,
+                              ),
+                            ),
+                          )
+                        // Replies stay selectable; each reply's copy button gives its raw Markdown.
+                        : Stack(
+                            children: [
+                              SelectionArea(
+                                child: ListView.builder(
+                                  key: const Key('messages'),
+                                  controller: _scroll,
+                                  padding: const EdgeInsets.all(12),
+                                  itemCount: c.messages.length,
+                                  itemBuilder: (context, i) => GestureDetector(
+                                    key: Key('bubble-$i'),
+                                    // Long-press (or right-click) a message for its menu; not while an answer streams.
+                                    onLongPress: c.streaming
+                                        ? null
+                                        : () => messageMenu(
+                                            context,
+                                            c,
+                                            c.messages[i],
+                                          ),
+                                    onSecondaryTap: c.streaming
+                                        ? null
+                                        : () => messageMenu(
+                                            context,
+                                            c,
+                                            c.messages[i],
+                                          ),
+                                    child: _Bubble(
+                                      key: ValueKey(
+                                        'bubble-${c.current?.id}-$i',
+                                      ),
+                                      message: c.messages[i],
+                                      streaming:
+                                          c.streaming &&
+                                          i == c.messages.length - 1,
+                                      controller: c,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (!_stick)
+                                Positioned(
+                                  bottom: 8,
+                                  left: 0,
+                                  right: 0,
+                                  child: Center(
+                                    child: FilledButton.icon(
+                                      key: const Key('jump-latest'),
+                                      onPressed: _jumpToLatest,
+                                      icon: const Icon(
+                                        Icons.arrow_downward,
+                                        size: 16,
+                                      ),
+                                      label: const Text('Jump to latest'),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                  ),
+                  if (c.notice != null)
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        c.notice!,
+                        style: TextStyle(
+                          color: c.notice!.startsWith('Saved ')
+                              ? BragiColors.warm
+                              : BragiColors.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  if (c.nodeSearchLine != null)
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(
+                        c.nodeSearchLine!,
+                        key: const Key('node-search'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: switch (c.nodeSearch) {
+                            'found' => BragiColors.warm,
+                            'not_found' => BragiColors.busy,
+                            _ => BragiColors.textSecondary,
+                          },
+                        ),
+                      ),
+                    ),
+                  if (c.card != null) _Card(controller: c),
+                  if (c.code.on && (c.code.review?.files.isNotEmpty ?? false))
+                    ReviewCard(code: c.code),
+                  if (c.code.on && c.code.shell != null)
+                    ShellPanel(code: c.code),
+                  if (c.code.on) CodeBar(chat: c),
+                  if (c.attachments.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+                      child: Wrap(
+                        spacing: 6,
+                        children: [
+                          for (final (i, a) in c.attachments.indexed)
+                            InputChip(
+                              key: Key('chip-$i'),
+                              label: Text(_attachmentLabel(a)),
+                              avatar: a.kind == 'text'
+                                  ? null
+                                  : Icon(
+                                      a.kind == 'image'
+                                          ? Icons.image_outlined
+                                          : Icons.graphic_eq,
+                                      size: 16,
+                                    ),
+                              onDeleted: () => c.detach(i),
+                            ),
+                        ],
+                      ),
+                    ),
+                  Container(
+                    decoration: BoxDecoration(
+                      border: Border(
+                        top: BorderSide(color: BragiColors.border),
+                      ),
+                    ),
+                    padding: const EdgeInsets.fromLTRB(4, 8, 10, 8),
+                    child: Row(
                       children: [
-                        SelectionArea(
-                          child: ListView.builder(
-                            key: const Key('messages'),
-                            controller: _scroll,
-                            padding: const EdgeInsets.all(12),
-                            itemCount: c.messages.length,
-                            itemBuilder: (context, i) => GestureDetector(
-                              key: Key('bubble-$i'),
-                              // Long-press (or right-click) a message for its menu; not while an answer streams.
-                              onLongPress: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
-                              onSecondaryTap: c.streaming ? null : () => messageMenu(context, c, c.messages[i]),
-                              child: _Bubble(
-                                key: ValueKey('bubble-${c.current?.id}-$i'),
-                                message: c.messages[i],
-                                streaming: c.streaming && i == c.messages.length - 1,
-                                controller: c,
+                        if (!c.code.on) ...[
+                          IconButton(
+                            key: const Key('attach'),
+                            tooltip: 'Attach a file, image or audio',
+                            onPressed: _attach,
+                            icon: const Icon(Icons.attach_file),
+                          ),
+                          IconButton(
+                            key: const Key('agent'),
+                            tooltip: c.agent
+                                ? 'Agent mode: on'
+                                : 'Agent mode: off',
+                            isSelected: c.agent,
+                            style: c.agent
+                                ? IconButton.styleFrom(
+                                    backgroundColor: BragiColors.accent,
+                                    foregroundColor: BragiColors.background,
+                                  )
+                                : null,
+                            onPressed: c.toggleAgent,
+                            icon: const Icon(Icons.smart_toy_outlined),
+                          ),
+                        ],
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Focus(
+                            onKeyEvent: _historyKey,
+                            child: TextField(
+                              key: const Key('prompt'),
+                              controller: _prompt,
+                              minLines: 1,
+                              maxLines: 4,
+                              textInputAction: TextInputAction.send,
+                              // The scripted demo types through `adb input`; the keyboard's autocorrect turned
+                              // "What" into "Chat". Real use keeps the keyboard's own settings.
+                              autocorrect: !_scripted,
+                              enableSuggestions: !_scripted,
+                              onSubmitted: (_) => _send(),
+                              decoration: InputDecoration(
+                                hintText: c.code.on
+                                    ? 'Ask for a change…'
+                                    : 'Ask anything…',
+                                isDense: true,
+                                border: const OutlineInputBorder(),
                               ),
                             ),
                           ),
                         ),
-                        if (!_stick)
-                          Positioned(
-                            bottom: 8,
-                            left: 0,
-                            right: 0,
-                            child: Center(
-                              child: FilledButton.icon(
-                                key: const Key('jump-latest'),
-                                onPressed: _jumpToLatest,
-                                icon: const Icon(Icons.arrow_downward, size: 16),
-                                label: const Text('Jump to latest'),
-                              ),
-                            ),
+                        if (c.canContinue) ...[
+                          const SizedBox(width: 6),
+                          OutlinedButton(
+                            key: const Key('continue'),
+                            onPressed: c.continueAnswer,
+                            child: const Text('Continue'),
                           ),
+                        ],
+                        const SizedBox(width: 6),
+                        c.streaming
+                            ? OutlinedButton.icon(
+                                key: const Key('stop'),
+                                onPressed: c.stop,
+                                icon: const Icon(Icons.stop, size: 16),
+                                label: const Text('Stop'),
+                              )
+                            : FilledButton(
+                                key: const Key('send'),
+                                onPressed: _send,
+                                child: const Text('Send'),
+                              ),
                       ],
                     ),
-            ),
-            if (c.notice != null)
-              Padding(
-                padding: const EdgeInsets.all(6),
-                child: Text(c.notice!, style: TextStyle(color: c.notice!.startsWith('Saved ') ? BragiColors.warm : BragiColors.error, fontSize: 12)),
-              ),
-            if (c.nodeSearchLine != null)
-              Padding(
-                padding: const EdgeInsets.all(6),
-                child: Text(
-                  c.nodeSearchLine!,
-                  key: const Key('node-search'),
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: switch (c.nodeSearch) {
-                      'found' => BragiColors.warm,
-                      'not_found' => BragiColors.busy,
-                      _ => BragiColors.textSecondary,
-                    },
                   ),
-                ),
-              ),
-            if (c.card != null) _Card(controller: c),
-            if (c.code.on && (c.code.review?.files.isNotEmpty ?? false)) ReviewCard(code: c.code),
-            if (c.code.on && c.code.shell != null) ShellPanel(code: c.code),
-            if (c.code.on) CodeBar(chat: c),
-            if (c.attachments.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
-                child: Wrap(
-                  spacing: 6,
-                  children: [
-                    for (final (i, a) in c.attachments.indexed)
-                      InputChip(
-                        key: Key('chip-$i'),
-                        label: Text(_attachmentLabel(a)),
-                        avatar: a.kind == 'text' ? null : Icon(a.kind == 'image' ? Icons.image_outlined : Icons.graphic_eq, size: 16),
-                        onDeleted: () => c.detach(i),
-                      ),
-                  ],
-                ),
-              ),
-            Container(
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: BragiColors.border)),
-              ),
-              padding: const EdgeInsets.fromLTRB(4, 8, 10, 8),
-              child: Row(
-                children: [
-                  if (!c.code.on) ...[
-                    IconButton(key: const Key('attach'), tooltip: 'Attach a file, image or audio', onPressed: _attach, icon: const Icon(Icons.attach_file)),
-                    IconButton(
-                      key: const Key('agent'),
-                      tooltip: c.agent ? 'Agent mode: on' : 'Agent mode: off',
-                      isSelected: c.agent,
-                      style: c.agent ? IconButton.styleFrom(backgroundColor: BragiColors.accent, foregroundColor: BragiColors.background) : null,
-                      onPressed: c.toggleAgent,
-                      icon: const Icon(Icons.smart_toy_outlined),
-                    ),
-                  ],
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Focus(
-                      onKeyEvent: _historyKey,
-                      child: TextField(
-                        key: const Key('prompt'),
-                        controller: _prompt,
-                        minLines: 1,
-                        maxLines: 4,
-                        textInputAction: TextInputAction.send,
-                        // The scripted demo types through `adb input`; the keyboard's autocorrect turned
-                        // "What" into "Chat". Real use keeps the keyboard's own settings.
-                        autocorrect: !_scripted,
-                        enableSuggestions: !_scripted,
-                        onSubmitted: (_) => _send(),
-                        decoration: InputDecoration(
-                          hintText: c.code.on ? 'Ask for a change…' : 'Ask anything…',
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (c.canContinue) ...[
-                    const SizedBox(width: 6),
-                    OutlinedButton(key: const Key('continue'), onPressed: c.continueAnswer, child: const Text('Continue')),
-                  ],
-                  const SizedBox(width: 6),
-                  c.streaming
-                      ? OutlinedButton.icon(key: const Key('stop'), onPressed: c.stop, icon: const Icon(Icons.stop, size: 16), label: const Text('Stop'))
-                      : FilledButton(key: const Key('send'), onPressed: _send, child: const Text('Send')),
                 ],
               ),
             ),
@@ -319,14 +436,29 @@ class _Card extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(card.summary, style: const TextStyle(fontSize: 14)),
-          Text('the node asks to ${card.tier} · only you can say yes', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+          Text(
+            'the node asks to ${card.tier} · only you can say yes',
+            style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+          ),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             children: [
-              FilledButton(key: const Key('allow-once'), onPressed: () => c.answer('once'), child: const Text('Allow once')),
-              OutlinedButton(key: const Key('allow-task'), onPressed: () => c.answer('task'), child: const Text('This task')),
-              OutlinedButton(key: const Key('deny'), onPressed: () => c.answer('deny'), child: const Text('Deny')),
+              FilledButton(
+                key: const Key('allow-once'),
+                onPressed: () => c.answer('once'),
+                child: const Text('Allow once'),
+              ),
+              OutlinedButton(
+                key: const Key('allow-task'),
+                onPressed: () => c.answer('task'),
+                child: const Text('This task'),
+              ),
+              OutlinedButton(
+                key: const Key('deny'),
+                onPressed: () => c.answer('deny'),
+                child: const Text('Deny'),
+              ),
             ],
           ),
         ],
@@ -346,7 +478,10 @@ class _Models extends StatelessWidget {
     if (c.models.isEmpty) {
       return Padding(
         padding: EdgeInsets.all(12),
-        child: Text('Looking for your inference nodes…', style: TextStyle(color: BragiColors.textSecondary)),
+        child: Text(
+          'Looking for your inference nodes…',
+          style: TextStyle(color: BragiColors.textSecondary),
+        ),
       );
     }
     return SizedBox(
@@ -363,8 +498,13 @@ class _Models extends StatelessWidget {
                   key: Key('model-${m.id}'),
                   selected: c.model == m.id,
                   onSelected: (_) => c.pickModel(m.id),
-                  avatar: CircleAvatar(radius: 4, backgroundColor: _dot(m.status)),
-                  label: Text('${m.id} · ${_label(m)}${c.state!.nodeCount > 1 ? ' · ${m.nodes}/${c.state!.nodeCount} nodes' : ''}'),
+                  avatar: CircleAvatar(
+                    radius: 4,
+                    backgroundColor: _dot(m.status),
+                  ),
+                  label: Text(
+                    '${m.id} · ${_label(m)}${c.state!.nodeCount > 1 ? ' · ${m.nodes}/${c.state!.nodeCount} nodes' : ''}',
+                  ),
                 ),
               ),
           ],
@@ -385,13 +525,20 @@ class _Models extends StatelessWidget {
       'loadable' => 'loads on use',
       final s => s,
     };
-    final speed = m.tokensPerSec == null ? '' : ' · ${m.tokensPerSec!.round()} tok/s';
+    final speed = m.tokensPerSec == null
+        ? ''
+        : ' · ${m.tokensPerSec!.round()} tok/s';
     return '$s$speed';
   }
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble({super.key, required this.message, required this.streaming, required this.controller});
+  const _Bubble({
+    super.key,
+    required this.message,
+    required this.streaming,
+    required this.controller,
+  });
 
   final MessageView message;
   final bool streaming;
@@ -415,19 +562,30 @@ class _Bubble extends StatelessWidget {
     final flags = [
       if (message.cacheHit) 'cached',
       if (message.standin != null) 'stand-in ${message.standin}',
-      if (message.resumes == 1) 'moved to another node' else if (message.resumes > 1) 'moved nodes ${message.resumes}×',
-      if (message.agent) message.tools.isEmpty ? 'agent task' : 'agent task · used ${message.tools.join(', ')}',
+      if (message.resumes == 1)
+        'moved to another node'
+      else if (message.resumes > 1)
+        'moved nodes ${message.resumes}×',
+      if (message.agent)
+        message.tools.isEmpty
+            ? 'agent task'
+            : 'agent task · used ${message.tools.join(', ')}',
       // A turn made in code mode (the terminal app's), in the same conversation.
       if (message.mode == 'code') 'code mode',
     ];
-    final line = mine ? null : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
+    final line = mine
+        ? null
+        : [if (meta != null && meta.isNotEmpty) meta, ...flags].join(' · ');
     return Align(
       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
         constraints: const BoxConstraints(maxWidth: 560),
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(color: mine ? BragiColors.selection : BragiColors.surface, borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(
+          color: mine ? BragiColors.selection : BragiColors.surface,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -439,29 +597,51 @@ class _Bubble extends StatelessWidget {
                   child: Text(
                     'attached: ${_attachmentLabel(a)}',
                     key: const Key('bubble-attachment'),
-                    style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: BragiColors.textSecondary,
+                    ),
                   ),
                 ),
             if (line != null && line.isNotEmpty)
               Text(
                 line,
                 key: const Key('bubble-meta'),
-                style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: BragiColors.textSecondary,
+                ),
               ),
-            if (!mine && message.reasoning.trim().isNotEmpty) _Thinking(message: message, streaming: streaming, controller: controller),
+            if (!mine && message.reasoning.trim().isNotEmpty)
+              _Thinking(
+                message: message,
+                streaming: streaming,
+                controller: controller,
+              ),
             if (mine || message.text.isEmpty)
               Text(
                 message.text.isEmpty
                     // Nothing from the model yet: say so, until reasoning or text arrives.
-                    ? (streaming && message.reasoning.trim().isEmpty ? 'Waiting for a reply…' : '…')
+                    ? (streaming && message.reasoning.trim().isEmpty
+                          ? 'Waiting for a reply…'
+                          : '…')
                     : message.text,
-                key: message.text.isEmpty && streaming ? const Key('bubble-waiting') : null,
+                key: message.text.isEmpty && streaming
+                    ? const Key('bubble-waiting')
+                    : null,
                 style: const TextStyle(fontSize: 15, height: 1.4),
               )
             else
-              MarkdownView(key: const Key('bubble-markdown'), doc: controller.markdown(message.text, streaming || message.state == 'streaming')),
+              MarkdownView(
+                key: const Key('bubble-markdown'),
+                doc: controller.markdown(
+                  message.text,
+                  streaming || message.state == 'streaming',
+                ),
+              ),
             if (!streaming)
-              for (final f in message.files) _FileCard(controller: controller, file: f),
+              for (final f in message.files)
+                _FileCard(controller: controller, file: f),
             if (message.reactions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -473,9 +653,14 @@ class _Bubble extends StatelessWidget {
                       InkWell(
                         key: Key('pill-$e'),
                         borderRadius: BorderRadius.circular(10),
-                        onTap: streaming ? null : () => controller.react(message, e),
+                        onTap: streaming
+                            ? null
+                            : () => controller.react(message, e),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: BragiColors.selection,
                             border: Border.all(color: BragiColors.border),
@@ -496,7 +681,8 @@ class _Bubble extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                   iconSize: 16,
                   color: BragiColors.textSecondary,
-                  onPressed: () => Clipboard.setData(ClipboardData(text: message.text)),
+                  onPressed: () =>
+                      Clipboard.setData(ClipboardData(text: message.text)),
                   icon: const Icon(Icons.copy),
                 ),
               ),
@@ -518,13 +704,20 @@ IconData _kindIcon(String kind) => switch (kind) {
 /// scripted demo, with no one to answer a dialog, saves into a temp folder.
 Future<void> saveFile(BragiController c, FileView f) async {
   if (_scripted) {
-    await c.saveFileTo(f, Directory.systemTemp.createTempSync('bragi-saved').path);
+    await c.saveFileTo(
+      f,
+      Directory.systemTemp.createTempSync('bragi-saved').path,
+    );
     return;
   }
   final mobile = Platform.isAndroid || Platform.isIOS;
   try {
     final bytes = mobile ? await c.fileBytes(f) : null;
-    final dest = await FilePicker.platform.saveFile(dialogTitle: 'Save ${f.name}', fileName: f.name, bytes: bytes);
+    final dest = await FilePicker.platform.saveFile(
+      dialogTitle: 'Save ${f.name}',
+      fileName: f.name,
+      bytes: bytes,
+    );
     if (dest == null) return;
     if (mobile) {
       c.say('Saved ${f.name}');
@@ -562,14 +755,28 @@ class _FileCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(_kindIcon(f.kind), size: 18, color: BragiColors.textSecondary),
+              Icon(
+                _kindIcon(f.kind),
+                size: 18,
+                color: BragiColors.textSecondary,
+              ),
               const SizedBox(width: 6),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(f.path ?? f.name, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
-                    Text('${f.mime} · ${humanSize(f.size.toInt())} · $from', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+                    Text(
+                      f.path ?? f.name,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                    Text(
+                      '${f.mime} · ${humanSize(f.size.toInt())} · $from',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: BragiColors.textSecondary,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -588,7 +795,11 @@ class _FileCard extends StatelessWidget {
                 f.preview!,
                 maxLines: 8,
                 overflow: TextOverflow.fade,
-                style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: BragiColors.textSecondary),
+                style: TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: BragiColors.textSecondary,
+                ),
               ),
             ),
           if (f.kind == 'audio') _AudioRow(controller: controller, file: f),
@@ -604,7 +815,10 @@ class _FileCard extends StatelessWidget {
                           snap.data!,
                           key: Key('preview-${f.id}'),
                           fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Text('(no preview)', style: TextStyle(fontSize: 11)),
+                          errorBuilder: (_, _, _) => const Text(
+                            '(no preview)',
+                            style: TextStyle(fontSize: 11),
+                          ),
                         ),
                       )
                     : const SizedBox(height: 4),
@@ -627,12 +841,15 @@ class _AudioRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final f = file;
     final c = controller.clip;
-    final mine = c != null && c.file == f.id && c.conversation == controller.current?.id;
+    final mine =
+        c != null && c.file == f.id && c.conversation == controller.current?.id;
     final known = Duration(milliseconds: f.durationMs?.toInt() ?? 0);
     final total = mine ? (c.duration ?? known) : known;
     final at = mine ? c.position : Duration.zero;
     final playing = mine && c.playing;
-    final progress = total.inMilliseconds == 0 ? 0.0 : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+    final progress = total.inMilliseconds == 0
+        ? 0.0
+        : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
       child: Row(
@@ -642,13 +859,26 @@ class _AudioRow extends StatelessWidget {
             tooltip: playing ? 'Pause' : 'Play',
             visualDensity: VisualDensity.compact,
             onPressed: () => controller.playFile(f),
-            icon: Icon(mine && c.loading ? Icons.hourglass_empty : (playing ? Icons.pause : Icons.play_arrow)),
+            icon: Icon(
+              mine && c.loading
+                  ? Icons.hourglass_empty
+                  : (playing ? Icons.pause : Icons.play_arrow),
+            ),
           ),
           Expanded(
-            child: Slider(key: Key('seek-${f.id}'), value: progress, onChanged: mine && !c.loading ? (v) => controller.seekFile(f, v) : null),
+            child: Slider(
+              key: Key('seek-${f.id}'),
+              value: progress,
+              onChanged: mine && !c.loading
+                  ? (v) => controller.seekFile(f, v)
+                  : null,
+            ),
           ),
           Text(
-            rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
+            rust.audioTimes(
+              positionMs: BigInt.from(at.inMilliseconds),
+              durationMs: BigInt.from(total.inMilliseconds),
+            ),
             key: Key('time-${f.id}'),
             style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
           ),
@@ -662,7 +892,11 @@ class _AudioRow extends StatelessWidget {
 /// streaming live, with the time it took (the title comes from bragi-core, as on the desktop).
 /// Open while the model reasons, closed once the answer starts; a tap flips it.
 class _Thinking extends StatefulWidget {
-  const _Thinking({required this.message, required this.streaming, required this.controller});
+  const _Thinking({
+    required this.message,
+    required this.streaming,
+    required this.controller,
+  });
 
   final MessageView message;
   final bool streaming;
@@ -676,7 +910,10 @@ class _ThinkingState extends State<_Thinking> {
   bool _flipped = false;
   Timer? _tick;
 
-  bool get _reasoningNow => widget.streaming && widget.message.text.isEmpty && widget.message.thinkingMs == null;
+  bool get _reasoningNow =>
+      widget.streaming &&
+      widget.message.text.isEmpty &&
+      widget.message.thinkingMs == null;
 
   @override
   void initState() {
@@ -693,7 +930,10 @@ class _ThinkingState extends State<_Thinking> {
   /// Redraws the elapsed time while the model reasons.
   void _ticker() {
     if (_reasoningNow) {
-      _tick ??= Timer.periodic(const Duration(milliseconds: 500), (_) => setState(() {}));
+      _tick ??= Timer.periodic(
+        const Duration(milliseconds: 500),
+        (_) => setState(() {}),
+      );
     } else {
       _tick?.cancel();
       _tick = null;
@@ -711,7 +951,9 @@ class _ThinkingState extends State<_Thinking> {
     final now = _reasoningNow;
     final open = now != _flipped;
     final since = widget.controller.thinkingSince;
-    final elapsed = now && since != null ? DateTime.now().difference(since).inMilliseconds : (widget.message.thinkingMs?.toInt() ?? 0);
+    final elapsed = now && since != null
+        ? DateTime.now().difference(since).inMilliseconds
+        : (widget.message.thinkingMs?.toInt() ?? 0);
     final title = widget.controller.api.thinkingLabel(elapsed, !now);
     return Padding(
       padding: const EdgeInsets.only(top: 2, bottom: 6),
@@ -723,7 +965,13 @@ class _ThinkingState extends State<_Thinking> {
             onTap: () => setState(() => _flipped = !_flipped),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text('${open ? '▾' : '▸'} $title', style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+              child: Text(
+                '${open ? '▾' : '▸'} $title',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: BragiColors.textSecondary,
+                ),
+              ),
             ),
           ),
           if (open)
@@ -732,11 +980,19 @@ class _ThinkingState extends State<_Thinking> {
               margin: const EdgeInsets.only(top: 4),
               padding: const EdgeInsets.only(left: 10),
               decoration: BoxDecoration(
-                border: Border(left: BorderSide(color: BragiColors.border, width: 2)),
+                border: Border(
+                  left: BorderSide(color: BragiColors.border, width: 2),
+                ),
               ),
               child: DefaultTextStyle.merge(
                 style: TextStyle(color: BragiColors.textSecondary),
-                child: MarkdownView(key: const Key('thinking-markdown'), doc: widget.controller.markdown(widget.message.reasoning.trim(), now)),
+                child: MarkdownView(
+                  key: const Key('thinking-markdown'),
+                  doc: widget.controller.markdown(
+                    widget.message.reasoning.trim(),
+                    now,
+                  ),
+                ),
               ),
             ),
         ],
@@ -746,116 +1002,176 @@ class _ThinkingState extends State<_Thinking> {
 }
 
 class _History extends StatelessWidget {
-  const _History({required this.controller, required this.link});
+  const _History({
+    required this.controller,
+    required this.link,
+    this.persistent = false,
+  });
 
   final BragiController controller;
   final TextEditingController link;
+  final bool persistent;
 
   @override
   Widget build(BuildContext context) {
     final c = controller;
     final check = c.linkCheck;
-    return Drawer(
-      child: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.add),
-              title: const Text('New chat'),
-              onTap: () {
-                c.newChat();
-                Navigator.of(context).pop();
-              },
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-              child: Text('HISTORY', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
-            ),
-            Expanded(child: SessionsTree(controller: c)),
-            ListTile(
-              key: const Key('models'),
-              dense: true,
-              leading: const Icon(Icons.memory_outlined),
-              title: const Text('Models'),
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                nav.push(MaterialPageRoute<void>(builder: (_) => ModelsScreen(controller: c)));
-              },
-            ),
-            ListTile(
-              key: const Key('theme'),
-              dense: true,
-              leading: const Icon(Icons.palette_outlined),
-              title: const Text('Theme'),
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                nav.push(MaterialPageRoute<void>(builder: (_) => ThemeScreen(appearance: c.appearance)));
-              },
-            ),
-            ListTile(
-              key: const Key('settings'),
-              dense: true,
-              leading: const Icon(Icons.settings_outlined),
-              title: const Text('Settings'),
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                c.reloadSettings();
-                nav.push(MaterialPageRoute<void>(builder: (_) => SettingsScreen(controller: c)));
-              },
-            ),
-            const Divider(),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: check != null
-                  ? Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('${check.device} shows ${check.sas}?'),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            FilledButton(key: const Key('link-yes'), onPressed: () => c.linkConfirm(true), child: const Text('Match')),
-                            const SizedBox(width: 8),
-                            OutlinedButton(key: const Key('link-no'), onPressed: () => c.linkConfirm(false), child: const Text('Cancel')),
-                          ],
-                        ),
-                      ],
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text('LINK A DEVICE', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
-                        const SizedBox(height: 6),
-                        TextField(
-                          key: const Key('link-code'),
-                          controller: link,
-                          decoration: const InputDecoration(
-                            hintText: 'Link code or node address',
-                            hintMaxLines: 1,
-                            hintStyle: TextStyle(overflow: TextOverflow.ellipsis),
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        OutlinedButton(
-                          key: const Key('link-go'),
-                          onPressed: () async {
-                            if (await c.linkDevice(link.text)) link.clear();
-                          },
-                          child: const Text('Link'),
-                        ),
-                      ],
+    void closeDrawer() {
+      if (!persistent) Navigator.of(context).pop();
+    }
+
+    final content = SafeArea(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.add),
+            title: const Text('New chat'),
+            onTap: () {
+              c.newChat();
+              closeDrawer();
+            },
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 8, 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'HISTORY',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: BragiColors.textSecondary,
                     ),
+                  ),
+                ),
+                if (persistent)
+                  TextButton(
+                    key: const Key('hide-sidebar'),
+                    onPressed: c.toggleSidebar,
+                    child: const Text('Hide'),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Expanded(child: SessionsTree(controller: c)),
+          ListTile(
+            key: const Key('models'),
+            dense: true,
+            leading: const Icon(Icons.memory_outlined),
+            title: const Text('Models'),
+            onTap: () {
+              final nav = Navigator.of(context);
+              closeDrawer();
+              nav.push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ModelsScreen(controller: c),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            key: const Key('theme'),
+            dense: true,
+            leading: const Icon(Icons.palette_outlined),
+            title: const Text('Theme'),
+            onTap: () {
+              final nav = Navigator.of(context);
+              closeDrawer();
+              nav.push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ThemeScreen(appearance: c.appearance),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            key: const Key('settings'),
+            dense: true,
+            leading: const Icon(Icons.settings_outlined),
+            title: const Text('Settings'),
+            onTap: () {
+              final nav = Navigator.of(context);
+              closeDrawer();
+              c.reloadSettings();
+              nav.push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SettingsScreen(controller: c),
+                ),
+              );
+            },
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: check != null
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${check.device} shows ${check.sas}?'),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          FilledButton(
+                            key: const Key('link-yes'),
+                            onPressed: () => c.linkConfirm(true),
+                            child: const Text('Match'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            key: const Key('link-no'),
+                            onPressed: () => c.linkConfirm(false),
+                            child: const Text('Cancel'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'LINK A DEVICE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: BragiColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      TextField(
+                        key: const Key('link-code'),
+                        controller: link,
+                        decoration: const InputDecoration(
+                          hintText: 'Link code or node address',
+                          hintMaxLines: 1,
+                          hintStyle: TextStyle(overflow: TextOverflow.ellipsis),
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      OutlinedButton(
+                        key: const Key('link-go'),
+                        onPressed: () async {
+                          if (await c.linkDevice(link.text)) link.clear();
+                        },
+                        child: const Text('Link'),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
       ),
     );
+    if (persistent) {
+      return ColoredBox(
+        color:
+            Theme.of(context).drawerTheme.backgroundColor ??
+            Theme.of(context).colorScheme.surface,
+        child: content,
+      );
+    }
+    return Drawer(child: content);
   }
 }
 

@@ -11,7 +11,10 @@ import 'theme.dart';
 
 Widget _heading(String text) => Padding(
   padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-  child: Text(text, style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+  child: Text(
+    text,
+    style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+  ),
 );
 
 class SettingsScreen extends StatelessWidget {
@@ -27,73 +30,152 @@ class SettingsScreen extends StatelessWidget {
         final c = controller;
         return Scaffold(
           appBar: AppBar(title: const Text('Settings')),
-          body: ListView(
+          body: SingleChildScrollView(
             key: const Key('settings-list'),
-            children: [
-              _heading('OPENAI-COMPATIBLE ENDPOINTS'),
-              Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  'Any server that speaks the OpenAI chat API. "Fallback" endpoints answer only when the Weirdnet pool can’t, in this order; "Alongside" ones can be picked for a chat next to the pool. API keys are stored sealed on this device and are never synced.',
-                  style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
-                ),
-              ),
-              if (c.endpoints.isEmpty)
-                ListTile(key: Key('no-endpoints'), dense: true, title: Text('No endpoints yet.', style: TextStyle(color: BragiColors.textSecondary))),
-              for (var i = 0; i < c.endpoints.length; i++) _EndpointTile(controller: c, index: i),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    key: const Key('add-endpoint'),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add endpoint'),
-                    onPressed: () => showEndpointDialog(context, c),
-                  ),
-                ),
-              ),
-              _heading('WEIRDNET LINKS'),
-              Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Text(
-                  'Node addresses this device dials (from `ymirctl pool addresses`).',
-                  style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
-                ),
-              ),
-              if (c.links.isEmpty)
-                ListTile(key: Key('no-links'), dense: true, title: Text('No links yet.', style: TextStyle(color: BragiColors.textSecondary))),
-              for (var i = 0; i < c.links.length; i++) _LinkTile(controller: c, index: i),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    key: const Key('add-link'),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add link'),
-                    onPressed: () => showLinkDialog(context, c, null),
-                  ),
-                ),
-              ),
-              _heading('MODELS'),
-              ListTile(
-                key: const Key('open-models'),
-                dense: true,
-                leading: const Icon(Icons.memory_outlined),
-                title: const Text('Models on your pool'),
-                subtitle: const Text('Search, pull, list and remove models on your Ymir nodes.'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ModelsScreen(controller: c))),
-              ),
-              _heading('HISTORY'),
-              ClearHistoryTile(controller: controller),
-              if (c.notice != null)
+            // Keep every section built: the page is short, and tests (and a phone) would
+            // otherwise miss tiles such as Clear all history below the fold.
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _heading('YMIR POOLS'),
                 Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(c.notice!, key: const Key('settings-notice'), style: TextStyle(color: c.notice!.startsWith('Saved ') ? BragiColors.warm : BragiColors.error)),
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'This device can be linked to more than one Ymir cloud. Switch which one chats go to; each pool keeps its own history.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: BragiColors.textSecondary,
+                    ),
+                  ),
                 ),
-            ],
+                if (c.pools.isEmpty)
+                  ListTile(
+                    key: Key('no-pools'),
+                    dense: true,
+                    title: Text(
+                      'No Ymir pools yet.',
+                      style: TextStyle(color: BragiColors.textSecondary),
+                    ),
+                  ),
+                for (var i = 0; i < c.pools.length; i++)
+                  _PoolTile(controller: c, index: i),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('add-pool'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add a pool'),
+                      onPressed: () async {
+                        Navigator.of(context).pop();
+                        await c.addPool();
+                      },
+                    ),
+                  ),
+                ),
+                _heading('OPENAI-COMPATIBLE ENDPOINTS'),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'Any server that speaks the OpenAI chat API. "Fallback" endpoints answer only when the Weirdnet pool can’t, in this order; "Alongside" ones can be picked for a chat next to the pool. API keys are stored sealed on this device and are never synced.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: BragiColors.textSecondary,
+                    ),
+                  ),
+                ),
+                if (c.endpoints.isEmpty)
+                  ListTile(
+                    key: Key('no-endpoints'),
+                    dense: true,
+                    title: Text(
+                      'No endpoints yet.',
+                      style: TextStyle(color: BragiColors.textSecondary),
+                    ),
+                  ),
+                for (var i = 0; i < c.endpoints.length; i++)
+                  _EndpointTile(controller: c, index: i),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('add-endpoint'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add endpoint'),
+                      onPressed: () => showEndpointDialog(context, c),
+                    ),
+                  ),
+                ),
+                _heading('WEIRDNET LINKS'),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Text(
+                    'Node addresses this device dials (from `ymirctl pool addresses`).',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: BragiColors.textSecondary,
+                    ),
+                  ),
+                ),
+                if (c.links.isEmpty)
+                  ListTile(
+                    key: Key('no-links'),
+                    dense: true,
+                    title: Text(
+                      'No links yet.',
+                      style: TextStyle(color: BragiColors.textSecondary),
+                    ),
+                  ),
+                for (var i = 0; i < c.links.length; i++)
+                  _LinkTile(controller: c, index: i),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const Key('add-link'),
+                      icon: const Icon(Icons.add),
+                      label: const Text('Add link'),
+                      onPressed: () => showLinkDialog(context, c, null),
+                    ),
+                  ),
+                ),
+                _heading('MODELS'),
+                ListTile(
+                  key: const Key('open-models'),
+                  dense: true,
+                  leading: const Icon(Icons.memory_outlined),
+                  title: const Text('Models on your pool'),
+                  subtitle: const Text(
+                    'Search, pull, list and remove models on your Ymir nodes.',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ModelsScreen(controller: c),
+                    ),
+                  ),
+                ),
+                _heading('HISTORY'),
+                ClearHistoryTile(controller: controller),
+                if (c.notice != null)
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      c.notice!,
+                      key: const Key('settings-notice'),
+                      style: TextStyle(
+                        color: c.notice!.startsWith('Saved ')
+                            ? BragiColors.warm
+                            : BragiColors.error,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 48),
+              ],
+            ),
           ),
         );
       },
@@ -112,7 +194,9 @@ class _EndpointTile extends StatelessWidget {
     final c = controller;
     final e = c.endpoints[index];
     final last = index == c.endpoints.length - 1;
-    final mode = e.mode == 'fallback' ? 'fallback #${c.endpoints.take(index + 1).where((x) => x.mode == 'fallback').length}' : 'alongside the pool';
+    final mode = e.mode == 'fallback'
+        ? 'fallback #${c.endpoints.take(index + 1).where((x) => x.mode == 'fallback').length}'
+        : 'alongside the pool';
     return ListTile(
       key: Key('endpoint-${e.id}'),
       dense: true,
@@ -128,7 +212,9 @@ class _EndpointTile extends StatelessWidget {
             tooltip: 'Move up',
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.arrow_upward, size: 18),
-            onPressed: index == 0 ? null : () => c.moveEndpoint(e.id, index - 1),
+            onPressed: index == 0
+                ? null
+                : () => c.moveEndpoint(e.id, index - 1),
           ),
           IconButton(
             key: Key('endpoint-down-${e.id}'),
@@ -146,7 +232,12 @@ class _EndpointTile extends StatelessWidget {
               final r = await c.testEndpoint(e.id);
               if (r == null || !context.mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(key: const Key('endpoint-test-result'), content: Text('${e.name}: ${r.message}${r.ok ? ' (${r.latencyMs} ms)' : ''}')),
+                SnackBar(
+                  key: const Key('endpoint-test-result'),
+                  content: Text(
+                    '${e.name}: ${r.message}${r.ok ? ' (${r.latencyMs} ms)' : ''}',
+                  ),
+                ),
               );
             },
           ),
@@ -172,8 +263,15 @@ class _EndpointTile extends StatelessWidget {
 
 /// The add / edit form. The key field is empty when editing; leaving it empty keeps the key,
 /// typing replaces it, and "Remove key" clears it.
-Future<void> showEndpointDialog(BuildContext context, BragiController c, {EndpointView? existing}) {
-  return showDialog<void>(context: context, builder: (_) => _EndpointDialog(controller: c, existing: existing));
+Future<void> showEndpointDialog(
+  BuildContext context,
+  BragiController c, {
+  EndpointView? existing,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _EndpointDialog(controller: c, existing: existing),
+  );
 }
 
 class _EndpointDialog extends StatefulWidget {
@@ -225,19 +323,35 @@ class _EndpointDialogState extends State<_EndpointDialog> {
     final key = _key.text.trim();
     final id = widget.existing?.id;
     // A saved endpoint with its own key is tested as saved when no new key was typed.
-    final r = (id != null && key.isEmpty && !_clearKey && _url.text.trim() == widget.existing!.baseUrl)
+    final r =
+        (id != null &&
+            key.isEmpty &&
+            !_clearKey &&
+            _url.text.trim() == widget.existing!.baseUrl)
         ? await widget.controller.testEndpoint(id)
-        : await widget.controller.testAddress(_url.text, key.isEmpty ? null : key);
+        : await widget.controller.testAddress(
+            _url.text,
+            key.isEmpty ? null : key,
+          );
     if (!mounted) return;
     setState(() {
-      _result = r == null ? widget.controller.notice : '${r.message}${r.ok ? ' (${r.latencyMs} ms)' : ''}';
+      _result = r == null
+          ? widget.controller.notice
+          : '${r.message}${r.ok ? ' (${r.latencyMs} ms)' : ''}';
       _resultOk = r?.ok ?? false;
-      if (r != null && r.ok && _model.text.trim().isEmpty && r.models.isNotEmpty) _model.text = r.models.first;
+      if (r != null &&
+          r.ok &&
+          _model.text.trim().isEmpty &&
+          r.models.isNotEmpty)
+        _model.text = r.models.first;
     });
   }
 
   Future<void> _save() async {
-    final ok = await widget.controller.saveEndpoint(widget.existing?.id, _form());
+    final ok = await widget.controller.saveEndpoint(
+      widget.existing?.id,
+      _form(),
+    );
     if (!mounted) return;
     if (ok) {
       Navigator.of(context).pop();
@@ -258,12 +372,19 @@ class _EndpointDialogState extends State<_EndpointDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(key: const Key('ep-name'), controller: _name, decoration: const InputDecoration(labelText: 'Name')),
+              TextField(
+                key: const Key('ep-name'),
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
               TextField(
                 key: const Key('ep-url'),
                 controller: _url,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(labelText: 'Address', hintText: 'https://api.example.com/v1'),
+                decoration: const InputDecoration(
+                  labelText: 'Address',
+                  hintText: 'https://api.example.com/v1',
+                ),
               ),
               TextField(
                 key: const Key('ep-key'),
@@ -272,9 +393,15 @@ class _EndpointDialogState extends State<_EndpointDialog> {
                 enableSuggestions: false,
                 autocorrect: false,
                 decoration: InputDecoration(
-                  labelText: editing && widget.existing!.hasKey ? 'API key (leave empty to keep it)' : 'API key (optional)',
+                  labelText: editing && widget.existing!.hasKey
+                      ? 'API key (leave empty to keep it)'
+                      : 'API key (optional)',
                   suffixIcon: IconButton(
-                    icon: Icon(_obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                    icon: Icon(
+                      _obscure
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                    ),
                     onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                 ),
@@ -291,7 +418,9 @@ class _EndpointDialogState extends State<_EndpointDialog> {
               TextField(
                 key: const Key('ep-model'),
                 controller: _model,
-                decoration: const InputDecoration(labelText: 'Model (optional; Test fills it in)'),
+                decoration: const InputDecoration(
+                  labelText: 'Model (optional; Test fills it in)',
+                ),
               ),
               SwitchListTile(
                 key: const Key('ep-alongside'),
@@ -300,7 +429,11 @@ class _EndpointDialogState extends State<_EndpointDialog> {
                 value: _alongside,
                 onChanged: (v) => setState(() => _alongside = v),
                 title: const Text('Use alongside the pool'),
-                subtitle: Text(_alongside ? 'Can be picked for a chat.' : 'Fallback only: used when the pool can’t answer.'),
+                subtitle: Text(
+                  _alongside
+                      ? 'Can be picked for a chat.'
+                      : 'Fallback only: used when the pool can’t answer.',
+                ),
               ),
               SwitchListTile(
                 key: const Key('ep-enabled'),
@@ -313,21 +446,43 @@ class _EndpointDialogState extends State<_EndpointDialog> {
               if (_result != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(_result!, key: const Key('ep-test-result'), style: TextStyle(color: _resultOk ? BragiColors.warm : BragiColors.error)),
+                  child: Text(
+                    _result!,
+                    key: const Key('ep-test-result'),
+                    style: TextStyle(
+                      color: _resultOk ? BragiColors.warm : BragiColors.error,
+                    ),
+                  ),
                 ),
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: Text(_error!, key: const Key('ep-error'), style: TextStyle(color: BragiColors.error)),
+                  child: Text(
+                    _error!,
+                    key: const Key('ep-error'),
+                    style: TextStyle(color: BragiColors.error),
+                  ),
                 ),
             ],
           ),
         ),
       ),
       actions: [
-        TextButton(key: const Key('ep-test'), onPressed: _test, child: const Text('Test')),
-        TextButton(key: const Key('ep-cancel'), onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        FilledButton(key: const Key('ep-save'), onPressed: _save, child: Text(editing ? 'Save' : 'Add')),
+        TextButton(
+          key: const Key('ep-test'),
+          onPressed: _test,
+          child: const Text('Test'),
+        ),
+        TextButton(
+          key: const Key('ep-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('ep-save'),
+          onPressed: _save,
+          child: Text(editing ? 'Save' : 'Add'),
+        ),
       ],
     );
   }
@@ -335,7 +490,11 @@ class _EndpointDialogState extends State<_EndpointDialog> {
 
 /// Asks before deleting an endpoint. With sessions bound to it, also asks where they go: another
 /// target, or unbound (they ask for a target on the next message). Conversations are never deleted.
-Future<void> confirmDeleteEndpoint(BuildContext context, BragiController c, EndpointView e) async {
+Future<void> confirmDeleteEndpoint(
+  BuildContext context,
+  BragiController c,
+  EndpointView e,
+) async {
   final others = c.targets.where((t) => t.endpoint != e.id).toList();
   final choice = await showDialog<_Rebind>(
     context: context,
@@ -349,7 +508,9 @@ Future<void> confirmDeleteEndpoint(BuildContext context, BragiController c, Endp
       : r.unbound > 0
       ? 'Deleted ${e.name}; ${r.unbound} chat${r.unbound == 1 ? '' : 's'} need a new target. History is kept.'
       : 'Deleted ${e.name}.';
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(key: const Key('endpoint-deleted'), content: Text(msg)));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(key: const Key('endpoint-deleted'), content: Text(msg)),
+  );
 }
 
 class _Rebind {
@@ -383,18 +544,34 @@ class _DeleteEndpointDialogState extends State<_DeleteEndpointDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Its address and API key are removed from this device. Your chats and their history are kept.', key: Key('ep-delete-text')),
+          const Text(
+            'Its address and API key are removed from this device. Your chats and their history are kept.',
+            key: Key('ep-delete-text'),
+          ),
           if (n > 0) ...[
             const SizedBox(height: 12),
-            Text('$n chat${n == 1 ? ' is' : 's are'} bound to it. Where should ${n == 1 ? 'it' : 'they'} go?', key: const Key('ep-delete-bound')),
+            Text(
+              '$n chat${n == 1 ? ' is' : 's are'} bound to it. Where should ${n == 1 ? 'it' : 'they'} go?',
+              key: const Key('ep-delete-bound'),
+            ),
             RadioGroup<int>(
               groupValue: _pick,
               onChanged: (v) => setState(() => _pick = v ?? -1),
               child: Column(
                 children: [
                   for (var i = 0; i < widget.targets.length; i++)
-                    RadioListTile<int>(key: Key('rebind-$i'), dense: true, value: i, title: Text('Move to ${widget.targets[i].label}')),
-                  const RadioListTile<int>(key: Key('rebind-unbound'), dense: true, value: -1, title: Text('Leave without a target')),
+                    RadioListTile<int>(
+                      key: Key('rebind-$i'),
+                      dense: true,
+                      value: i,
+                      title: Text('Move to ${widget.targets[i].label}'),
+                    ),
+                  const RadioListTile<int>(
+                    key: Key('rebind-unbound'),
+                    dense: true,
+                    value: -1,
+                    title: Text('Leave without a target'),
+                  ),
                 ],
               ),
             ),
@@ -402,11 +579,16 @@ class _DeleteEndpointDialogState extends State<_DeleteEndpointDialog> {
         ],
       ),
       actions: [
-        TextButton(key: const Key('ep-delete-cancel'), onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          key: const Key('ep-delete-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           key: const Key('ep-delete-confirm'),
           style: FilledButton.styleFrom(backgroundColor: BragiColors.error),
-          onPressed: () => Navigator.of(context).pop(_Rebind(n > 0 && _pick >= 0 ? widget.targets[_pick] : null)),
+          onPressed: () => Navigator.of(context)
+              .pop(_Rebind(n > 0 && _pick >= 0 ? widget.targets[_pick] : null)),
           child: const Text('Delete'),
         ),
       ],
@@ -427,7 +609,11 @@ class _LinkTile extends StatelessWidget {
     return ListTile(
       key: Key('link-$index'),
       dense: true,
-      leading: Icon(Icons.circle, size: 10, color: l.online ? BragiColors.warm : BragiColors.textSecondary),
+      leading: Icon(
+        Icons.circle,
+        size: 10,
+        color: l.online ? BragiColors.warm : BragiColors.textSecondary,
+      ),
       title: Text(l.address, overflow: TextOverflow.ellipsis),
       subtitle: Text(l.online ? 'answering' : 'not answering'),
       trailing: Wrap(
@@ -453,7 +639,11 @@ class _LinkTile extends StatelessWidget {
 }
 
 /// Adds a link (`old` null) or changes one's address.
-Future<void> showLinkDialog(BuildContext context, BragiController c, String? old) {
+Future<void> showLinkDialog(
+  BuildContext context,
+  BragiController c,
+  String? old,
+) {
   return showDialog<void>(
     context: context,
     builder: (_) => _LinkDialog(controller: c, old: old),
@@ -482,13 +672,19 @@ class _LinkDialogState extends State<_LinkDialog> {
 
   Future<void> _save() async {
     final a = _address.text.trim();
-    final ok = widget.old == null ? await widget.controller.linkDevice(a) : await widget.controller.editLink(widget.old!, a);
+    final ok = widget.old == null
+        ? await widget.controller.linkDevice(a)
+        : await widget.controller.editLink(widget.old!, a);
     if (!mounted) return;
     if (ok) {
-      await widget.controller.reloadSettings();
       if (mounted) Navigator.of(context).pop();
+      await widget.controller.reloadSettings();
     } else {
-      setState(() => _error = widget.controller.notice ?? 'Paste a node address that starts with /ip4/ and ends with /p2p/…');
+      setState(
+        () => _error =
+            widget.controller.notice ??
+            'Paste a node address that starts with /ip4/ and ends with /p2p/…',
+      );
     }
   }
 
@@ -502,27 +698,56 @@ class _LinkDialogState extends State<_LinkDialog> {
           TextField(
             key: const Key('link-address'),
             controller: _address,
-            decoration: const InputDecoration(labelText: 'Node address', hintText: '/ip4/…/tcp/…/p2p/…'),
+            decoration: const InputDecoration(
+              labelText: 'Node address',
+              hintText: '/ip4/…/tcp/…/p2p/…',
+            ),
           ),
-          if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, key: const Key('link-error'), style: TextStyle(color: BragiColors.error))),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _error!,
+                key: const Key('link-error'),
+                style: TextStyle(color: BragiColors.error),
+              ),
+            ),
         ],
       ),
       actions: [
-        TextButton(key: const Key('link-cancel'), onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
-        FilledButton(key: const Key('link-save'), onPressed: _save, child: Text(widget.old == null ? 'Add' : 'Save')),
+        TextButton(
+          key: const Key('link-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('link-save'),
+          onPressed: _save,
+          child: Text(widget.old == null ? 'Add' : 'Save'),
+        ),
       ],
     );
   }
 }
 
-Future<void> confirmDeleteLink(BuildContext context, BragiController c, String address) async {
+Future<void> confirmDeleteLink(
+  BuildContext context,
+  BragiController c,
+  String address,
+) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (d) => AlertDialog(
       title: const Text('Delete this link?'),
-      content: Text('Bragi stops dialing $address. Your chats and history are kept.'),
+      content: Text(
+        'Bragi stops dialing $address. Your chats and history are kept.',
+      ),
       actions: [
-        TextButton(key: const Key('link-delete-cancel'), onPressed: () => Navigator.of(d).pop(false), child: const Text('Cancel')),
+        TextButton(
+          key: const Key('link-delete-cancel'),
+          onPressed: () => Navigator.of(d).pop(false),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           key: const Key('link-delete-confirm'),
           style: FilledButton.styleFrom(backgroundColor: BragiColors.error),
@@ -533,4 +758,145 @@ Future<void> confirmDeleteLink(BuildContext context, BragiController c, String a
     ),
   );
   if (ok == true) await c.removeLink(address);
+}
+
+class _PoolTile extends StatelessWidget {
+  const _PoolTile({required this.controller, required this.index});
+
+  final BragiController controller;
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller;
+    final p = c.pools[index];
+    final status = p.active ? 'Active' : (p.linked ? 'Saved' : 'Not linked');
+    return ListTile(
+      key: Key('pool-${p.id}'),
+      dense: true,
+      title: Text(p.name, overflow: TextOverflow.ellipsis),
+      subtitle: Text(status),
+      trailing: Wrap(
+        children: [
+          if (!p.active)
+            TextButton(
+              key: Key('pool-switch-${p.id}'),
+              onPressed: () => c.switchPool(p.id),
+              child: const Text('Switch'),
+            ),
+          IconButton(
+            key: Key('pool-rename-${p.id}'),
+            tooltip: 'Rename',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            onPressed: () => showRenamePoolDialog(context, c, p.id, p.name),
+          ),
+          IconButton(
+            key: Key('pool-delete-${p.id}'),
+            tooltip: 'Forget',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.delete_outline, size: 18),
+            onPressed: () => confirmDeletePool(context, c, p.id, p.name),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> showRenamePoolDialog(
+  BuildContext context,
+  BragiController c,
+  String id,
+  String name,
+) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => _RenamePoolDialog(controller: c, id: id, name: name),
+  );
+}
+
+class _RenamePoolDialog extends StatefulWidget {
+  const _RenamePoolDialog({
+    required this.controller,
+    required this.id,
+    required this.name,
+  });
+
+  final BragiController controller;
+  final String id;
+  final String name;
+
+  @override
+  State<_RenamePoolDialog> createState() => _RenamePoolDialogState();
+}
+
+class _RenamePoolDialogState extends State<_RenamePoolDialog> {
+  late final _name = TextEditingController(text: widget.name);
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    await widget.controller.renamePool(widget.id, _name.text.trim());
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Rename pool'),
+      content: TextField(
+        key: const Key('pool-name'),
+        controller: _name,
+        decoration: const InputDecoration(labelText: 'Name'),
+      ),
+      actions: [
+        TextButton(
+          key: const Key('pool-rename-cancel'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('pool-rename-save'),
+          onPressed: _save,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+}
+
+Future<void> confirmDeletePool(
+  BuildContext context,
+  BragiController c,
+  String id,
+  String name,
+) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text('Forget $name?'),
+      content: const Text(
+        'This device forgets that Ymir pool. Its identity and history on this device are deleted. Other devices are not changed.',
+      ),
+      actions: [
+        TextButton(
+          key: const Key('pool-delete-cancel'),
+          onPressed: () => Navigator.of(d).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('pool-delete-confirm'),
+          style: FilledButton.styleFrom(backgroundColor: BragiColors.error),
+          onPressed: () => Navigator.of(d).pop(true),
+          child: const Text('Forget'),
+        ),
+      ],
+    ),
+  );
+  if (ok == true) await c.removePool(id);
 }

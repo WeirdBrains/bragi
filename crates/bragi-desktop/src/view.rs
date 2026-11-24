@@ -124,6 +124,8 @@ pub struct BragiView {
     confirm_input: Entity<TextInput>,
     deleted: Option<bragi_core::Deleted>,
     settings_open: bool,
+    /// Hide the history sidebar (remembered in the profile).
+    sidebar_collapsed: bool,
     /// The Theme screen (see `themes`) and its name/path and hex boxes.
     themes_open: bool,
     themes: themes::Themes,
@@ -225,6 +227,7 @@ impl BragiView {
             }
         })
         .detach();
+        let sidebar_collapsed = core.appearance().preference().sidebar_collapsed;
         let mut this = Self {
             core,
             theme,
@@ -264,6 +267,7 @@ impl BragiView {
             confirm_input,
             deleted: None,
             settings_open: false,
+            sidebar_collapsed,
             themes_open: false,
             themes: themes::Themes::default(),
             theme_input,
@@ -286,11 +290,24 @@ impl BragiView {
         {
             self.model = None;
         }
+        let old_pool = self.state.pool.as_ref().map(|p| p.id.clone());
         self.state = s;
+        if old_pool != self.state.pool.as_ref().map(|p| p.id.clone()) && old_pool.is_some() {
+            self.current = None;
+            self.reload();
+        }
         // History from another device arrives with a state wake-up; redraw it unless an answer
         // is streaming in (that has its own redraws).
         if self.streaming.is_none() && self.state.online {
             self.reload();
+        }
+        cx.notify();
+    }
+
+    fn toggle_sidebar(&mut self, cx: &mut Context<Self>) {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
+        if let Err(e) = self.core.appearance().set_sidebar_collapsed(self.sidebar_collapsed) {
+            self.notice = Some(e.message);
         }
         cx.notify();
     }
@@ -875,12 +892,33 @@ impl BragiView {
             .border_color(rgb(t.border))
             .on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
             .child(
-                div().flex().flex_row().gap(px(8.)).items_center().child(div().text_color(rgb(t.accent)).text_size(px(15.)).child("ᛒ Bragi")).child(
-                    div().text_color(rgb(t.text_secondary)).text_size(px(12.)).child(match &self.state.pair {
-                        PairState::Linked { device, .. } => format!("{device} · on your Weirdnet"),
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(8.))
+                    .items_center()
+                    .child(
+                        div()
+                            .id("toggle-sidebar")
+                            .px(px(8.))
+                            .h(px(24.))
+                            .rounded(px(6.))
+                            .flex()
+                            .items_center()
+                            .text_size(px(13.))
+                            .text_color(rgb(t.text_secondary))
+                            .hover(|s| s.bg(rgb(t.surface_variant)).text_color(rgb(t.text_primary)))
+                            .cursor_pointer()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(|v, _, _, cx| v.toggle_sidebar(cx)))
+                            .child(if self.sidebar_collapsed { "☰ History" } else { "‹ History" }),
+                    )
+                    .child(div().text_color(rgb(t.accent)).text_size(px(15.)).child("ᛒ Bragi"))
+                    .child(div().text_color(rgb(t.text_secondary)).text_size(px(12.)).child(match (&self.state.pair, &self.state.pool) {
+                        (PairState::Linked { device, .. }, Some(p)) => format!("{device} · {}", p.name),
+                        (PairState::Linked { device, .. }, None) => format!("{device} · on your Weirdnet"),
                         _ => "not linked".to_string(),
-                    }),
-                ),
+                    })),
             )
             .child(controls)
     }
@@ -1013,6 +1051,17 @@ impl BragiView {
                     .flex_row()
                     .items_center()
                     .child(div().flex_1().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
+                    .child(
+                        div()
+                            .id("hide-sidebar")
+                            .px(px(6.))
+                            .text_size(px(12.))
+                            .text_color(rgb(t.text_secondary))
+                            .hover(|s| s.text_color(rgb(t.accent)))
+                            .cursor_pointer()
+                            .on_click(cx.listener(|v, _, _, cx| v.toggle_sidebar(cx)))
+                            .child("Hide"),
+                    )
                     .child(
                         div()
                             .id("new-folder")
@@ -1610,7 +1659,13 @@ impl Render for BragiView {
         }
         let linked = matches!(self.state.pair, PairState::Linked { .. });
         let main = if linked {
-            div().flex().flex_row().flex_1().min_h(px(0.)).child(self.sidebar(cx)).child(self.chat(cx))
+            div()
+                .flex()
+                .flex_row()
+                .flex_1()
+                .min_h(px(0.))
+                .children((!self.sidebar_collapsed).then(|| self.sidebar(cx).into_any_element()))
+                .child(self.chat(cx))
         } else {
             div().flex().flex_1().min_h(px(0.)).child(self.pairing(cx))
         };

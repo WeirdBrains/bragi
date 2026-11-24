@@ -6,6 +6,11 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The conversation history sidebar can be hidden, and the choice is remembered. In the terminal app: F10, Ctrl-B when it is hidden, or `/sidebar`. In the desktop window: History in the title bar, or Hide on the sidebar. On a wide Flutter layout (a tablet or a desktop window), the same Hide control folds the bar away; on a phone the history stays in the drawer.
+- A device can be linked to more than one Ymir pool and can switch which one chats go to. Each pool keeps its own identity, history and node addresses. Settings lists them, and can add, rename, switch or forget a pool. The terminal app also has `bragi pool list|add|switch|rename|remove` (and `/pool` in the app). Adding a pool shows the same link code as the first pairing.
+
 ## [0.3.0] - 2026-11-24
 
 ### Added

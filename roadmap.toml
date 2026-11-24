@@ -67,3 +67,10 @@ status = "done"
 summary = "Chat and code are modes of one conversation (Tab to switch). A desktop linker with QR pairing over Weirdnet lets the phone's code mode work against a paired desktop. Also shipped in v0.2.1: project scaffolding, a shell-out command, prompt history, a notification log, mouse support in the terminal app, and thinking blocks that stay collapsed and can be expanded."
 crates = []
 
+[[milestone]]
+id = "v0.4"
+title = "History bar and more than one pool"
+status = "done"
+summary = "The conversation history sidebar can be hidden, and the choice is remembered, in the terminal app, the desktop window, and on a wide Flutter layout. A device can be linked to more than one Ymir pool and can switch which one is active from Settings or `bragi pool`; each pool keeps its own history. Built in the core and on all three shells, and tried against demo nodes."
+crates = []
+

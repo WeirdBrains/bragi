@@ -13,6 +13,7 @@ pub mod linker_cli;
 pub mod markdown;
 pub mod mcp_cli;
 pub mod picker;
+pub mod pool_cli;
 pub mod serve;
 pub mod session;
 pub mod settings;

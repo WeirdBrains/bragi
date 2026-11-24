@@ -11,7 +11,7 @@ Bragi is the chat app for your own cloud. It links to your Weirdnet identity lik
 devices, finds your [Ymir](https://github.com/WeirdBrains/ymir) inference nodes, and streams answers
 from the models on your own machines. Nothing goes through a hosted service.
 
-Status: **B1 and B2 done; B3, B4 and B5 in progress** (see [Bragi milestones](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) in Ymir's design doc). Pairing, the catalog from your inference nodes, streaming chat with stop and continue, and history that syncs between your devices, on Linux, macOS and Windows (GPUI) and on Android and iOS (Flutter). Released: [v0.1.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.1.0) for all five platforms ([downloads](https://bragi.weirdbrains.com/download/)).
+Status: **B1, B2 and B6 done; B3, B4, B5 and B7 in progress** (see [Bragi milestones](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) in Ymir's design doc). Pairing, the catalog from your inference nodes, streaming chat with stop and continue, and history that syncs between your devices, on Linux, macOS and Windows (GPUI) and on Android and iOS (Flutter). A device can hide the history bar (the choice is remembered) and can switch between more than one Ymir pool. Released: [v0.3.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.3.0) ([downloads](https://bragi.weirdbrains.com/download/)).
 
 ## Layout
 
@@ -66,7 +66,8 @@ and a QR code to open on a device that's already linked (`ymirctl pool add CODE`
 works over SSH. Copying (Ctrl-Y, or `c` on the link screen) uses OSC 52, so the text lands on your
 local clipboard.
 
-It has what the desktop has: linking with a code, QR code or node address; sessions in nested folders;
+It has what the desktop has: linking with a code, QR code or node address; more than one saved Ymir
+pool, switched from Settings or `bragi pool`; a history bar you can hide (F10, remembered); sessions in nested folders;
 OpenAI-compatible endpoints in Settings (Ctrl-P) and a picker for where chats go and the model (Ctrl-O);
 streaming chat with stop and continue; replies drawn as Markdown with highlighted code; the Thinking
 section (Ctrl-K); text, image and audio attachments; and node status (Ctrl-T). Code mode (Ctrl-E) adds
@@ -82,6 +83,7 @@ bragi-tui --path serve                                     # explicit path, for 
 bragi-tui --no-serve                                        # without starting `bragi serve` for the editors
 bragi serve ensure                                         # start `bragi serve` in the background if none is running
 bragi-tui link /ip4/…/tcp/4848/p2p/…                       # dial a node Bragi can't find by itself
+bragi pool list                                            # saved Ymir pools (also: add, switch, rename, remove)
 bragi-tui code --rewrite src/lib.rs:10-40 "use iterators"  # prints a unified diff
 bragi-tui code --suggest --context src "find bugs" --apply # writes the change
 bragi-tui undo                                             # puts the last written change back

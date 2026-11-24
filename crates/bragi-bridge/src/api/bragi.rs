@@ -1091,6 +1091,46 @@ pub fn remove_link(address: String) -> Result<(), String> {
     core()?.remove_link(&address).map_err(err)
 }
 
+/// A saved Ymir pool this device can switch to.
+#[derive(Debug, Clone)]
+pub struct PoolView {
+    pub id: String,
+    pub name: String,
+    pub user: String,
+    pub device: String,
+    pub active: bool,
+    pub linked: bool,
+}
+
+fn pool_view(p: bragi_core::PoolView) -> PoolView {
+    PoolView { id: p.id, name: p.name, user: p.user, device: p.device, active: p.active, linked: p.linked }
+}
+
+pub fn pools() -> Result<Vec<PoolView>, String> {
+    Ok(core()?.pools().into_iter().map(pool_view).collect())
+}
+
+pub fn active_pool() -> Result<Option<PoolView>, String> {
+    Ok(core()?.active_pool().map(pool_view))
+}
+
+/// Starts a link to another Ymir pool. The current pool stays in use until pairing finishes.
+pub async fn add_pool() -> Result<String, String> {
+    core()?.add_pool().await.map_err(err)
+}
+
+pub async fn switch_pool(id: String) -> Result<PoolView, String> {
+    core()?.switch_pool(&id).await.map(pool_view).map_err(err)
+}
+
+pub fn rename_pool(id: String, name: String) -> Result<PoolView, String> {
+    core()?.rename_pool(&id, &name).map(pool_view).map_err(err)
+}
+
+pub async fn remove_pool(id: String) -> Result<(), String> {
+    core()?.remove_pool(&id).await.map_err(err)
+}
+
 /// What a new session can be bound to: the pool, and endpoints offered alongside it.
 pub fn targets() -> Vec<TargetView> {
     core().map(|c| c.targets().into_iter().map(|t| target_view(&t.target, t.label)).collect()).unwrap_or_default()
@@ -1487,12 +1527,23 @@ pub fn theme_preference() -> Result<ThemePrefView, String> {
 pub fn set_theme_preference(theme: String, mode: String) -> Result<ThemePrefView, String> {
     let a = core()?.appearance();
     let mode = bragi_core::ModePref::parse(&mode).ok_or_else(|| format!("mode is light, dark or system, not {mode}"))?;
-    // Only these two change; any other preference is kept.
+    // Only these two change; any other preference is kept (including sidebar_collapsed).
     let mut p = a.preference();
     p.theme = theme;
     p.mode = mode;
     a.set_preference(&p).map_err(err)?;
     Ok(pref_view(p))
+}
+
+/// Whether the conversation history sidebar is hidden (remembered in the profile).
+#[frb(sync)]
+pub fn sidebar_collapsed() -> Result<bool, String> {
+    Ok(core()?.appearance().preference().sidebar_collapsed)
+}
+
+#[frb(sync)]
+pub fn set_sidebar_collapsed(collapsed: bool) -> Result<(), String> {
+    core()?.appearance().set_sidebar_collapsed(collapsed).map(|_| ()).map_err(err)
 }
 
 /// The palette to draw with now; `system_dark` is the platform's brightness, for system mode.

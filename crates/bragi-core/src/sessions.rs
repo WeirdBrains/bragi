@@ -54,7 +54,7 @@ struct File {
 }
 
 pub struct Sessions {
-    path: PathBuf,
+    path: Mutex<PathBuf>,
     data: Mutex<File>,
 }
 
@@ -62,15 +62,28 @@ impl Sessions {
     pub fn open(dir: &Path) -> Self {
         let path = dir.join(SESSIONS_FILE);
         let data = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        Self { path, data: Mutex::new(data) }
+        Self { path: Mutex::new(path), data: Mutex::new(data) }
+    }
+
+    fn path(&self) -> PathBuf {
+        lock(&self.path).clone()
+    }
+
+    /// Loads the sessions file in another pool's directory.
+    pub fn switch_root(&self, dir: &Path) {
+        let path = dir.join(SESSIONS_FILE);
+        let data = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        *lock(&self.path) = path;
+        *lock(&self.data) = data;
     }
 
     fn save(&self, d: &File) -> Result<()> {
-        if let Some(p) = self.path.parent() {
+        let path = self.path();
+        if let Some(p) = path.parent() {
             std::fs::create_dir_all(p)?;
         }
         let bytes = serde_json::to_vec_pretty(d).map_err(|e| CoreError::new(ErrorKind::Storage, e.to_string()))?;
-        crate::identity::write_private_file(&self.path, &bytes)?;
+        crate::identity::write_private_file(&path, &bytes)?;
         Ok(())
     }
 

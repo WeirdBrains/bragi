@@ -39,6 +39,8 @@ pub const HELP: &[(&str, &str)] = &[
     ("Tab, Shift-Tab", "switch modes: chat (talk, plan) and code (files, diffs, shell), same conversation"),
     ("/chat · /code · /mode", "switch modes by name (or to the other one)"),
     ("Ctrl-B", "switch between the message box and the sidebar (folders and chats)"),
+    ("F10 · /sidebar", "hide or show the history bar (remembered)"),
+    ("/pool list · add · switch NAME", "list, add or switch Ymir pools"),
     ("↑ ↓ (first/last line)", "earlier prompts sent (history); PgUp PgDn scroll"),
     ("!CMD · /shell CMD", "run a command in the project folder; its output is kept in the chat"),
     ("F9 · /notifications", "past notifications (the bell shows how many are new)"),
@@ -816,8 +818,8 @@ fn tip(key: &str, what: &str) -> Line<'static> {
 }
 
 fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active: bool) {
-    // The sidebar folds away in narrow terminals.
-    let (list, main) = if area.width >= 90 {
+    // The sidebar folds away in narrow terminals, or when the user hides it (F10).
+    let (list, main) = if area.width >= 90 && !app.sidebar_collapsed {
         let side = if area.width >= 140 { 34 } else { 30 };
         let [a, b] = Layout::horizontal([Constraint::Length(side), Constraint::Min(20)]).areas(area);
         (Some(a), b)
@@ -1483,7 +1485,11 @@ fn field_problem(i: usize, text: &str) -> Option<&'static str> {
 fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let st = &app.settings;
-    let right = if st.form.is_some() { "Tab next · Enter save · Esc cancel" } else { "a add · e edit · t test · d delete · Esc back" };
+    let right = if st.form.is_some() {
+        "Tab next · Enter save · Esc cancel"
+    } else {
+        "p add pool · Enter switch · a add endpoint · e edit · d delete · Esc back"
+    };
     // Laid out at the window's width first, then the window is made as tall as its lines.
     let ww = 108.min(area.width.saturating_sub(2)).saturating_sub(4);
     let w = ww as usize;
@@ -1492,13 +1498,40 @@ fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let mut endpoint_lines: Vec<usize> = Vec::new();
     let mut field_lines: Vec<usize> = Vec::new();
     let mut mode_line = None;
+    let mut pool_lines: Vec<usize> = Vec::new();
+    lines.push(section("Ymir pools"));
+    if st.pools.is_empty() {
+        for l in wrap("None yet. p shows a link code that a device of another pool can open.", w) {
+            lines.push(Line::styled(l, t.muted()));
+        }
+    }
+    for (i, p) in st.pools.iter().enumerate() {
+        let sel = i == st.sel && st.form.is_none();
+        let base = if sel { t.selection() } else { Style::new() };
+        let lead = if sel { Span::styled(format!("{} ", t.icons.bar), t.accent()) } else { Span::raw("  ") };
+        let mark = if p.active { "active" } else { "saved" };
+        let state = if p.linked { "linked" } else { "not linked" };
+        let mut spans = vec![
+            lead,
+            Span::styled(format!("{}  ", p.name), base.add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{mark} · {state}  {}", p.id), if sel { base } else { t.muted() }),
+        ];
+        let used = line_width(&spans);
+        if sel && used < w {
+            spans.push(Span::styled(" ".repeat(w - used), base));
+        }
+        pool_lines.push(lines.len());
+        lines.push(Line::from(spans));
+    }
+    lines.push(Line::raw(""));
+    lines.push(section("OpenAI-compatible endpoints"));
     if st.endpoints.is_empty() {
         for l in wrap("No endpoints. a adds one: any server with an OpenAI-compatible /v1 API (llama.cpp, vLLM, Ollama, a hosted one).", w) {
             lines.push(Line::styled(l, t.muted()));
         }
     }
     for (i, e) in st.endpoints.iter().enumerate() {
-        let sel = i == st.sel && st.form.is_none();
+        let sel = i + st.pools.len() == st.sel && st.form.is_none();
         let base = if sel { t.selection() } else { Style::new() };
         let lead = if sel { Span::styled(format!("{} ", t.icons.bar), t.accent()) } else { Span::raw("  ") };
         let dot = if e.enabled {
@@ -1618,7 +1651,7 @@ fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
         ]
     } else {
         let have = !st.endpoints.is_empty();
-        let mut b = vec![pill("a Add", Action::key('a'), true)];
+        let mut b = vec![pill("p Add pool", Action::key('p'), true), pill("a Add endpoint", Action::key('a'), false)];
         if have {
             b.extend([
                 pill("e Edit", Action::key('e'), false),
@@ -1636,13 +1669,16 @@ fn draw_settings(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let (button_row, button_at) = hit::button_line(&buttons);
     let button_line_idx = lines.len();
     lines.push(button_row);
-    let inner = window(f, hits, area, 108, (lines.len() + 2).max(14) as u16, "Settings · OpenAI-compatible endpoints", right);
+    let inner = window(f, hits, area, 108, (lines.len() + 2).max(14) as u16, "Settings · Ymir pools and endpoints", right);
     lines.truncate(inner.height as usize);
     f.render_widget(Paragraph::new(lines), inner);
     let row_at = |line: usize| Rect { y: inner.y + line as u16, height: 1, ..inner };
     if st.form.is_none() {
-        for (i, l) in endpoint_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
+        for (i, l) in pool_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
             hits.row(row_at(*l), Action::SettingsRow(i));
+        }
+        for (i, l) in endpoint_lines.iter().enumerate().filter(|(_, l)| **l < inner.height as usize) {
+            hits.row(row_at(*l), Action::SettingsRow(st.pools.len() + i));
         }
         hits.wheel(inner, Wheel::Settings);
     }
