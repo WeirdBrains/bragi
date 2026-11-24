@@ -2,6 +2,14 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: Ymir rollouts as one row (branch `feat/rollout-versions`)
+
+Ymir's training plan P4b (Ymir main `a48fed7`) lists a rollout's name and each `name@N` in the catalog. [`catalog`](crates/bragi-core/src/catalog.rs): `ModelInfo::versions` holds a rollout's versions under its name's row (only when the name is listed too, and only for a numeric `@N`). `CatalogView::model(id)` finds a row or a folded version, so `nodes_for`, `context_for`, `refusal` and `Core::pick_model` still work for a pinned version, and the desktop keeps a pinned choice. The terminal picker lists versions after their name. The Flutter and GPUI pickers show the name only. Docs: [CHANGELOG.md](CHANGELOG.md), [roadmap.toml](roadmap.toml) (B2; [ROADMAP.md](ROADMAP.md) and the site regenerated), and the B2 line in Ymir's [DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) (`6099104`).
+
+Checks: `cargo fmt`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace` 300 passed, 0 failed, 4 ignored, including `catalog::rollout_versions_fold_under_their_name`.
+
+Not tested: against a real Ymir rollout over Weirdnet; a version picker in the Flutter and GPUI shells (not built).
+
 ## 2026-11-24: v0.5.0 released
 
 `release: v0.5.0` (`bd6e41e`, tag `v0.5.0`) with cert-only links for Ymir servers (`bragi-tui link CODE --server inference|model`, Ymir's M10) and `weirdnet-sync` 0.7.1 / `weirdnet-device-link` 0.4.2. The feature work is on `feat/cert-only-servers`, merged in `b3e130b`. The Release workflow passed on every platform ([run 45412760862](https://github.com/WeirdBrains/bragi/actions/runs/45412760862)). Artifacts scanned: the only match was the RPM packager field (the public maintainer address); no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.5.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.5.0-1 on TAUR (`ac101f5`); `packaging/nix/release.json` and the site's `latestVersion` at 0.5.0.
