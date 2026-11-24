@@ -341,6 +341,15 @@ void main() {
     expect(c.messages[3].reactions, ['🤔']);
     await tester.pump(const Duration(seconds: 10));
 
+    // Training consent: off until asked, on after the confirm, withdrawn by the next tap.
+    expect(c.current!.training, isFalse);
+    await tester.tap(find.byKey(const Key('training-off')));
+    await until('the training confirm', () => shown('training-confirm'));
+    await tester.tap(find.byKey(const Key('training-confirm')));
+    await until('the training mark', () => c.current?.training == true && shown('training-on'));
+    await tester.tap(find.byKey(const Key('training-on')));
+    await until('the withdrawal', () => c.current?.training == false && shown('training-off'));
+
     final before = c.conversations.length;
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
     await until('the drawer', () => shown('models'));

@@ -18,6 +18,7 @@ import 'models_ui.dart';
 import 'settings_ui.dart';
 import 'theme_ui.dart';
 import 'theme.dart';
+import 'training_ui.dart';
 import 'rust/api/bragi.dart' as rust;
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -133,6 +134,7 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Text(c.current?.title ?? 'Bragi', overflow: TextOverflow.ellipsis),
         actions: [
           ModeToggle(code: c.code),
+          TrainingToggle(controller: c),
           NotificationBell(code: c.code),
           IconButton(key: const Key('new-chat'), tooltip: 'New chat', onPressed: c.newChat, icon: const Icon(Icons.add_comment_outlined)),
         ],

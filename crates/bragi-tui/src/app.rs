@@ -1479,6 +1479,26 @@ impl App {
                 };
                 self.core.rename_folder(&id, arg).map(|_| format!("Renamed to {arg}.")).map_err(err)
             }
+            "/train" => {
+                let Some(c) = &self.current else { return Some(Err("Open a chat first.".into())) };
+                let on = match arg {
+                    "" | "on" => true,
+                    "off" => false,
+                    _ => return Some(Err("/train marks the open chat for training; /train off withdraws it.".into())),
+                };
+                let id = c.id.clone();
+                let done = self.core.set_training(&id, on).map_err(err);
+                if done.is_ok() {
+                    self.current = self.core.conversation(&id).ok();
+                }
+                done.map(|_| {
+                    if on {
+                        "Marked for training: your Ymir nodes may export it as training data, on your own devices, without system prompts, attachments, tool results or reasoning. /train off withdraws it.".into()
+                    } else {
+                        "No longer used for training.".into()
+                    }
+                })
+            }
             "/nest" => {
                 let Some(id) = self.rows.get(self.chat_sel).and_then(Row::folder_id).map(str::to_string) else {
                     return Some(Err("Select a folder in the sidebar (Ctrl-B) first.".into()));
@@ -1497,7 +1517,8 @@ impl App {
     }
 
     /// Sends the input: `/attach PATH` adds a file (text, image or audio) to the next message,
-    /// `/detach` drops them; `/folder`, `/move`, `/rename` and `/nest` organise chats.
+    /// `/detach` drops them; `/folder`, `/move`, `/rename` and `/nest` organise chats; `/train`
+    /// marks the open chat for training (`/train off` withdraws it).
     pub fn send(&mut self) {
         if self.stream.is_some() {
             return self.say("An answer is still coming; Esc stops it.");

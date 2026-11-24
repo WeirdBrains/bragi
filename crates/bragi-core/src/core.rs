@@ -662,6 +662,7 @@ impl Core {
                 created_ms: now,
                 updated_ms: now,
                 messages: Vec::new(),
+                training: false,
             },
         };
         c.messages.push(ChatMessage {
@@ -716,7 +717,14 @@ impl Core {
         let now = now_ms();
         let mut c = match conversation {
             Some(id) => self.inner.history.load(id)?,
-            None => Conversation { id: random_id("c"), title: title_for(&first.text), created_ms: now, updated_ms: now, messages: Vec::new() },
+            None => Conversation {
+                id: random_id("c"),
+                title: title_for(&first.text),
+                created_ms: now,
+                updated_ms: now,
+                messages: Vec::new(),
+                training: false,
+            },
         };
         c.messages.extend(messages);
         c.updated_ms = now;
@@ -945,6 +953,15 @@ impl Core {
     /// to forward 👍/👎 as feedback (Ymir has no feedback path yet, so nothing is sent today).
     pub fn reaction_events(&self) -> tokio::sync::broadcast::Receiver<crate::reactions::ReactionEvent> {
         self.inner.reactions.subscribe()
+    }
+
+    /// Marks conversation `id` for training, or withdraws it (Ymir's training plan P2): off unless
+    /// the user turns it on, and it syncs to every linked device. Only conversations with it on
+    /// are exported as training data, and only on the user's own devices.
+    pub fn set_training(&self, id: &str, on: bool) -> Result<()> {
+        self.inner.history.set_training(id, on)?;
+        self.inner.state.send_modify(|_| {});
+        Ok(())
     }
 
     pub fn delete_conversation(&self, id: &str) -> Result<()> {
