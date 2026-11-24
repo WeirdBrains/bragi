@@ -38,6 +38,11 @@ pub struct ModelInfo {
     /// Whether some node's copy of it reads audio.
     #[serde(default)]
     pub audio: bool,
+    /// For a Ymir rollout (training plan P4b): its pinnable versions (`support@2`, `support@3`),
+    /// folded under the name so the picker shows one row. Asking for the name lets the pool pick
+    /// a version per conversation; a version id pins it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub versions: Vec<ModelInfo>,
 }
 
 impl ModelInfo {
@@ -88,7 +93,14 @@ fn info(m: &CatalogModel) -> ModelInfo {
         standin: None,
         vision: m.inputs.vision,
         audio: m.inputs.audio,
+        versions: Vec::new(),
     }
+}
+
+/// `support@3` → `support`, when what follows the last `@` is a version number.
+pub fn rollout_name(id: &str) -> Option<&str> {
+    let (name, v) = id.rsplit_once('@')?;
+    (!name.is_empty() && !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())).then_some(name)
 }
 
 fn rank(s: ModelStatus) -> u8 {
@@ -150,8 +162,25 @@ impl CatalogView {
             at.sort_by_key(|(_, _, s)| rank(*s));
             m.nodes = at.into_iter().map(|(_, n, _)| n.clone()).collect();
         }
-        by_id.sort_by(|a, b| rank(a.status).cmp(&rank(b.status)).then_with(|| a.id.cmp(&b.id)));
-        Self { nodes, rev, models: by_id }
+        // Rollout versions go under their name's row, when the name is listed too.
+        let (versions, mut models): (Vec<ModelInfo>, Vec<ModelInfo>) =
+            by_id.into_iter().partition(|m| rollout_name(&m.id).is_some_and(|n| seen.iter().any(|(id, ..)| id == n)));
+        for v in versions {
+            let name = rollout_name(&v.id).expect("partitioned").to_string();
+            if let Some(m) = models.iter_mut().find(|m| m.id == name) {
+                m.versions.push(v);
+            }
+        }
+        for m in &mut models {
+            m.versions.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+        models.sort_by(|a, b| rank(a.status).cmp(&rank(b.status)).then_with(|| a.id.cmp(&b.id)));
+        Self { nodes, rev, models }
+    }
+
+    /// A model row, or a rollout version folded under one.
+    pub fn model(&self, model: &str) -> Option<&ModelInfo> {
+        self.models.iter().find(|m| m.id == model).or_else(|| self.models.iter().flat_map(|m| &m.versions).find(|v| v.id == model))
     }
 
     /// The model to use when the user hasn't picked one: the first warm one, else the first.
@@ -166,8 +195,7 @@ impl CatalogView {
 
     /// Why `model` can't take `needed`, and which models can.
     pub fn refusal(&self, model: &str, needed: Modalities) -> String {
-        let what =
-            self.models.iter().find(|m| m.id == model).and_then(|m| Modalities::new(m.vision, m.audio).lacking(needed)).unwrap_or("this input");
+        let what = self.model(model).and_then(|m| Modalities::new(m.vision, m.audio).lacking(needed)).unwrap_or("this input");
         let ok: Vec<&str> = self.models.iter().filter(|m| m.takes(needed)).map(|m| m.id.as_str()).collect();
         if ok.is_empty() {
             format!("{model} can't read {what}, and none of the models on your nodes can")
@@ -178,12 +206,12 @@ impl CatalogView {
 
     /// The context window a request to `model` must fit (the smallest its nodes list), if known.
     pub fn context_for(&self, model: &str) -> Option<u32> {
-        self.models.iter().find(|m| m.id == model).and_then(|m| m.min_context.or(m.context))
+        self.model(model).and_then(|m| m.min_context.or(m.context))
     }
 
     /// The nodes to ask for `model`, best first (empty if no node lists it).
     pub fn nodes_for(&self, model: &str) -> Vec<String> {
-        self.models.iter().find(|m| m.id == model).map(|m| m.nodes.clone()).unwrap_or_default()
+        self.model(model).map(|m| m.nodes.clone()).unwrap_or_default()
     }
 }
 
@@ -204,5 +232,31 @@ mod tests {
         assert_eq!(v.context_for("other"), None);
         let v = CatalogView::merge(&[("c".into(), at(None))]);
         assert_eq!(v.context_for("inkling-2-mini"), None);
+    }
+
+    #[test]
+    fn rollout_versions_fold_under_their_name() {
+        let m = |id: &str, s: ModelState| CatalogModel::new(id, Purpose::Chat, s).with_context(4096);
+        let a = Catalog::new(
+            1,
+            vec![
+                m("support", ModelState::Warm),
+                m("support@2", ModelState::Warm),
+                m("support@3", ModelState::Loadable),
+                m("s2", ModelState::Warm),
+                m("x@1", ModelState::Warm),
+                m("mail@home", ModelState::Warm),
+            ],
+        );
+        let v = CatalogView::merge(&[("a".into(), a)]);
+        let ids: Vec<&str> = v.models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["mail@home", "s2", "support", "x@1"], "versions fold; an @ without a listed rollout name, or not a number, stays");
+        let support = v.models.iter().find(|m| m.id == "support").unwrap();
+        let vs: Vec<&str> = support.versions.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(vs, ["support@2", "support@3"]);
+        assert_eq!(v.nodes_for("support@3"), ["a"], "a pinned version is still routed");
+        assert_eq!(v.context_for("support@2"), Some(4096));
+        assert_eq!(rollout_name("support@12"), Some("support"));
+        assert_eq!(rollout_name("support@"), None);
     }
 }

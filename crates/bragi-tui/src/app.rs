@@ -1028,7 +1028,10 @@ impl App {
     pub fn picker_models(&self) -> Vec<String> {
         match self.targets.get(self.picker_target).map(|t| &t.target) {
             Some(Target::Endpoint { .. }) => self.endpoint_models.clone(),
-            _ => self.state.catalog.models.iter().map(|m| m.id.clone()).collect(),
+            // A rollout's pinnable versions follow its name.
+            _ => {
+                self.state.catalog.models.iter().flat_map(|m| std::iter::once(m.id.clone()).chain(m.versions.iter().map(|v| v.id.clone()))).collect()
+            }
         }
     }
 
