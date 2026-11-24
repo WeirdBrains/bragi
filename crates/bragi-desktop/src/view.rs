@@ -449,6 +449,24 @@ impl BragiView {
         cx.notify();
     }
 
+    /// Marks the open conversation for training, or withdraws it.
+    pub fn set_training(&mut self, on: bool, cx: &mut Context<Self>) {
+        let Some(c) = &self.current else { return };
+        let id = c.id.clone();
+        match self.core.set_training(&id, on) {
+            Ok(()) => {
+                self.current = self.core.conversation(&id).ok();
+                self.notice = Some(if on {
+                    "Marked for training: your Ymir nodes may export this chat as training data, on your own devices, without system prompts, attachments, tool results or reasoning. Click again to withdraw it.".into()
+                } else {
+                    "This chat is no longer used for training.".into()
+                });
+            }
+            Err(e) => self.notice = Some(e.message),
+        }
+        cx.notify();
+    }
+
     /// Toggles a reaction on a message of the open conversation (the same one again removes it).
     pub fn react(&mut self, message: &str, emoji: &str, cx: &mut Context<Self>) {
         self.react_picker = None;
@@ -1461,6 +1479,14 @@ impl BragiView {
                     .on_click(cx.listener(|v, _, _, cx| v.toggle_agent(cx))),
             )
             .child(div().flex_1().px(px(12.)).py(px(9.)).rounded(px(8.)).bg(rgb(t.surface)).text_size(px(14.)).child(self.prompt.clone()));
+        // The open chat's training consent (Ymir's training plan P2): off unless turned on.
+        if let Some(c) = &self.current {
+            let on = c.training;
+            bar = bar.child(
+                self.button("training", if on { "Training: on" } else { "Training: off" }, on)
+                    .on_click(cx.listener(move |v, _, _, cx| v.set_training(!on, cx))),
+            );
+        }
         if can_continue {
             bar = bar.child(self.button("continue", "Continue", false).on_click(cx.listener(|v, _, _, cx| v.continue_answer(cx))));
         }
@@ -2103,6 +2129,16 @@ async fn scenario(this: WeakEntity<BragiView>, cx: &mut gpui::AsyncApp) -> Resul
     this.update(cx, |v, cx| v.undo_delete(cx)).map_err(|e| e.to_string())?;
     wait_for(&this, cx, "the undo", |v| v.current.as_ref().is_some_and(|c| c.messages.len() == 4 && c.messages[2].id == question)).await?;
     step("undone");
+    // Training consent: off until clicked, on after, withdrawn by the next click.
+    if this.read_with(cx, |v, _| v.current.as_ref().is_some_and(|c| c.training)).map_err(|e| e.to_string())? {
+        return Err("a chat was marked for training without being asked".into());
+    }
+    this.update(cx, |v, cx| v.set_training(true, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the training mark", |v| v.current.as_ref().is_some_and(|c| c.training)).await?;
+    shot(cx, "31b-training-on").await;
+    this.update(cx, |v, cx| v.set_training(false, cx)).map_err(|e| e.to_string())?;
+    wait_for(&this, cx, "the withdrawal", |v| v.current.as_ref().is_some_and(|c| !c.training)).await?;
+    step("training consent on and off");
     let before = this.read_with(cx, |v, _| v.conversations.len()).map_err(|e| e.to_string())?;
     this.update(cx, |v, cx| v.ask_delete_conversation(&target, cx)).map_err(|e| e.to_string())?;
     wait_for(&this, cx, "the confirm card", |v| matches!(v.confirm, Some(delete::Confirm::Conversation { .. }))).await?;

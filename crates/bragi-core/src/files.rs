@@ -491,7 +491,7 @@ mod tests {
             ..msg(Role::User, "look")
         };
         let answer = ChatMessage { id: "a1".into(), ..msg(Role::Assistant, "```a.py\nprint(1)\n```") };
-        let c = Conversation { id: "c".into(), title: "t".into(), created_ms: 0, updated_ms: 0, messages: vec![user, answer] };
+        let c = Conversation { id: "c".into(), title: "t".into(), created_ms: 0, updated_ms: 0, messages: vec![user, answer], training: false };
         let files = all(&c);
         let got: Vec<(&str, &str, FileKind, u64)> = files.iter().map(|f| (f.id.as_str(), f.mime.as_str(), f.kind, f.size)).collect();
         assert_eq!(

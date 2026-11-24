@@ -224,6 +224,8 @@ pub struct ConversationView {
     pub messages: Vec<MessageView>,
     /// The last answer was stopped or cut off and can be continued.
     pub continuable: bool,
+    /// The user marked it for training (off unless set; see `set_training`).
+    pub training: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -439,6 +441,7 @@ fn conversation_view(c: &Conversation) -> ConversationView {
         title: c.title.clone(),
         updated_ms: c.updated_ms,
         continuable: c.continuable(),
+        training: c.training,
         messages: c
             .messages
             .iter()
@@ -848,6 +851,12 @@ pub fn quick_reactions() -> Vec<String> {
 /// Toggles a reaction on a message; returns the message's reactions afterwards.
 pub fn react(conversation: String, message: String, emoji: String) -> Result<Vec<String>, String> {
     core()?.react(&conversation, &message, &emoji).map_err(err)
+}
+
+/// Marks a conversation for training, or withdraws it (off unless set; it syncs to every
+/// linked device, and only marked conversations are exported, on the user's own devices).
+pub fn set_training(id: String, marked: bool) -> Result<(), String> {
+    core()?.set_training(&id, marked).map_err(err)
 }
 
 pub fn delete_conversation(id: String) -> Result<(), String> {
@@ -1478,7 +1487,10 @@ pub fn theme_preference() -> Result<ThemePrefView, String> {
 pub fn set_theme_preference(theme: String, mode: String) -> Result<ThemePrefView, String> {
     let a = core()?.appearance();
     let mode = bragi_core::ModePref::parse(&mode).ok_or_else(|| format!("mode is light, dark or system, not {mode}"))?;
-    let p = bragi_core::Preference { theme, mode };
+    // Only these two change; any other preference is kept.
+    let mut p = a.preference();
+    p.theme = theme;
+    p.mode = mode;
     a.set_preference(&p).map_err(err)?;
     Ok(pref_view(p))
 }

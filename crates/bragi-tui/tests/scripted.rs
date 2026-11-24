@@ -133,6 +133,16 @@ fn link_chat_models_status_help_and_code() {
     let screen = h.until("I read notes.txt", |a| !a.streaming());
     assert!(screen.contains("attached notes.txt (2 lines)"), "{screen}");
 
+    // Training consent: off until /train, shown in the chat's title, withdrawn with /train off.
+    assert!(!h.app.current.as_ref().unwrap().training);
+    h.typed("/train");
+    h.key(KeyCode::Enter);
+    let screen = h.until("Marked for training", |a| a.current.as_ref().is_some_and(|c| c.training));
+    assert!(screen.contains("· training"), "{screen}");
+    h.typed("/train off");
+    h.key(KeyCode::Enter);
+    h.until("No longer used for training", |a| a.current.as_ref().is_some_and(|c| !c.training));
+
     // Folders: make one, move this chat into it, fold it in the sidebar.
     h.typed("/folder Projects");
     h.key(KeyCode::Enter);

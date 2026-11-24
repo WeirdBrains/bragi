@@ -563,6 +563,17 @@ class BragiController extends ChangeNotifier {
     return ok;
   }
 
+  /// Marks the open conversation for training, or withdraws it (off unless set).
+  Future<void> setTraining(bool on) async {
+    final c = current;
+    if (c == null) return;
+    await _try(() async {
+      await api.setTraining(c.id, on);
+      current = await api.conversation(c.id);
+      messages = List.of(current!.messages);
+    });
+  }
+
   /// Deletes a whole conversation from the history list.
   Future<bool> deleteConversation(String id) async {
     if (streaming && current?.id == id) return false;

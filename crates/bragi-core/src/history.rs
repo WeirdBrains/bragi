@@ -152,6 +152,10 @@ pub struct Conversation {
     pub updated_ms: i64,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
+    /// The user marked it for training (its own record, see [`crate::context::Train`]); off
+    /// unless set. Not written by [`History::save`]: [`History::set_training`] sets it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub training: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -303,6 +307,7 @@ fn from_conversation(c: &StoredConversation) -> Conversation {
         created_ms: created,
         updated_ms: updated_ms(c),
         messages: c.messages.iter().map(from_stored).collect(),
+        training: c.train.on,
     }
 }
 
@@ -400,6 +405,12 @@ impl History {
         format!("{at_ms:013}-{index:04}-{:04x}{:04x}", u16::from_le_bytes(b), *seq)
     }
 
+    /// Marks a conversation for training, or withdraws it. It has to exist.
+    pub fn set_training(&self, id: &str, on: bool) -> Result<()> {
+        self.load(id)?;
+        self.store()?.set_train(id, on).map_err(storage)
+    }
+
     /// Deletes one conversation (see [`History::delete_conversations`]).
     pub fn delete(&self, id: &str) -> Result<()> {
         self.delete_conversations(&[id.to_string()]).map(|_| ())
@@ -457,7 +468,30 @@ mod tests {
                 at_ms: 1000,
             })
             .collect();
-        Conversation { id: id.into(), title: title_for(texts[0]), created_ms: 1000, updated_ms: 1000, messages }
+        Conversation { id: id.into(), title: title_for(texts[0]), created_ms: 1000, updated_ms: 1000, messages, training: false }
+    }
+
+    #[test]
+    fn training_consent_is_off_until_set_survives_a_save_and_is_ymirs_record() {
+        let dir = tempfile::tempdir().unwrap();
+        let (id, h) = linked(dir.path());
+        h.save(&conv("c1", &["q", "a"])).unwrap();
+        assert!(!h.load("c1").unwrap().training);
+        assert!(h.set_training("nope", true).is_err());
+        h.set_training("c1", true).unwrap();
+        // Saving the conversation again (a new title, a new message) keeps the consent.
+        let mut c = h.load("c1").unwrap();
+        assert!(c.training);
+        c.title = "Renamed".into();
+        h.save(&c).unwrap();
+        assert!(h.load("c1").unwrap().training);
+        // Ymir's layout: `{conversation}/train` with `on`.
+        let recs = id.records(crate::identity::CONTEXT_TYPE);
+        let (_, v) = recs.iter().find(|(k, _)| k == "c1/train").expect("the train record");
+        let t: serde_json::Value = serde_json::from_slice(v).unwrap();
+        assert_eq!(t["on"], true);
+        h.set_training("c1", false).unwrap();
+        assert!(!h.load("c1").unwrap().training);
     }
 
     #[test]
@@ -601,6 +635,7 @@ mod reaction_tests {
             created_ms: 5,
             updated_ms: 5,
             messages: vec![m(Role::User, "a"), m(Role::Assistant, "b")],
+            training: false,
         };
         h.save(&c).unwrap();
         // A record written before reactions existed has none.

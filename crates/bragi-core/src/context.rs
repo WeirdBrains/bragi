@@ -1,6 +1,6 @@
 //! Conversations on the shared context store (B4): sealed `weirdnet-sync` records of type
 //! `ymir.context`, one `{conversation}/meta` record and one `{conversation}/m/{id}` record per
-//! message. The layout is Ymir's (`ymir-core`'s `context`), so a conversation started in Bragi
+//! message, and the training consent in `{conversation}/train` (Ymir's training plan P2). The layout is Ymir's (`ymir-core`'s `context`), so a conversation started in Bragi
 //! can be read by a Ymir pool and the other way round; Bragi's own fields ride along as extra
 //! JSON keys, which Ymir ignores. Generic context code like this belongs in `weirdnet-agent`
 //! later; until it is released it lives here, by copy.
@@ -57,11 +57,23 @@ pub struct Stored {
     pub ext: Map<String, Value>,
 }
 
+/// The training consent record (`{conversation}/train`), Ymir's layout: its own register, so
+/// rewriting `meta` never clears it. Absent means off. Only a conversation with it on is
+/// exported for training (`ymirctl context export --training`, on the user's own devices).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct Train {
+    #[serde(default)]
+    pub on: bool,
+    #[serde(default)]
+    pub at_ms: i64,
+}
+
 /// One conversation as stored.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoredConversation {
     pub id: String,
     pub meta: Meta,
+    pub train: Train,
     pub messages: Vec<Stored>,
 }
 
@@ -154,6 +166,12 @@ impl ContextStore {
         self.put(&format!("{conversation}/m/{}", m.id), serde_json::to_vec(m)?)
     }
 
+    /// Gives or withdraws the conversation's training consent, on every device.
+    pub fn set_train(&self, conversation: &str, on: bool) -> anyhow::Result<()> {
+        check_id(conversation)?;
+        self.put(&format!("{conversation}/train"), serde_json::to_vec(&Train { on, at_ms: now_ms() })?)
+    }
+
     /// Deletes a conversation on every device: a tombstone `meta` with nothing else in it (not
     /// even the title), which Ymir reads as deleted too. Each Bragi device then drops the
     /// conversation's messages from its own log ([`ContextStore::compact`]).
@@ -213,12 +231,18 @@ impl ContextStore {
             let c = all.entry(conv.to_string()).or_insert_with(|| StoredConversation {
                 id: conv.to_string(),
                 meta: Meta::default(),
+                train: Train::default(),
                 messages: Vec::new(),
             });
             match (kind, parts.next()) {
                 ("meta", None) => {
                     if let Ok(m) = serde_json::from_slice(&value) {
                         c.meta = m;
+                    }
+                }
+                ("train", None) => {
+                    if let Ok(t) = serde_json::from_slice(&value) {
+                        c.train = t;
                     }
                 }
                 ("m", Some(mid)) => {

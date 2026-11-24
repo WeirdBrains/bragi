@@ -66,6 +66,7 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
     ("/move FOLDER · /move -", "put the open chat in a folder · take it out"),
     ("/rename NAME · /nest F", "rename · move the selected folder"),
     ("/attach PATH · /detach", "attach a text, image or audio file · drop them"),
+    ("/train · /train off", "mark the open chat for training on your Ymir nodes · withdraw it"),
 ];
 
 /// Code mode's lines and keys.
@@ -834,7 +835,11 @@ fn draw_chat(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect, active
 fn draw_transcript(f: &mut Frame, app: &mut App, hits: &mut HitMap, main: Rect, active: bool, mode: Mode) {
     let t = th();
     hits.push(main, Action::FocusInput);
-    let title = app.current.as_ref().map(|c| c.title.clone()).unwrap_or_else(|| "New chat".into());
+    let title = app
+        .current
+        .as_ref()
+        .map(|c| if c.training { format!("{} · training", c.title) } else { c.title.clone() })
+        .unwrap_or_else(|| "New chat".into());
     let title = clip(&title, (main.width as usize).saturating_sub(30).max(8));
     let title = format!("{} · {title}", if mode == Mode::Code { "Code" } else { "Chat" });
     let block = pane(&title, active && (app.focus == Focus::Input || mode == Mode::Code))

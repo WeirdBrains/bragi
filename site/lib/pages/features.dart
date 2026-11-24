@@ -20,6 +20,12 @@ on use). With several inference nodes, Bragi shows one combined list (B2).</p>
 <strong>Continue</strong> picks the answer up again. A real model may
 rephrase a little at the seam, because the continue request carries the partial answer plus an instruction. History is saved
 locally, one file per conversation, and survives a restart. History syncs between your linked devices (B4).</p>
+<h2 id="training">Training, only when you say so</h2>
+<p>No chat is used to train a model unless you mark it. The cap button in a chat's top bar (the Training button on the
+desktop, <code>/train</code> in the terminal) marks it, after saying what that means, and marks it on all your linked
+devices. Your Ymir nodes then export only the marked chats as training data for your own models, on your own devices,
+leaving out system prompts, attachments, tool results and reasoning. Unmark it (<code>/train off</code>) and later
+exports leave it out.</p>
 <h2 id="modes">Chat and code, one conversation</h2>
 <p>Chat and Code are modes of the same conversation, not separate screens. Plan in chat, switch to code with
 <strong>Tab</strong> (or <code>/code</code>, <code>/chat</code>, <code>/mode</code>) and the plan comes along; switch back

@@ -254,6 +254,11 @@ Future<List<String>> react({
   emoji: emoji,
 );
 
+/// Marks a conversation for training, or withdraws it (off unless set; it syncs to every
+/// linked device, and only marked conversations are exported, on the user's own devices).
+Future<void> setTraining({required String id, required bool marked}) =>
+    RustLib.instance.api.crateApiBragiSetTraining(id: id, marked: marked);
+
 Future<void> deleteConversation({required String id}) =>
     RustLib.instance.api.crateApiBragiDeleteConversation(id: id);
 
@@ -678,12 +683,16 @@ class ConversationView {
   /// The last answer was stopped or cut off and can be continued.
   final bool continuable;
 
+  /// The user marked it for training (off unless set; see `set_training`).
+  final bool training;
+
   const ConversationView({
     required this.id,
     required this.title,
     required this.updatedMs,
     required this.messages,
     required this.continuable,
+    required this.training,
   });
 
   @override
@@ -692,7 +701,8 @@ class ConversationView {
       title.hashCode ^
       updatedMs.hashCode ^
       messages.hashCode ^
-      continuable.hashCode;
+      continuable.hashCode ^
+      training.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -703,7 +713,8 @@ class ConversationView {
           title == other.title &&
           updatedMs == other.updatedMs &&
           messages == other.messages &&
-          continuable == other.continuable;
+          continuable == other.continuable &&
+          training == other.training;
 }
 
 class DeleteReportView {

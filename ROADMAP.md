@@ -4,7 +4,7 @@
 
 Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc.
 
-Updated 2026-11-23. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
+Updated 2026-11-24. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
 
 ## B1 Core and both shells (Done)
 
@@ -26,7 +26,7 @@ Weirdnet crates: none new.
 
 ## B4 Sync and optional extras (In progress)
 
-Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. Next: push wake-ups and an optional on-device model.
+Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. A per-chat training consent for Ymir's training export (off unless you mark a chat, and synced like the chat) is built in every shell. Next: push wake-ups and an optional on-device model.
 
 Weirdnet crates: `weirdnet-sync`, `weirdnet-push`.
 

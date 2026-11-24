@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 796291129;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 595296211;
 
 // Section: executor
 
@@ -2706,6 +2706,33 @@ fn wire__crate__api__bragi__set_theme_preference_impl(
         },
     )
 }
+fn wire__crate__api__bragi__set_training_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "set_training",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_id = <String>::sse_decode(&mut deserializer);
+            let api_marked = <bool>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, String>((move || {
+                    let output_ok = crate::api::bragi::set_training(api_id, api_marked)?;
+                    std::result::Result::Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__code__shell_event_view_default_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3508,12 +3535,14 @@ impl SseDecode for crate::api::bragi::ConversationView {
         let mut var_updatedMs = <i64>::sse_decode(deserializer);
         let mut var_messages = <Vec<crate::api::bragi::MessageView>>::sse_decode(deserializer);
         let mut var_continuable = <bool>::sse_decode(deserializer);
+        let mut var_training = <bool>::sse_decode(deserializer);
         return crate::api::bragi::ConversationView {
             id: var_id,
             title: var_title,
             updated_ms: var_updatedMs,
             messages: var_messages,
             continuable: var_continuable,
+            training: var_training,
         };
     }
 }
@@ -4731,25 +4760,26 @@ fn pde_ffi_dispatcher_primary_impl(
         98 => wire__crate__api__bragi__sessions_impl(port, ptr, rust_vec_len, data_len),
         100 => wire__crate__api__bragi__set_session_folder_impl(port, ptr, rust_vec_len, data_len),
         101 => wire__crate__api__bragi__set_theme_preference_impl(port, ptr, rust_vec_len, data_len),
-        102 => wire__crate__api__code__shell_event_view_default_impl(port, ptr, rust_vec_len, data_len),
-        103 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
-        104 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
-        105 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
-        107 => wire__crate__api__bragi__targets_impl(port, ptr, rust_vec_len, data_len),
-        108 => wire__crate__api__bragi__test_endpoint_impl(port, ptr, rust_vec_len, data_len),
-        109 => wire__crate__api__bragi__test_endpoint_address_impl(port, ptr, rust_vec_len, data_len),
-        110 => wire__crate__api__bragi__theme_apply_impl(port, ptr, rust_vec_len, data_len),
-        111 => wire__crate__api__bragi__theme_delete_impl(port, ptr, rust_vec_len, data_len),
-        112 => wire__crate__api__bragi__theme_duplicate_impl(port, ptr, rust_vec_len, data_len),
-        113 => wire__crate__api__bragi__theme_editable_impl(port, ptr, rust_vec_len, data_len),
-        114 => wire__crate__api__bragi__theme_export_text_impl(port, ptr, rust_vec_len, data_len),
-        115 => wire__crate__api__bragi__theme_import_text_impl(port, ptr, rust_vec_len, data_len),
-        118 => wire__crate__api__bragi__theme_rename_impl(port, ptr, rust_vec_len, data_len),
-        119 => wire__crate__api__bragi__theme_reset_impl(port, ptr, rust_vec_len, data_len),
-        121 => wire__crate__api__bragi__theme_warnings_impl(port, ptr, rust_vec_len, data_len),
-        122 => wire__crate__api__bragi__themes_impl(port, ptr, rust_vec_len, data_len),
-        124 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
-        125 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        102 => wire__crate__api__bragi__set_training_impl(port, ptr, rust_vec_len, data_len),
+        103 => wire__crate__api__code__shell_event_view_default_impl(port, ptr, rust_vec_len, data_len),
+        104 => wire__crate__api__bragi__shutdown_impl(port, ptr, rust_vec_len, data_len),
+        105 => wire__crate__api__bragi__start_impl(port, ptr, rust_vec_len, data_len),
+        106 => wire__crate__api__bragi__start_demo_impl(port, ptr, rust_vec_len, data_len),
+        108 => wire__crate__api__bragi__targets_impl(port, ptr, rust_vec_len, data_len),
+        109 => wire__crate__api__bragi__test_endpoint_impl(port, ptr, rust_vec_len, data_len),
+        110 => wire__crate__api__bragi__test_endpoint_address_impl(port, ptr, rust_vec_len, data_len),
+        111 => wire__crate__api__bragi__theme_apply_impl(port, ptr, rust_vec_len, data_len),
+        112 => wire__crate__api__bragi__theme_delete_impl(port, ptr, rust_vec_len, data_len),
+        113 => wire__crate__api__bragi__theme_duplicate_impl(port, ptr, rust_vec_len, data_len),
+        114 => wire__crate__api__bragi__theme_editable_impl(port, ptr, rust_vec_len, data_len),
+        115 => wire__crate__api__bragi__theme_export_text_impl(port, ptr, rust_vec_len, data_len),
+        116 => wire__crate__api__bragi__theme_import_text_impl(port, ptr, rust_vec_len, data_len),
+        119 => wire__crate__api__bragi__theme_rename_impl(port, ptr, rust_vec_len, data_len),
+        120 => wire__crate__api__bragi__theme_reset_impl(port, ptr, rust_vec_len, data_len),
+        122 => wire__crate__api__bragi__theme_warnings_impl(port, ptr, rust_vec_len, data_len),
+        123 => wire__crate__api__bragi__themes_impl(port, ptr, rust_vec_len, data_len),
+        125 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
+        126 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4791,11 +4821,11 @@ fn pde_ffi_dispatcher_sync_impl(
         87 => wire__crate__api__code__prompt_history_up_impl(ptr, rust_vec_len, data_len),
         88 => wire__crate__api__bragi__quick_reactions_impl(ptr, rust_vec_len, data_len),
         99 => wire__crate__api__bragi__set_node_search_limit_ms_impl(ptr, rust_vec_len, data_len),
-        106 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
-        116 => wire__crate__api__bragi__theme_palette_impl(ptr, rust_vec_len, data_len),
-        117 => wire__crate__api__bragi__theme_preference_impl(ptr, rust_vec_len, data_len),
-        120 => wire__crate__api__bragi__theme_roles_impl(ptr, rust_vec_len, data_len),
-        123 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
+        107 => wire__crate__api__bragi__state_impl(ptr, rust_vec_len, data_len),
+        117 => wire__crate__api__bragi__theme_palette_impl(ptr, rust_vec_len, data_len),
+        118 => wire__crate__api__bragi__theme_preference_impl(ptr, rust_vec_len, data_len),
+        121 => wire__crate__api__bragi__theme_roles_impl(ptr, rust_vec_len, data_len),
+        124 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4943,6 +4973,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ConversationView {
             self.updated_ms.into_into_dart().into_dart(),
             self.messages.into_into_dart().into_dart(),
             self.continuable.into_into_dart().into_dart(),
+            self.training.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5792,6 +5823,7 @@ impl SseEncode for crate::api::bragi::ConversationView {
         <i64>::sse_encode(self.updated_ms, serializer);
         <Vec<crate::api::bragi::MessageView>>::sse_encode(self.messages, serializer);
         <bool>::sse_encode(self.continuable, serializer);
+        <bool>::sse_encode(self.training, serializer);
     }
 }
 

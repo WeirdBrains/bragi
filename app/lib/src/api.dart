@@ -66,6 +66,7 @@ abstract class BragiApi {
   Future<String> saveFile(String conversation, String file, String dest);
   Future<rust.DeletedView> deleteMessage(String conversation, String id, bool withReply);
   Future<rust.DeletedView> deleteConversations(List<String> ids);
+  Future<void> setTraining(String id, bool on);
   Future<void> undoDelete(String undo);
   Future<int> clearHistory();
   Future<List<String>> react(String conversation, String message, String emoji);
@@ -183,6 +184,8 @@ class RustBragiApi implements BragiApi {
       rust.deleteMessage(conversation: conversation, id: id, withReply: withReply);
   @override
   Future<rust.DeletedView> deleteConversations(List<String> ids) => rust.deleteConversations(ids: ids);
+  @override
+  Future<void> setTraining(String id, bool on) => rust.setTraining(id: id, marked: on);
   @override
   Future<void> undoDelete(String undo) => rust.undoDelete(undo: undo);
   @override
