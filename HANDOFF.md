@@ -2,6 +2,26 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24 13:25 EST: cert-only default for Ymir server links (in progress, branch `feat/cert-only-default`)
+
+Michael approved: linking a Ymir server is cert-only by default, with an explicit opt-out for the full-identity link.
+
+**Done on the branch (0a5768f, WIP, pushed):**
+- bragi-core: `is_server_link(code)` (a `weirdnet-ymir://link/` code from `ymirctl pool link`). `pair_accept` remembers it, and `pair_accept_confirm` then links cert-only as an inference node (certificate plus service grant, no seed). This covers every front end (desktop, mobile bridge, MCP, serve) with no bridge type change. `pair_accept_confirm_full` is the opt-out; `pairing_is_server()` is exported.
+- bragi-tui: `link CODE` follows the default; `--server model|inference` picks the role; new `--full-identity` sends the seed (it conflicts with `--server`). A failed cert-only link tells you a Ymir older than 0.8.0 can't take one (update it, or pass `--full-identity`). Help text updated. Parser tests cover `--full-identity` and the conflicts.
+- `tests/scenario.rs` `a_ymir_server_is_linked_cert_only_without_the_seed`: adds the default confirm (expects an inference grant, no seed) and `pair_accept_confirm_full` (expects the seed). **Passed** on the box.
+
+**Left:**
+1. Run the bragi-tui cli tests (`cargo test -p bragi-tui cli`; interrupted before finishing), the full suite and clippy.
+2. Front ends that show a link code dialog (desktop `view.rs`, Flutter via the bridge) could show "cert-only" for a server code and offer the full-identity opt-out. The core default already applies to them.
+3. Docs: README, site `docs_started.dart`, CHANGELOG (Changed: server codes are cert-only by default), DESIGN in Ymir (B-section), roadmap.
+4. `scripts/ymir-link-e2e.sh`: the default should now be cert-only (`BRAGI_E2E_CERT_ONLY` becomes the default; add a full-identity case).
+5. Vendor weirdnet-project-helpers 0.3.3 (`python3 ../weirdnet-project-helpers/vendor.py .`, `helpers = "0.3.3"`), then release per AGENTS.md: `weirdnet_release.py --dry-run`, cut, Release workflow, dist scan, `assets`, packaging, `taur` (alien-blue has `taurctl`), site and roadmap.
+
+**Other branches pushed so nothing stays on one machine:** `feat/training-consent` (merged earlier, kept).
+
+**Local state:** alien-blue `~/Projects/WeirdBrains/bragi` has a stash "alien-blue local: bragi-serve ensure.rs" (the older `crates/bragi-serve/src/ensure.rs` change, kept, not applied).
+
 ## 2026-11-24: v0.6.0 released
 
 `release: v0.6.0` (`30f294e`, tag `v0.6.0`): Ymir rollouts in the model list (`feat/rollout-versions`, merged in `c47608f`). The Release workflow passed on every platform ([run 45431928019](https://github.com/WeirdBrains/bragi/actions/runs/45431928019)). Artifacts scanned: only the RPM packager field (the public maintainer address) matched; no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.6.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.6.0-1 on TAUR (`46ace46`); `packaging/nix/release.json` and the site's `latestVersion` at 0.6.0.
