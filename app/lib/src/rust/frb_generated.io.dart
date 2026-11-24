@@ -83,6 +83,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeFitView dco_decode_box_autoadd_node_fit_view(dynamic raw);
 
   @protected
+  PoolView dco_decode_box_autoadd_pool_view(dynamic raw);
+
+  @protected
   ProjectView dco_decode_box_autoadd_project_view(dynamic raw);
 
   @protected
@@ -218,6 +221,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NotificationView> dco_decode_list_notification_view(dynamic raw);
 
   @protected
+  List<PoolView> dco_decode_list_pool_view(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -302,6 +308,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeFitView? dco_decode_opt_box_autoadd_node_fit_view(dynamic raw);
 
   @protected
+  PoolView? dco_decode_opt_box_autoadd_pool_view(dynamic raw);
+
+  @protected
   ProjectView? dco_decode_opt_box_autoadd_project_view(dynamic raw);
 
   @protected
@@ -321,6 +330,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PaletteView dco_decode_palette_view(dynamic raw);
+
+  @protected
+  PoolView dco_decode_pool_view(dynamic raw);
 
   @protected
   ProjectView dco_decode_project_view(dynamic raw);
@@ -449,6 +461,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   NodeFitView sse_decode_box_autoadd_node_fit_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  PoolView sse_decode_box_autoadd_pool_view(SseDeserializer deserializer);
 
   @protected
   ProjectView sse_decode_box_autoadd_project_view(SseDeserializer deserializer);
@@ -600,6 +615,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PoolView> sse_decode_list_pool_view(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -700,6 +718,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  PoolView? sse_decode_opt_box_autoadd_pool_view(SseDeserializer deserializer);
+
+  @protected
   ProjectView? sse_decode_opt_box_autoadd_project_view(
     SseDeserializer deserializer,
   );
@@ -725,6 +746,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PaletteView sse_decode_palette_view(SseDeserializer deserializer);
+
+  @protected
+  PoolView sse_decode_pool_view(SseDeserializer deserializer);
 
   @protected
   ProjectView sse_decode_project_view(SseDeserializer deserializer);
@@ -870,6 +894,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_node_fit_view(
     NodeFitView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_pool_view(
+    PoolView self,
     SseSerializer serializer,
   );
 
@@ -1066,6 +1096,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pool_view(List<PoolView> self, SseSerializer serializer);
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -1198,6 +1231,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_pool_view(
+    PoolView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_project_view(
     ProjectView? self,
     SseSerializer serializer,
@@ -1226,6 +1265,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_palette_view(PaletteView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pool_view(PoolView self, SseSerializer serializer);
 
   @protected
   void sse_encode_project_view(ProjectView self, SseSerializer serializer);

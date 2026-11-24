@@ -61,6 +61,8 @@ enum Job {
     Models(String, Result<Vec<String>, String>),
     /// A `!command` finished.
     Shell(Result<bragi_core::shell::ShellOutput, String>),
+    /// A pool switch or remove finished.
+    Pool(Result<String, String>),
 }
 
 /// An answer streaming in.
@@ -118,6 +120,8 @@ pub struct App {
     pub new_folder_parent: Option<String>,
     /// Show the reasoning of every answer, not only the title line.
     pub show_thinking: bool,
+    /// Hide the chats sidebar (remembered in the profile).
+    pub sidebar_collapsed: bool,
     pub notice: Option<String>,
     /// How the notice reads (its toast's colour), and when it first showed.
     pub notice_tone: Tone,
@@ -226,6 +230,7 @@ impl App {
             settings: Settings::default(),
             themes: ThemeScreen::default(),
             show_thinking: false,
+            sidebar_collapsed: false,
             new_folder_parent: None,
             notice: None,
             notice_tone: Tone::Info,
@@ -256,6 +261,7 @@ impl App {
             thinking_flipped: HashSet::new(),
             core,
         };
+        app.sidebar_collapsed = app.core.appearance().preference().sidebar_collapsed;
         app.code.history = bragi_core::prompt_history::PromptHistory::open(bragi_core::prompt_history::file_for(home, Some(&app.code.root)));
         // A linked device goes online in the background: give it a moment before showing the
         // link screen.
@@ -416,10 +422,8 @@ impl App {
         self.chat_sel = self.chat_sel.min(self.rows.len().saturating_sub(1));
         self.targets = self.core.targets();
         self.settings.reload(&self.core);
-        if let Some(c) = &self.current
-            && let Ok(c) = self.core.conversation(&c.id)
-        {
-            self.current = Some(c);
+        if let Some(c) = &self.current {
+            self.current = self.core.conversation(&c.id).ok();
         }
         self.last_reload = Instant::now();
     }
@@ -436,6 +440,37 @@ impl App {
         self.notice = Some(s.into());
         self.notice_tone = Tone::Error;
         self.notice_since = None;
+    }
+
+    fn toggle_sidebar(&mut self) {
+        self.sidebar_collapsed = !self.sidebar_collapsed;
+        if let Err(e) = self.core.appearance().set_sidebar_collapsed(self.sidebar_collapsed) {
+            self.fail(e.to_string());
+        } else if self.sidebar_collapsed {
+            self.focus = Focus::Input;
+            self.say("History bar hidden. F10 shows it.");
+        } else {
+            self.say("History bar shown.");
+        }
+    }
+
+    fn start_add_pool(&mut self) {
+        let (core, tx) = (self.core.clone(), self.jobs.0.clone());
+        self.core.handle().spawn(async move {
+            let r = core.add_pool().await.map_err(|e| e.message);
+            let _ = tx.send(Job::Offer(r));
+        });
+        self.open(View::Link);
+        self.say("Open this code on a device of the other pool.");
+    }
+
+    fn start_switch_pool(&mut self, id: &str) {
+        let (core, tx, id) = (self.core.clone(), self.jobs.0.clone(), id.to_string());
+        self.core.handle().spawn(async move {
+            let r = core.switch_pool(&id).await.map(|p| format!("Switched to {}.", p.name)).map_err(|e| e.message);
+            let _ = tx.send(Job::Pool(r));
+        });
+        self.say("Switching pool…");
     }
 
     /// Whether something on screen moves by itself (a spinner, a countdown), so the loop
@@ -462,7 +497,16 @@ impl App {
         if self.watch.has_changed().unwrap_or(false) {
             changed = true;
             let was = self.linked();
+            let was_pool = self.state.pool.as_ref().map(|p| p.id.clone());
             self.state = self.watch.borrow_and_update().clone();
+            let now_pool = self.state.pool.as_ref().map(|p| p.id.clone());
+            if was_pool != now_pool && was_pool.is_some() {
+                self.current = None;
+                self.reload();
+                if let Some(p) = &self.state.pool {
+                    self.say(format!("Switched to {}.", p.name));
+                }
+            }
             if !was && self.linked() {
                 self.reload();
                 if self.view == View::Link && self.auto_link {
@@ -544,6 +588,12 @@ impl App {
                 Ok(_) => {}
                 Err(e) => self.fail(e),
             },
+            Job::Pool(Ok(msg)) => {
+                self.current = None;
+                self.reload();
+                self.say(msg);
+            }
+            Job::Pool(Err(e)) => self.fail(e),
             Job::Shell(r) => {
                 self.shell = None;
                 match r {
@@ -874,6 +924,7 @@ impl App {
             KeyCode::F(6) => return self.open(View::Settings),
             KeyCode::Char('g') if ctrl => return self.open(View::Themes),
             KeyCode::F(7) => return self.open(View::Themes),
+            KeyCode::F(10) => return self.toggle_sidebar(),
             KeyCode::Char('k') if ctrl => {
                 self.show_thinking = !self.show_thinking;
                 // Ctrl-K sets every Thinking one way; clicks then flip single ones.
@@ -1081,8 +1132,22 @@ impl App {
             }
             return;
         }
-        let n = self.settings.endpoints.len();
+        if let Some(id) = self.settings.confirm_delete_pool.take() {
+            if k.code == KeyCode::Char('y') {
+                let (core, tx) = (self.core.clone(), self.jobs.0.clone());
+                self.core.handle().spawn(async move {
+                    let r = core.remove_pool(&id).await.map(|_| "Removed the pool.".into()).map_err(|e| e.message);
+                    let _ = tx.send(Job::Pool(r));
+                });
+                self.say("Removing the pool…");
+            } else {
+                self.say("Kept.");
+            }
+            return;
+        }
+        let n = self.settings.row_count();
         let sel = self.settings.selected().cloned();
+        let pool = self.settings.selected_pool().cloned();
         let edit = |app: &mut Self, e: &bragi_core::EndpointView, input: bragi_core::EndpointInput| {
             match app.core.edit_endpoint(&e.id, input, KeyChange::Keep) {
                 Ok(v) => app.say(format!("{}: {}, {}", v.name, if v.enabled { "on" } else { "off" }, mode_words(v.mode))),
@@ -1090,21 +1155,28 @@ impl App {
             }
             app.reload();
         };
-        match (k.code, sel) {
-            (KeyCode::Esc | KeyCode::Char('q'), _) => self.close(),
-            (KeyCode::Up | KeyCode::Char('k'), _) => self.settings.sel = self.settings.sel.saturating_sub(1),
-            (KeyCode::Down | KeyCode::Char('j'), _) => self.settings.sel = (self.settings.sel + 1).min(n.saturating_sub(1)),
-            (KeyCode::Char('a'), _) => self.settings.form = Some(Form::add()),
-            (KeyCode::Char('e'), Some(e)) => self.settings.form = Some(Form::edit(&e)),
-            (KeyCode::Char(' '), Some(e)) => edit(self, &e, bragi_core::EndpointInput { enabled: !e.enabled, ..settings::input_of(&e) }),
-            (KeyCode::Char('m'), Some(e)) => {
+        match (k.code, sel, pool) {
+            (KeyCode::Esc | KeyCode::Char('q'), _, _) => self.close(),
+            (KeyCode::Up | KeyCode::Char('k'), _, _) => self.settings.sel = self.settings.sel.saturating_sub(1),
+            (KeyCode::Down | KeyCode::Char('j'), _, _) => self.settings.sel = (self.settings.sel + 1).min(n.saturating_sub(1)),
+            (KeyCode::Char('p'), _, _) => self.start_add_pool(),
+            (KeyCode::Enter, _, Some(p)) if !p.active => self.start_switch_pool(&p.id),
+            (KeyCode::Enter, _, Some(p)) => self.say(format!("{} is already the active pool.", p.name)),
+            (KeyCode::Char('d'), _, Some(p)) => {
+                self.settings.confirm_delete_pool = Some(p.id.clone());
+                self.say(format!("Forget {} and its history on this device? y yes · any other key keeps it", p.name));
+            }
+            (KeyCode::Char('a'), _, _) => self.settings.form = Some(Form::add()),
+            (KeyCode::Char('e'), Some(e), _) => self.settings.form = Some(Form::edit(&e)),
+            (KeyCode::Char(' '), Some(e), _) => edit(self, &e, bragi_core::EndpointInput { enabled: !e.enabled, ..settings::input_of(&e) }),
+            (KeyCode::Char('m'), Some(e), _) => {
                 let mode = match e.mode {
                     bragi_core::EndpointMode::Alongside => bragi_core::EndpointMode::Fallback,
                     bragi_core::EndpointMode::Fallback => bragi_core::EndpointMode::Alongside,
                 };
                 edit(self, &e, bragi_core::EndpointInput { mode, ..settings::input_of(&e) })
             }
-            (KeyCode::Char('t'), Some(e)) => {
+            (KeyCode::Char('t'), Some(e), _) => {
                 let (core, tx) = (self.core.clone(), self.jobs.0.clone());
                 self.say(format!("Testing {}…", e.name));
                 self.core.handle().spawn(async move {
@@ -1112,27 +1184,31 @@ impl App {
                     let _ = tx.send(Job::Test(e.id, r));
                 });
             }
-            (KeyCode::Char('K'), Some(e)) => {
-                if let Err(err) = self.core.move_endpoint(&e.id, self.settings.sel.saturating_sub(1)) {
-                    self.fail(err.message);
-                }
-                self.settings.sel = self.settings.sel.saturating_sub(1);
-                self.reload();
-            }
-            (KeyCode::Char('J'), Some(e)) => {
-                let to = (self.settings.sel + 1).min(n.saturating_sub(1));
+            (KeyCode::Char('K'), Some(e), _) => {
+                let i = self.settings.sel - self.settings.pools.len();
+                let to = i.saturating_sub(1);
                 if let Err(err) = self.core.move_endpoint(&e.id, to) {
                     self.fail(err.message);
                 }
-                self.settings.sel = to;
+                self.settings.sel = self.settings.pools.len() + to;
                 self.reload();
             }
-            (KeyCode::Delete | KeyCode::Char('d'), Some(e)) => {
+            (KeyCode::Char('J'), Some(e), _) => {
+                let i = self.settings.sel - self.settings.pools.len();
+                let last = self.settings.endpoints.len().saturating_sub(1);
+                let to = (i + 1).min(last);
+                if let Err(err) = self.core.move_endpoint(&e.id, to) {
+                    self.fail(err.message);
+                }
+                self.settings.sel = self.settings.pools.len() + to;
+                self.reload();
+            }
+            (KeyCode::Delete | KeyCode::Char('d'), Some(e), _) => {
                 let bound = self.core.endpoint_sessions(&e.id);
                 self.settings.confirm_delete = Some(e.id.clone());
                 self.say(format!("Delete {} ({bound} chat{} move to the pool)? y yes · any other key keeps it", e.name, crate::code::plural(bound)));
             }
-            (KeyCode::Enter, Some(e)) => {
+            (KeyCode::Enter, Some(e), _) => {
                 let model = e.model.clone().unwrap_or_default();
                 self.pick_target(Target::Endpoint { id: e.id.clone(), model });
             }
@@ -1284,7 +1360,12 @@ impl App {
             return self.set_mode(Some(Mode::Code));
         }
         if k.code == KeyCode::Char('b') && ctrl {
-            self.focus = if self.focus == Focus::Input { Focus::Chats } else { Focus::Input };
+            if self.sidebar_collapsed && self.focus == Focus::Input {
+                self.toggle_sidebar();
+                self.focus = Focus::Chats;
+            } else {
+                self.focus = if self.focus == Focus::Input { Focus::Chats } else { Focus::Input };
+            }
             return;
         }
         if k.code == KeyCode::Char('r') && ctrl {
@@ -1516,6 +1597,54 @@ impl App {
         })
     }
 
+    fn pool_command(&mut self, rest: &str) {
+        let mut it = rest.split_whitespace();
+        let sub = it.next().unwrap_or("list");
+        match sub {
+            "list" | "" => {
+                let pools = self.core.pools();
+                if pools.is_empty() {
+                    self.say("No Ymir pools yet. /pool add links another one.");
+                } else {
+                    let line =
+                        pools.iter().map(|p| format!("{}{} ({})", if p.active { "* " } else { "" }, p.name, p.id)).collect::<Vec<_>>().join(" · ");
+                    self.say(line);
+                }
+            }
+            "add" => self.start_add_pool(),
+            "switch" | "use" => match it.next() {
+                Some(id) => self.start_switch_pool(id),
+                None => self.fail("usage: /pool switch NAME"),
+            },
+            "rename" => {
+                let id = it.next();
+                let name = it.collect::<Vec<_>>().join(" ");
+                match (id, name.is_empty()) {
+                    (Some(id), false) => match self.core.rename_pool(id, &name) {
+                        Ok(p) => {
+                            self.reload();
+                            self.say(format!("Renamed to {}.", p.name));
+                        }
+                        Err(e) => self.fail(e.message),
+                    },
+                    _ => self.fail("usage: /pool rename NAME NEW-NAME"),
+                }
+            }
+            "remove" | "rm" | "delete" => match it.next() {
+                Some(id) => {
+                    let (core, tx, id) = (self.core.clone(), self.jobs.0.clone(), id.to_string());
+                    self.core.handle().spawn(async move {
+                        let r = core.remove_pool(&id).await.map(|_| "Removed the pool.".into()).map_err(|e| e.message);
+                        let _ = tx.send(Job::Pool(r));
+                    });
+                    self.say("Removing the pool…");
+                }
+                None => self.fail("usage: /pool remove NAME"),
+            },
+            _ => self.fail("usage: /pool list | add | switch NAME | rename NAME NEW | remove NAME"),
+        }
+    }
+
     /// Sends the input: `/attach PATH` adds a file (text, image or audio) to the next message,
     /// `/detach` drops them; `/folder`, `/move`, `/rename` and `/nest` organise chats; `/train`
     /// marks the open chat for training (`/train off` withdraws it).
@@ -1559,6 +1688,14 @@ impl App {
             self.attachments.clear();
             self.input.take();
             return self.say("No attachments.");
+        }
+        if text == "/sidebar" || text == "/history" {
+            self.input.take();
+            return self.toggle_sidebar();
+        }
+        if let Some(rest) = text.strip_prefix("/pool") {
+            self.input.take();
+            return self.pool_command(rest.trim());
         }
         if let Some(r) = self.folder_command(&text) {
             match r {

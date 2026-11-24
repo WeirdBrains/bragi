@@ -2,7 +2,7 @@
 //! as a fallback, test, reorder, delete) and the Weirdnet node addresses this device dials.
 //! Everything is `Core`'s endpoints API; keys are typed masked and never shown or printed.
 
-use bragi_core::{EndpointInput, EndpointMode, EndpointView};
+use bragi_core::{EndpointInput, EndpointMode, EndpointView, PoolView};
 
 use crate::editor::Editor;
 
@@ -61,10 +61,14 @@ pub struct Settings {
     pub endpoints: Vec<EndpointView>,
     /// Node addresses (`Core::links`), shown under the endpoints.
     pub links: Vec<bragi_core::LinkView>,
+    /// Saved Ymir pools, shown above the endpoints.
+    pub pools: Vec<PoolView>,
     pub sel: usize,
     pub form: Option<Form>,
     /// Endpoint id waiting for y to delete.
     pub confirm_delete: Option<String>,
+    /// Pool id waiting for y to forget.
+    pub confirm_delete_pool: Option<String>,
     /// The last test result per endpoint id.
     pub tests: std::collections::HashMap<String, String>,
 }
@@ -73,11 +77,21 @@ impl Settings {
     pub fn reload(&mut self, core: &bragi_core::Core) {
         self.endpoints = core.endpoints();
         self.links = core.links();
-        self.sel = self.sel.min(self.endpoints.len().saturating_sub(1));
+        self.pools = core.pools();
+        let n = self.pools.len() + self.endpoints.len();
+        self.sel = self.sel.min(n.saturating_sub(1));
+    }
+
+    pub fn row_count(&self) -> usize {
+        self.pools.len() + self.endpoints.len()
+    }
+
+    pub fn selected_pool(&self) -> Option<&PoolView> {
+        self.pools.get(self.sel)
     }
 
     pub fn selected(&self) -> Option<&EndpointView> {
-        self.endpoints.get(self.sel)
+        self.sel.checked_sub(self.pools.len()).and_then(|i| self.endpoints.get(i))
     }
 }
 

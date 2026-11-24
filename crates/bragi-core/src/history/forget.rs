@@ -107,7 +107,7 @@ impl History {
             store.delete(&c.id).map_err(storage)?;
         }
         *self.undo.lock().unwrap_or_else(|e| e.into_inner()) = None;
-        for d in [imported_dir(&self.dir), self.dir.clone()] {
+        for d in [imported_dir(&self.history_dir()), self.history_dir()] {
             if d.exists()
                 && let Err(e) = std::fs::remove_dir_all(&d)
             {
@@ -182,7 +182,7 @@ impl History {
 
     /// Removes B1's imported copies of `ids` (they still hold every message).
     fn forget_imported(&self, ids: &[&str]) {
-        let Ok(rd) = std::fs::read_dir(imported_dir(&self.dir)) else { return };
+        let Ok(rd) = std::fs::read_dir(imported_dir(&self.history_dir())) else { return };
         for e in rd.flatten() {
             let p = e.path();
             let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_string();

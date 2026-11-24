@@ -43,6 +43,8 @@ usage:
       options: --context PATH (repeatable; folders respect .gitignore) --model ID
                --apply (write the change; `bragi-tui undo` puts it back)
       Prints the proposed change as a unified diff; the explanation goes to stderr.
+  bragi-tui pool list|add|switch|rename|remove     saved Ymir pools: switch which one this device
+                                                   talks to (bragi-tui pool --help)
   bragi-tui mcp-servers list|add|remove|enable|disable|test|revoke
                                                    outside MCP servers a chat can use (bragi-tui mcp-servers
                                                    add --help). Secrets come from environment variables
@@ -100,6 +102,8 @@ pub enum Cmd {
     McpServers(Vec<String>),
     /// `linker …`: the desktop link for a phone, run by [`crate::linker_cli`].
     Linker(Vec<String>),
+    /// `pool …`: saved Ymir pools, run by [`crate::pool_cli`].
+    Pool(Vec<String>),
     Version,
     Help,
 }
@@ -114,6 +118,27 @@ pub enum CodeTaskArg {
 pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut out = Args::default();
     let args: Vec<String> = args.into_iter().collect();
+    // `bragi-tui [--home DIR] pool …` (or `pools` as a list alias).
+    if let Some(at) = args.iter().position(|a| a == "pool" || a == "pools")
+        && args[..at].iter().all(|a| !a.starts_with("--") || a == "--home" || a == "--demo")
+        && args[..at].iter().filter(|a| !a.starts_with("--")).count() <= args[..at].iter().filter(|a| *a == "--home").count()
+    {
+        let mut it = args[..at].iter();
+        while let Some(a) = it.next() {
+            match a.as_str() {
+                "--home" => out.launch.home = it.next().map(|h| h.into()),
+                "--demo" => out.launch.demo = true,
+                _ => {}
+            }
+        }
+        let mut rest = args[at + 1..].to_vec();
+        if args[at] == "pools" && rest.is_empty() {
+            rest.push("list".into());
+        }
+        crate::pool_cli::parse(rest.clone())?;
+        out.command = Cmd::Pool(rest);
+        return Ok(out);
+    }
     // `bragi-tui [--home DIR] mcp-servers …`: everything after the word is the command's own.
     if let Some(at) = args.iter().position(|a| a == "mcp-servers")
         && args[..at].iter().all(|a| !a.starts_with("--") || a == "--home" || a == "--demo")
@@ -249,6 +274,7 @@ pub fn run(args: Args) -> i32 {
             crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask)))
         }
         Cmd::Linker(rest) => crate::linker_cli::parse(rest).and_then(|sub| crate::linker_cli::run(&home_of(&args), sub)),
+        Cmd::Pool(rest) => crate::pool_cli::parse(rest).and_then(|sub| crate::pool_cli::run(&args.launch, sub)),
         Cmd::Link { arg, yes } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
@@ -414,6 +440,9 @@ fn status(s: &Session) -> Result<(), String> {
         _ => "linking".into(),
     };
     println!("link:      {pair}");
+    if let Some(p) = core.active_pool() {
+        println!("pool:      {} ({})", p.name, p.id);
+    }
     println!("online:    {}", if st.online { "yes" } else { "no" });
     if let Some(p) = core.peer_id() {
         println!("peer id:   {p}");
@@ -556,6 +585,8 @@ mod tests {
         assert_eq!(p("./link").unwrap().open.as_deref(), Some("./link"));
         assert_eq!(p("./link").unwrap().command, Cmd::Tui);
         assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false });
+        assert_eq!(p("pool list").unwrap().command, Cmd::Pool(vec!["list".into()]));
+        assert_eq!(p("pools").unwrap().command, Cmd::Pool(vec!["list".into()]));
         assert_eq!(p("status").unwrap().open, None);
         assert_eq!(p("src").unwrap().command, Cmd::Tui);
         assert!(p("a b").is_err());

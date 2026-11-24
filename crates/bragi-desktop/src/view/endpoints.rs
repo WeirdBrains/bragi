@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use bragi_core::{EndpointInput, EndpointMode, EndpointView, Folder, KeyChange, LinkView, SessionSummary, Target};
+use bragi_core::{EndpointInput, EndpointMode, EndpointView, Folder, KeyChange, LinkView, PoolView, SessionSummary, Target};
 
 use super::*;
 
@@ -15,6 +15,7 @@ pub(super) enum Form {
     Endpoint { id: Option<String>, mode: EndpointMode, enabled: bool, has_key: bool, clear_key: bool },
     Link { old: Option<String> },
     Folder { id: Option<String>, parent: Option<String> },
+    Pool { id: String },
 }
 
 /// An endpoint delete waiting for its confirm, with where its chats go.
@@ -32,6 +33,7 @@ pub(super) struct DeleteEndpoint {
 pub(super) struct Prefs {
     pub endpoints: Vec<EndpointView>,
     pub links: Vec<LinkView>,
+    pub pools: Vec<PoolView>,
     pub targets: Vec<bragi_core::TargetOption>,
     pub folders: Vec<Folder>,
     pub sessions: Vec<SessionSummary>,
@@ -39,6 +41,7 @@ pub(super) struct Prefs {
     pub form_error: Option<String>,
     pub delete_endpoint: Option<DeleteEndpoint>,
     pub delete_link: Option<String>,
+    pub delete_pool: Option<(String, String)>,
     pub delete_folder: Option<(String, String)>,
     /// Test results by endpoint id (and `form` for the card being edited): ok, words.
     pub tests: HashMap<String, (bool, String)>,
@@ -90,6 +93,7 @@ impl BragiView {
         let p = &mut self.prefs;
         p.endpoints = self.core.endpoints();
         p.links = self.core.links();
+        p.pools = self.core.pools();
         p.targets = self.core.targets();
         p.folders = self.core.folders();
         p.sessions = self.core.sessions(0, 100).unwrap_or_default();
@@ -204,6 +208,13 @@ impl BragiView {
                 };
                 match done {
                     Ok(()) => self.close_form(cx),
+                    Err(e) => return self.fail(e, cx),
+                }
+            }
+            Some(Form::Pool { id }) => {
+                let name = self.text(&self.fields.name, cx);
+                match self.core.rename_pool(&id, &name) {
+                    Ok(_) => self.close_form(cx),
                     Err(e) => return self.fail(e, cx),
                 }
             }
@@ -326,6 +337,70 @@ impl BragiView {
             self.notice = Some(e.message);
         }
         self.refresh_prefs();
+        cx.notify();
+    }
+
+    pub fn add_pool(&mut self, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        let core = self.core.clone();
+        self._tasks.push(cx.spawn(async move |this, cx| {
+            let r = core.add_pool().await;
+            let _ = this.update(cx, |v, cx| {
+                if let Err(e) = r {
+                    v.notice = Some(e.message);
+                }
+                cx.notify();
+            });
+        }));
+        cx.notify();
+    }
+
+    pub fn switch_pool(&mut self, id: &str, cx: &mut Context<Self>) {
+        let (core, id) = (self.core.clone(), id.to_string());
+        self._tasks.push(cx.spawn(async move |this, cx| {
+            let r = core.switch_pool(&id).await;
+            let _ = this.update(cx, |v, cx| {
+                match r {
+                    Ok(p) => v.notice = Some(format!("Switched to {}.", p.name)),
+                    Err(e) => v.notice = Some(e.message),
+                }
+                v.current = None;
+                v.reload();
+                cx.notify();
+            });
+        }));
+    }
+
+    pub fn pool_rename_form(&mut self, id: &str, cx: &mut Context<Self>) {
+        let name = self.prefs.pools.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_default();
+        let n = self.fields.name.clone();
+        n.update(cx, |i, cx| i.set_text(&name, cx));
+        self.prefs.form = Some(Form::Pool { id: id.to_string() });
+        self.prefs.form_error = None;
+        cx.notify();
+    }
+
+    pub fn ask_delete_pool(&mut self, id: &str, cx: &mut Context<Self>) {
+        let name = self.prefs.pools.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_else(|| id.to_string());
+        self.prefs.delete_pool = Some((id.to_string(), name));
+        cx.notify();
+    }
+
+    pub fn confirm_delete_pool(&mut self, cx: &mut Context<Self>) {
+        let Some((id, _)) = self.prefs.delete_pool.take() else { return };
+        let core = self.core.clone();
+        self._tasks.push(cx.spawn(async move |this, cx| {
+            let r = core.remove_pool(&id).await;
+            let _ = this.update(cx, |v, cx| {
+                match r {
+                    Ok(()) => v.notice = Some("Removed the pool.".into()),
+                    Err(e) => v.notice = Some(e.message),
+                }
+                v.current = None;
+                v.reload();
+                cx.notify();
+            });
+        }));
         cx.notify();
     }
 
@@ -519,6 +594,77 @@ impl BragiView {
             .child(self.button("add-endpoint", "Add an endpoint", false).w(px(160.)).on_click(cx.listener(|v, _, _, cx| v.endpoint_form(None, cx))))
     }
 
+    pub(super) fn pools_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let mut list = div().flex().flex_col().gap(px(6.));
+        if self.prefs.pools.is_empty() {
+            list = list.child(
+                div()
+                    .id("no-pools")
+                    .text_size(px(12.))
+                    .text_color(rgb(t.text_secondary))
+                    .child("No Ymir pools yet. Add one to link this device to another cloud."),
+            );
+        }
+        for p in &self.prefs.pools {
+            let (id1, id2, id3) = (p.id.clone(), p.id.clone(), p.id.clone());
+            let status = if p.active {
+                "Active"
+            } else if p.linked {
+                "Saved"
+            } else {
+                "Not linked"
+            };
+            list = list.child(
+                div()
+                    .id(SharedString::from(format!("pool-{}", p.id)))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(6.))
+                    .p(px(10.))
+                    .rounded(px(8.))
+                    .bg(rgb(t.surface))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w(px(0.))
+                            .overflow_hidden()
+                            .flex()
+                            .flex_col()
+                            .child(div().text_size(px(13.)).child(p.name.clone()))
+                            .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(status)),
+                    )
+                    .children((!p.active).then(|| {
+                        self.small(SharedString::from(format!("pool-switch-{}", id1)), "Switch", false)
+                            .on_click(cx.listener(move |v, _, _, cx| v.switch_pool(&id1, cx)))
+                            .into_any_element()
+                    }))
+                    .child(
+                        self.small(SharedString::from(format!("pool-rename-{}", id2)), "Rename", false)
+                            .on_click(cx.listener(move |v, _, _, cx| v.pool_rename_form(&id2, cx))),
+                    )
+                    .child(
+                        self.small(SharedString::from(format!("pool-delete-{}", id3)), "Forget…", true)
+                            .on_click(cx.listener(move |v, _, _, cx| v.ask_delete_pool(&id3, cx))),
+                    ),
+            );
+        }
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(self.heading("YMIR POOLS"))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(t.text_secondary))
+                    .child("This device can be linked to more than one Ymir cloud. Switch which one chats go to; each pool keeps its own history."),
+            )
+            .child(list)
+            .child(self.button("add-pool", "Add a pool", false).w(px(140.)).on_click(cx.listener(|v, _, _, cx| v.add_pool(cx))))
+    }
+
     pub(super) fn links_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         let mut list = div().flex().flex_col().gap(px(6.));
@@ -653,6 +799,7 @@ impl BragiView {
                     .child(self.field(&self.fields.name))
                     .children(err)
                     .child(actions(None)),
+                Form::Pool { .. } => self.card("Rename pool").child(self.field(&self.fields.name)).children(err).child(actions(None)),
             };
             return Some(self.modal("form", card).into_any_element());
         }
@@ -700,6 +847,31 @@ impl BragiView {
                     ),
             );
             return Some(self.modal("delete-endpoint", c).into_any_element());
+        }
+        if let Some((_, name)) = &self.prefs.delete_pool {
+            let c =
+                self.card(&format!("Forget {name}?"))
+                    .child(div().id("pool-delete-text").text_size(px(13.)).text_color(rgb(t.text_secondary)).child(
+                        "This device forgets that Ymir pool. Its identity and history on this device are deleted. Other devices are not changed.",
+                    ))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap(px(8.))
+                            .justify_end()
+                            .child(self.button("pool-delete-cancel", "Cancel", false).on_click(cx.listener(|v, _, _, cx| {
+                                v.prefs.delete_pool = None;
+                                cx.notify();
+                            })))
+                            .child(
+                                self.button("pool-delete-confirm", "Forget", true)
+                                    .bg(rgb(t.error))
+                                    .text_color(rgb(t.background))
+                                    .on_click(cx.listener(|v, _, _, cx| v.confirm_delete_pool(cx))),
+                            ),
+                    );
+            return Some(self.modal("delete-pool", c).into_any_element());
         }
         if let Some(a) = &self.prefs.delete_link {
             let c = self

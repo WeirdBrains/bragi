@@ -26,7 +26,12 @@ String humanSize(int n) {
 
 /// An agent task's approval card, waiting for the user.
 class ApprovalCard {
-  const ApprovalCard({required this.requestId, required this.ask, required this.summary, required this.tier});
+  const ApprovalCard({
+    required this.requestId,
+    required this.ask,
+    required this.summary,
+    required this.tier,
+  });
 
   final String requestId;
   final int ask;
@@ -36,8 +41,8 @@ class ApprovalCard {
 
 class BragiController extends ChangeNotifier {
   BragiController(this.api, {ClipBackend Function()? audio, CodeApi? code})
-      : _newAudio = audio ?? ClipBackend.create,
-        _codeApi = code ?? const RustCodeApi();
+    : _newAudio = audio ?? ClipBackend.create,
+      _codeApi = code ?? const RustCodeApi();
 
   final BragiApi api;
   final CodeApi _codeApi;
@@ -55,6 +60,10 @@ class BragiController extends ChangeNotifier {
   /// and the conversations with their folder and target.
   List<EndpointView> endpoints = const [];
   List<LinkView> links = const [];
+  List<PoolView> pools = const [];
+
+  /// Hide the history sidebar on a wide layout (remembered in the profile).
+  bool sidebarCollapsed = false;
   List<TargetView> targets = const [];
   List<FolderView> folders = const [];
   List<SessionView> sessions = const [];
@@ -86,7 +95,8 @@ class BragiController extends ChangeNotifier {
     final hit = _markdown[key];
     if (hit != null) return hit;
     if (_markdown.length > 200) _markdown.clear();
-    return _markdown[key] = jsonDecode(api.markdownJson(text, streaming)) as Map<String, dynamic>;
+    return _markdown[key] =
+        jsonDecode(api.markdownJson(text, streaming)) as Map<String, dynamic>;
   }
 
   /// When the streaming answer's first reasoning arrived (the Thinking section's live time).
@@ -101,15 +111,21 @@ class BragiController extends ChangeNotifier {
   bool get streaming => requestId != null;
   bool get canContinue => !streaming && (current?.continuable ?? false);
   List<ModelView> get models => state?.models ?? const [];
-  String? get model => (_model != null && models.any((m) => m.id == _model)) ? _model : state?.defaultModel;
+  String? get model => (_model != null && models.any((m) => m.id == _model))
+      ? _model
+      : state?.defaultModel;
 
   Future<void> attach() async {
     await appearance.load();
+    try {
+      sidebarCollapsed = api.sidebarCollapsed();
+    } catch (_) {}
     _watch = api.watchState().listen((s) {
       final wasLinked = linked;
       state = s;
       // History from another device arrives with a state wake-up.
-      if (linked && (!wasLinked || (!streaming && !_refreshing))) unawaited(_refresh());
+      if (linked && (!wasLinked || (!streaming && !_refreshing)))
+        unawaited(_refresh());
       notifyListeners();
     });
     await _refresh();
@@ -126,32 +142,54 @@ class BragiController extends ChangeNotifier {
 
   bool _refreshing = false;
 
+  /// Bumped at the start of each history load; a slower, earlier load must not overwrite a newer one.
+  int _loadRev = 0;
+
+  /// The conversation the user last opened; a stale list refresh must not replace it with another.
+  String? _openId;
+
   Future<void> _refresh() async {
+    final rev = ++_loadRev;
     _refreshing = true;
     try {
-      conversations = await api.conversations(0, 100);
+      final conversations = await api.conversations(0, 100);
       await _refreshSettings();
-      final c = current;
-      if (c != null) {
-        current = await api.conversation(c.id);
+      if (rev != _loadRev) return;
+      this.conversations = conversations;
+      final id = _openId ?? current?.id;
+      if (id != null) {
+        final latest = await api.conversation(id);
+        if (rev != _loadRev) return;
+        current = latest;
         messages = List.of(current!.messages);
       }
     } catch (e) {
+      if (rev != _loadRev) return;
       notice = '$e';
+    } finally {
+      if (rev == _loadRev) _refreshing = false;
     }
-    _refreshing = false;
+    if (rev != _loadRev) return;
     notifyListeners();
   }
 
   Future<void> _refreshSettings() async {
     endpoints = await api.endpoints();
     links = await api.links();
+    pools = await api.pools();
     targets = await api.targets();
     folders = await api.folders();
     sessions = await api.sessions(0, 100);
     final t = newChatTarget;
     // A target that was deleted or switched to fallback-only is no longer offered.
-    if (t != null && !targets.any((x) => x.kind == t.kind && x.endpoint == t.endpoint && x.model == t.model)) newChatTarget = null;
+    if (t != null &&
+        !targets.any(
+          (x) =>
+              x.kind == t.kind &&
+              x.endpoint == t.endpoint &&
+              x.model == t.model,
+        ))
+      newChatTarget = null;
   }
 
   /// The open conversation's session (its folder and target), if it has one listed.
@@ -165,7 +203,8 @@ class BragiController extends ChangeNotifier {
   }
 
   /// The words for where the next message goes.
-  String get targetLabel => session?.targetLabel ?? newChatTarget?.label ?? 'Weirdnet pool';
+  String get targetLabel =>
+      session?.targetLabel ?? newChatTarget?.label ?? 'Weirdnet pool';
 
   /// The open session lost its endpoint: the next send needs a target.
   bool get needsTarget => session?.unbound ?? false;
@@ -203,7 +242,10 @@ class BragiController extends ChangeNotifier {
   }
 
   /// Deletes an endpoint; its sessions move to [rebindTo] or become unbound. History stays.
-  Future<DeleteReportView?> deleteEndpoint(String id, TargetView? rebindTo) async {
+  Future<DeleteReportView?> deleteEndpoint(
+    String id,
+    TargetView? rebindTo,
+  ) async {
     DeleteReportView? r;
     await _try(() async {
       r = await api.deleteEndpoint(id, rebindTo);
@@ -270,10 +312,11 @@ class BragiController extends ChangeNotifier {
     await _refreshSettings();
   });
 
-  Future<void> moveSession(String conversation, String? folder) => _try(() async {
-    await api.setSessionFolder(conversation, folder);
-    await _refreshSettings();
-  });
+  Future<void> moveSession(String conversation, String? folder) =>
+      _try(() async {
+        await api.setSessionFolder(conversation, folder);
+        await _refreshSettings();
+      });
 
   Future<void> _try(Future<void> Function() f) async {
     try {
@@ -288,8 +331,46 @@ class BragiController extends ChangeNotifier {
   }
 
   Future<void> showCode() => _try(() => api.pairOffer());
-  Future<void> confirmCode(bool matches) => _try(() => api.pairConfirm(matches));
+  Future<void> confirmCode(bool matches) =>
+      _try(() => api.pairConfirm(matches));
   Future<void> cancelCode() => _try(() => api.pairCancel());
+
+  void toggleSidebar() {
+    sidebarCollapsed = !sidebarCollapsed;
+    try {
+      api.setSidebarCollapsed(sidebarCollapsed);
+    } catch (e) {
+      notice = '$e';
+    }
+    notifyListeners();
+  }
+
+  Future<void> addPool() => _try(() async {
+    await api.addPool();
+  });
+
+  Future<void> switchPool(String id) => _try(() async {
+    _openId = null;
+    current = null;
+    messages = const [];
+    final p = await api.switchPool(id);
+    await _refresh();
+    notice = 'Switched to ${p.name}.';
+  });
+
+  Future<void> renamePool(String id, String name) => _try(() async {
+    await api.renamePool(id, name);
+    await _refreshSettings();
+  });
+
+  Future<void> removePool(String id) => _try(() async {
+    _openId = null;
+    current = null;
+    messages = const [];
+    await api.removePool(id);
+    await _refresh();
+    notice = 'Removed the pool.';
+  });
 
   void pickModel(String id) {
     _model = id;
@@ -297,6 +378,8 @@ class BragiController extends ChangeNotifier {
   }
 
   void newChat() {
+    _loadRev++;
+    _openId = null;
     current = null;
     newChatTarget = null;
     messages = const [];
@@ -304,8 +387,11 @@ class BragiController extends ChangeNotifier {
   }
 
   Future<void> open(String id) => _try(() async {
-    current = await api.conversation(id);
-    messages = List.of(current!.messages);
+    _openId = id;
+    final current = await api.conversation(id);
+    if (_openId != id) return;
+    this.current = current;
+    messages = List.of(current.messages);
   });
 
   /// Toggles a reaction on a message of the open conversation (the same one again removes it).
@@ -320,14 +406,21 @@ class BragiController extends ChangeNotifier {
   Future<void> send(String prompt) async {
     if (streaming) return;
     // Words are needed unless an image or a sound is attached.
-    if (prompt.trim().isEmpty && !attachments.any((a) => a.kind != 'text')) return;
+    if (prompt.trim().isEmpty && !attachments.any((a) => a.kind != 'text'))
+      return;
     final files = attachments;
     attachments = const [];
     await _try(() async {
       try {
         final started = agent
             ? await api.sendAgent(current?.id, prompt, null, files)
-            : await api.sendTo(current?.id, prompt, model, files, current == null ? newChatTarget : null);
+            : await api.sendTo(
+                current?.id,
+                prompt,
+                model,
+                files,
+                current == null ? newChatTarget : null,
+              );
         await _follow(started);
       } catch (_) {
         attachments = files;
@@ -359,7 +452,10 @@ class BragiController extends ChangeNotifier {
   Future<Uint8List> fileBytes(FileView f) {
     final c = current;
     if (c == null) return Future.error('no chat open');
-    return _bytes.putIfAbsent('${c.id}/${f.id}', () => api.fileBytes(c.id, f.id));
+    return _bytes.putIfAbsent(
+      '${c.id}/${f.id}',
+      () => api.fileBytes(c.id, f.id),
+    );
   }
 
   // ---- audio files: one clip at a time, in the chat on screen (bragi_core::audio::Deck) ----
@@ -396,7 +492,9 @@ class BragiController extends ChangeNotifier {
       return;
     }
     await stopClip();
-    final known = f.durationMs == null ? null : Duration(milliseconds: f.durationMs!.toInt());
+    final known = f.durationMs == null
+        ? null
+        : Duration(milliseconds: f.durationMs!.toInt());
     final next = Clip(conversation: conv, file: f.id, duration: known);
     clip = next;
     notifyListeners();
@@ -435,7 +533,9 @@ class BragiController extends ChangeNotifier {
     final c = clip;
     final len = c?.duration;
     if (c == null || c.file != f.id || c.loading || len == null) return;
-    final to = Duration(milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round());
+    final to = Duration(
+      milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round(),
+    );
     c.position = to;
     notifyListeners();
     await _audio?.seek(to);
@@ -459,7 +559,10 @@ class BragiController extends ChangeNotifier {
     final n = notice;
     if (n != null && n != _logged) {
       _logged = n;
-      final ok = n.startsWith('Saved ') || n.startsWith('Linked') || n.startsWith('Deleted ');
+      final ok =
+          n.startsWith('Saved ') ||
+          n.startsWith('Linked') ||
+          n.startsWith('Deleted ');
       code.log(ok ? 'ok' : 'info', n);
     }
     if (n == null) _logged = null;
@@ -468,24 +571,40 @@ class BragiController extends ChangeNotifier {
 
   /// Opens conversation [id] (a code turn just saved in it) and refreshes the history list.
   Future<void> showConversation(String id) async {
+    _openId = id;
+    final rev = ++_loadRev;
     try {
-      current = await api.conversation(id);
-      messages = List.of(current!.messages);
-      conversations = await api.conversations(0, 100);
+      final current = await api.conversation(id);
+      final conversations = await api.conversations(0, 100);
       await _refreshSettings();
+      if (_openId != id) return;
+      if (rev != _loadRev) return;
+      this.current = current;
+      messages = List.of(current.messages);
+      this.conversations = conversations;
     } catch (e) {
+      if (rev != _loadRev) return;
       notice = '$e';
     }
+    if (rev != _loadRev) return;
     notifyListeners();
   }
 
   /// Streams an answer that bragi-core keeps out of history until it is done (a code ask): the
   /// ask and the growing answer are shown here meanwhile. Returns the answer, or null when it
   /// was stopped before any text.
-  Future<MessageView?> followLocal(String request, String prompt, String? model) async {
+  Future<MessageView?> followLocal(
+    String request,
+    String prompt,
+    String? model,
+  ) async {
     requestId = request;
     thinkingSince = null;
-    messages = [...messages, localMessage('user', prompt), localMessage('assistant', '', state: 'streaming', model: model)];
+    messages = [
+      ...messages,
+      localMessage('user', prompt),
+      localMessage('assistant', '', state: 'streaming', model: model),
+    ];
     notifyListeners();
     var failed = false;
     try {
@@ -663,48 +782,64 @@ class BragiController extends ChangeNotifier {
       int? resumes,
       List<String>? tools,
     }) => MessageView(
-          id: last.id,
-          hasReply: last.hasReply,
-          reactions: last.reactions,
-          role: last.role,
-          text: text ?? last.text,
-          reasoning: reasoning ?? last.reasoning,
-          thinkingMs: thinkingMs ?? last.thinkingMs,
-          state: last.state,
-          model: model ?? last.model,
-          node: node ?? last.node,
-          cacheHit: cacheHit ?? last.cacheHit,
-          standin: standin ?? last.standin,
-          resumes: resumes ?? last.resumes,
-          attachments: last.attachments,
-          files: last.files,
-          tools: tools ?? last.tools,
-          agent: last.agent,
-          mode: last.mode,
-          atMs: last.atMs,
-        );
-    void replace(MessageView m) => messages = [...messages.take(messages.length - 1), m];
+      id: last.id,
+      hasReply: last.hasReply,
+      reactions: last.reactions,
+      role: last.role,
+      text: text ?? last.text,
+      reasoning: reasoning ?? last.reasoning,
+      thinkingMs: thinkingMs ?? last.thinkingMs,
+      state: last.state,
+      model: model ?? last.model,
+      node: node ?? last.node,
+      cacheHit: cacheHit ?? last.cacheHit,
+      standin: standin ?? last.standin,
+      resumes: resumes ?? last.resumes,
+      attachments: last.attachments,
+      files: last.files,
+      tools: tools ?? last.tools,
+      agent: last.agent,
+      mode: last.mode,
+      atMs: last.atMs,
+    );
+    void replace(MessageView m) =>
+        messages = [...messages.take(messages.length - 1), m];
     switch (e.kind) {
       case 'delta':
-        messages = [...messages.take(messages.length - 1), with_(text: splice(last.text, e.offset.toInt(), e.text))];
+        messages = [
+          ...messages.take(messages.length - 1),
+          with_(text: splice(last.text, e.offset.toInt(), e.text)),
+        ];
       case 'reasoning':
         thinkingSince ??= DateTime.now();
-        replace(with_(reasoning: splice(last.reasoning, e.offset.toInt(), e.text)));
+        replace(
+          with_(reasoning: splice(last.reasoning, e.offset.toInt(), e.text)),
+        );
       case 'thought':
         thinkingSince = null;
         replace(with_(thinkingMs: e.elapsedMs));
       case 'started':
-        messages = [...messages.take(messages.length - 1), with_(model: e.model, node: e.node)];
+        messages = [
+          ...messages.take(messages.length - 1),
+          with_(model: e.model, node: e.node),
+        ];
       case 'meta':
         replace(with_(cacheHit: e.cacheHit, standin: e.standin));
       case 'resumed':
         replace(with_(node: e.node, resumes: last.resumes + 1));
       case 'tool':
-        if (e.toolState == 'started' && e.tool != null && !last.tools.contains(e.tool)) {
+        if (e.toolState == 'started' &&
+            e.tool != null &&
+            !last.tools.contains(e.tool)) {
           replace(with_(tools: [...last.tools, e.tool!]));
         }
       case 'approval':
-        card = ApprovalCard(requestId: requestId!, ask: e.ask.toInt(), summary: e.text, tier: e.tier ?? 'other');
+        card = ApprovalCard(
+          requestId: requestId!,
+          ask: e.ask.toInt(),
+          summary: e.text,
+          tier: e.tier ?? 'other',
+        );
       case 'notice':
         notice = e.text;
       case 'retry':

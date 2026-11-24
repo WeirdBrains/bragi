@@ -69,7 +69,7 @@ pub(crate) fn load_peers(dir: &std::path::Path) -> Vec<String> {
 }
 
 /// Adds the `new` addresses `list` doesn't have yet; returns whether any was added.
-fn merge_peers(list: &mut Vec<String>, new: impl IntoIterator<Item = String>) -> bool {
+pub(crate) fn merge_peers(list: &mut Vec<String>, new: impl IntoIterator<Item = String>) -> bool {
     let mut added = false;
     for a in new {
         let a = a.trim().to_string();
@@ -150,6 +150,9 @@ pub struct AppState {
     /// What became of the last node address added in Link a device.
     #[serde(default)]
     pub node_search: NodeSearch,
+    /// The active Ymir pool, when any is saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pool: Option<crate::pools::PoolRef>,
 }
 
 /// The last node address added with [`Core::add_node`]: looked for, found, or not found in
@@ -246,6 +249,8 @@ pub(crate) struct Inner {
     pub(crate) mcp: crate::mcp_servers::McpServers,
     /// Folders, and the target each conversation is bound to (LF-11).
     pub(crate) sessions: crate::sessions::Sessions,
+    /// Saved Ymir pools and which one is active.
+    pub(crate) pools: crate::pools::Pools,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -354,11 +359,13 @@ impl Core {
         hints(&cfg.peers)?;
         std::fs::create_dir_all(&cfg.dir)?;
         let dir = cfg.dir.clone();
-        let history = Arc::new(History::open(&cfg.dir)?);
+        let pools = crate::pools::Pools::open(&cfg.dir)?;
+        let pool_dir = pools.active_dir();
+        let history = Arc::new(History::open(&pool_dir)?);
         let (state, _) = watch::channel(AppState::default());
         let mut known = cfg.peers.clone();
         if cfg.transport == Transport::Internet {
-            merge_peers(&mut known, load_peers(&cfg.dir));
+            merge_peers(&mut known, load_peers(&pool_dir));
         }
         let peers = Arc::new(Mutex::new(known));
         let core = Core {
@@ -377,10 +384,12 @@ impl Core {
                 reactions: tokio::sync::broadcast::channel(64).0,
                 endpoints: crate::endpoints::Endpoints::open(&dir),
                 mcp: crate::mcp_servers::McpServers::open(&dir),
-                sessions: crate::sessions::Sessions::open(&dir),
+                sessions: crate::sessions::Sessions::open(&pool_dir),
+                pools,
             }),
             _runtime: runtime,
         };
+        core.publish_pool();
         if Identity::exists(&core.identity_dir()) {
             let c = core.clone();
             core.inner.handle.spawn(async move {
@@ -398,8 +407,8 @@ impl Core {
         &self.inner.handle
     }
 
-    fn identity_dir(&self) -> PathBuf {
-        self.inner.cfg.dir.join("identity")
+    pub(crate) fn identity_dir(&self) -> PathBuf {
+        self.pool_dir().join("identity")
     }
 
     /// This device has been linked before (it goes online by itself on start).
@@ -425,7 +434,7 @@ impl Core {
     }
 
     /// Starts the Weirdnet node, the pool and the catalog for the stored identity.
-    async fn go_online(&self) -> Result<()> {
+    pub(crate) async fn go_online(&self) -> Result<()> {
         let identity =
             Arc::new(Identity::open(&self.identity_dir())?.ok_or_else(|| CoreError::new(ErrorKind::NotPaired, "this device is not linked"))?);
         let peers_now = lock(&self.inner.peers).clone();
@@ -467,10 +476,14 @@ impl Core {
         }));
         let (user, device) = (identity.user_id(), identity.our_cert().label);
         *lock(&self.inner.net) = Some(Arc::new(Net { identity, node, nodes, dialer, opts, tasks }));
+        if let Some(id) = self.inner.pools.active_id() {
+            let _ = self.inner.pools.set_meta(&id, user.clone(), device.clone());
+        }
         self.inner.state.send_modify(|s| {
             s.online = true;
             s.pair = PairState::Linked { user, device };
         });
+        self.publish_pool();
         Ok(())
     }
 
@@ -482,6 +495,16 @@ impl Core {
         if Identity::exists(&self.identity_dir()) {
             return Err(CoreError::new(ErrorKind::Pairing, "this device is already linked"));
         }
+        if lock(&self.inner.offer).is_some() {
+            return Err(CoreError::new(ErrorKind::Pairing, "a link is already in progress"));
+        }
+        self.inner.pools.ensure_first()?;
+        self.publish_pool();
+        self.offer_into().await
+    }
+
+    /// Starts a link code whose identity will be written under the offer's pool directory.
+    pub(crate) async fn offer_into(&self) -> Result<String> {
         let key = Keypair::generate_ed25519();
         let (k, cfg, label) = (key.clone(), node_config(&self.inner.cfg, true)?, self.inner.cfg.label.clone());
         let host = tokio::task::spawn_blocking(move || HostNode::start(SCHEME, k, cfg, &label))
@@ -492,18 +515,44 @@ impl Core {
         let link = host.link().to_string();
         *lock(&self.inner.offer) = Some(host.clone());
         self.set_pair(PairState::Offering { link: link.clone(), expires_ms: host.expires_ms() });
+        // Capture the pending now: follow_offer starts later, and must not pick up a
+        // newer add_pool's pending if this offer was cancelled in between.
+        let pending = self.inner.pools.pending_id();
+        let dest_pool = self.offer_pool_dir();
         let core = self.clone();
-        self.inner.handle.spawn(async move { core.follow_offer(host, key).await });
+        self.inner.handle.spawn(async move { core.follow_offer(host, key, pending, dest_pool).await });
         Ok(link)
     }
 
-    async fn follow_offer(&self, host: Arc<HostNode>, key: Keypair) {
+    async fn follow_offer(&self, host: Arc<HostNode>, key: Keypair, mine: Option<String>, dest_pool: std::path::PathBuf) {
         let mut shown = false;
+        let dest = dest_pool.join("identity");
+        let drop_ours = |c: &Core| {
+            let mut o = lock(&c.inner.offer);
+            if o.as_ref().is_some_and(|h| Arc::ptr_eq(h, &host)) {
+                *o = None;
+            }
+        };
         loop {
             let status = host.status();
             let stop = |c: &Core, message: &str| {
-                *lock(&c.inner.offer) = None;
-                c.set_pair(PairState::Failed { message: message.into() });
+                drop_ours(c);
+                if let Some(id) = &mine {
+                    c.inner.pools.cancel_pending_if(id);
+                }
+                // A newer offer may already be showing; leave its pair state alone.
+                if lock(&c.inner.offer).is_some() {
+                    return;
+                }
+                if lock(&c.inner.net).is_some() {
+                    // A new-pool link failed; the current pool stays up.
+                    if let Ok(net) = c.net() {
+                        c.set_pair(PairState::Linked { user: net.identity.user_id(), device: net.identity.our_cert().label });
+                    }
+                    tracing::warn!("linking a new pool: {message}");
+                } else {
+                    c.set_pair(PairState::Failed { message: message.into() });
+                }
             };
             match status {
                 HostStatus::Waiting => {}
@@ -513,20 +562,45 @@ impl Core {
                 }
                 HostStatus::Received { .. } if matches!(self.state().pair, PairState::Waiting { .. }) => {
                     let adopted = host.take().map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string())).and_then(|t| {
-                        let id = Identity::adopt(&self.identity_dir(), key.clone(), &t.seed, t.node_cert.clone(), &t.settings)?;
+                        let id = Identity::adopt(&dest, key.clone(), &t.seed, t.node_cert.clone(), &t.settings)?;
                         // Where the user's nodes are, from the device that linked this one: without
                         // it a device on another network than its nodes never finds them.
-                        self.remember_peers(LinkSettings::peers_in(&t.settings));
+                        self.remember_peers_in(&dest_pool, LinkSettings::peers_in(&t.settings));
                         Ok(id)
                     });
-                    *lock(&self.inner.offer) = None;
+                    drop_ours(self);
                     match adopted {
-                        Ok(_) => {
-                            if let Err(e) = self.go_online().await {
+                        Ok(id) => {
+                            if let Some(ref pid) = mine {
+                                let Some(pending) = self.inner.pools.take_pending_if(pid) else {
+                                    return;
+                                };
+                                let (user, device) = (id.user_id(), id.our_cert().label);
+                                if let Err(e) = self.inner.pools.commit_pending(pending, user, device) {
+                                    self.set_pair(PairState::Failed { message: e.message });
+                                    return;
+                                }
+                                self.go_offline().await;
+                                if let Err(e) = self.reload_active().await {
+                                    self.set_pair(PairState::Failed { message: e.message });
+                                }
+                            } else if let Err(e) = self.go_online().await {
                                 self.set_pair(PairState::Failed { message: e.message });
                             }
                         }
-                        Err(e) => self.set_pair(PairState::Failed { message: e.message }),
+                        Err(e) => {
+                            if let Some(id) = &mine {
+                                self.inner.pools.cancel_pending_if(id);
+                            }
+                            if lock(&self.inner.net).is_some() {
+                                if let Ok(net) = self.net() {
+                                    self.set_pair(PairState::Linked { user: net.identity.user_id(), device: net.identity.our_cert().label });
+                                }
+                                tracing::warn!("linking a new pool: {}", e.message);
+                            } else {
+                                self.set_pair(PairState::Failed { message: e.message });
+                            }
+                        }
                     }
                     return;
                 }
@@ -562,7 +636,12 @@ impl Core {
         if let Some(h) = lock(&self.inner.offer).take() {
             h.cancel();
         }
-        if !matches!(self.state().pair, PairState::Linked { .. }) {
+        self.inner.pools.cancel_pending();
+        if lock(&self.inner.net).is_some() {
+            if let Ok(net) = self.net() {
+                self.set_pair(PairState::Linked { user: net.identity.user_id(), device: net.identity.our_cert().label });
+            }
+        } else if !matches!(self.state().pair, PairState::Linked { .. }) {
             self.set_pair(PairState::Unpaired);
         }
     }
@@ -1158,20 +1237,24 @@ impl Core {
     /// Adds `addresses` to the ones sync passes and the node dial, and keeps them in
     /// [`PEERS_FILE`] (real network only).
     fn remember_peers(&self, addresses: Vec<String>) {
-        let all = {
+        self.remember_peers_in(&self.pool_dir(), addresses);
+    }
+
+    /// Writes `addresses` into `dir`'s [`PEERS_FILE`]. The in-memory list is only updated when
+    /// `dir` is the active pool (a new pool being linked must not mix its nodes into the current
+    /// one).
+    fn remember_peers_in(&self, dir: &std::path::Path, addresses: Vec<String>) {
+        let active = dir == self.pool_dir();
+        let mut kept = load_peers(dir);
+        merge_peers(&mut kept, addresses.clone());
+        if active {
             let mut p = lock(&self.inner.peers);
-            if !merge_peers(&mut p, addresses) {
-                return;
-            }
-            p.clone()
-        };
-        if self.inner.cfg.transport == Transport::Internet {
-            let mut kept = load_peers(&self.inner.cfg.dir);
-            merge_peers(&mut kept, all);
-            let text: String = kept.iter().map(|a| format!("{a}\n")).collect();
-            if let Err(e) = std::fs::create_dir_all(&self.inner.cfg.dir).and_then(|_| std::fs::write(self.inner.cfg.dir.join(PEERS_FILE), text)) {
-                tracing::warn!("saving node addresses: {e}");
-            }
+            merge_peers(&mut p, addresses);
+            merge_peers(&mut kept, p.clone());
+        }
+        let text: String = kept.iter().map(|a| format!("{a}\n")).collect();
+        if let Err(e) = std::fs::create_dir_all(dir).and_then(|_| std::fs::write(dir.join(PEERS_FILE), text)) {
+            tracing::warn!("saving node addresses: {e}");
         }
     }
 

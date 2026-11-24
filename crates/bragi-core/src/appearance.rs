@@ -64,11 +64,14 @@ impl ModePref {
 pub struct Preference {
     pub theme: String,
     pub mode: ModePref,
+    /// Whether the conversation history sidebar is hidden. Remembered across launches.
+    #[serde(default)]
+    pub sidebar_collapsed: bool,
 }
 
 impl Default for Preference {
     fn default() -> Self {
-        Self { theme: DEFAULT_THEME.into(), mode: ModePref::default() }
+        Self { theme: DEFAULT_THEME.into(), mode: ModePref::default(), sidebar_collapsed: false }
     }
 }
 
@@ -206,6 +209,13 @@ impl Appearance {
 
     pub fn set_mode(&self, mode: ModePref) -> Result<Preference> {
         let p = Preference { mode, ..self.preference() };
+        self.set_preference(&p)?;
+        Ok(p)
+    }
+
+    /// Hides or shows the history sidebar, and remembers the choice.
+    pub fn set_sidebar_collapsed(&self, collapsed: bool) -> Result<Preference> {
+        let p = Preference { sidebar_collapsed: collapsed, ..self.preference() };
         self.set_preference(&p)?;
         Ok(p)
     }
@@ -402,15 +412,19 @@ mod tests {
     #[test]
     fn the_default_is_bragi_in_system_mode_and_the_choice_persists() {
         let (d, a) = app();
-        assert_eq!(a.preference(), Preference { theme: "bragi".into(), mode: ModePref::System });
+        assert_eq!(a.preference(), Preference { theme: "bragi".into(), mode: ModePref::System, sidebar_collapsed: false });
         a.set_theme("nord").unwrap();
         a.set_mode(ModePref::Light).unwrap();
         let again = Appearance::open(d.path());
-        assert_eq!(again.preference(), Preference { theme: "nord".into(), mode: ModePref::Light });
+        assert_eq!(again.preference(), Preference { theme: "nord".into(), mode: ModePref::Light, sidebar_collapsed: false });
         assert_eq!(again.palette().theme, "nord");
         assert!(!again.palette().is_dark());
         assert!(a.set_theme("nope").is_err());
         assert_eq!(a.preference().theme, "nord");
+        a.set_sidebar_collapsed(true).unwrap();
+        assert!(Appearance::open(d.path()).preference().sidebar_collapsed);
+        a.set_sidebar_collapsed(false).unwrap();
+        assert!(!Appearance::open(d.path()).preference().sidebar_collapsed);
     }
 
     #[test]

@@ -95,7 +95,7 @@ impl App {
                     self.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
                 }
             }
-            Action::SettingsRow(i) if i < self.settings.endpoints.len() && self.settings.form.is_none() => {
+            Action::SettingsRow(i) if i < self.settings.row_count() && self.settings.form.is_none() => {
                 self.settings.sel = i;
                 if double {
                     self.on_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));

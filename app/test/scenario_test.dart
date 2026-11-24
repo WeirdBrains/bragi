@@ -26,7 +26,9 @@ void main() {
 
   setUpAll(() async {
     final lib = Platform.environment['BRAGI_BRIDGE_LIB'];
-    await RustLib.init(externalLibrary: lib == null ? null : ExternalLibrary.open(lib));
+    await RustLib.init(
+      externalLibrary: lib == null ? null : ExternalLibrary.open(lib),
+    );
     dir = Directory.systemTemp.createTempSync('bragi-flutter-test');
   });
 
@@ -40,7 +42,14 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.runAsync(() => rust.startDemo(dir: dir.path, label: 'Bragi test', acceptAfterMs: 200, wordDelayMs: 30));
+    await tester.runAsync(
+      () => rust.startDemo(
+        dir: dir.path,
+        label: 'Bragi test',
+        acceptAfterMs: 200,
+        wordDelayMs: 30,
+      ),
+    );
     final c = BragiController(const RustBragiApi());
     await tester.runAsync(c.attach);
     await tester.pumpWidget(BragiApp(controller: c));
@@ -48,7 +57,9 @@ void main() {
     Future<void> until(String what, bool Function() done) async {
       for (var i = 0; i < 600; i++) {
         if (done()) return;
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
         await tester.pump();
       }
       fail('timed out waiting for $what');
@@ -65,26 +76,44 @@ void main() {
     await tester.tap(find.byKey(const Key('codes-match')));
 
     // List models.
-    await until('the models', () => c.linked && shown('model-gemma-4-e4b') && shown('model-qwen3-32b'));
+    await until(
+      'the models',
+      () => c.linked && shown('model-gemma-4-e4b') && shown('model-qwen3-32b'),
+    );
     expect(c.model, 'gemma-4-e4b', reason: 'the warm model comes first');
-    expect(c.models.map((m) => m.id), isNot(contains('nomic-embed-text')), reason: 'chat models only');
+    expect(
+      c.models.map((m) => m.id),
+      isNot(contains('nomic-embed-text')),
+      reason: 'chat models only',
+    );
 
     // Chat.
     await tester.enterText(find.byKey(const Key('prompt')), prompt1);
     await tester.tap(find.byKey(const Key('send')));
-    await until('the answer', () => !c.streaming && c.messages.length == 2 && last().state == 'complete');
-    final want1 = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: prompt1)))!;
+    await until(
+      'the answer',
+      () =>
+          !c.streaming && c.messages.length == 2 && last().state == 'complete',
+    );
+    final want1 = (await tester.runAsync(
+      () => rust.demoAnswer(model: 'gemma-4-e4b', prompt: prompt1),
+    ))!;
     expect(last().text, want1);
 
     // Cancel.
     await tester.enterText(find.byKey(const Key('prompt')), prompt2);
     await tester.tap(find.byKey(const Key('send')));
-    await until('some streamed text', () => c.messages.length == 4 && last().text.split(' ').length > 8);
+    await until(
+      'some streamed text',
+      () => c.messages.length == 4 && last().text.split(' ').length > 8,
+    );
     expect(shown('stop'), isTrue);
     await tester.tap(find.byKey(const Key('stop')));
     await until('the stop', () => !c.streaming && last().state == 'stopped');
     final partial = last().text;
-    final want2 = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: prompt2)))!;
+    final want2 = (await tester.runAsync(
+      () => rust.demoAnswer(model: 'gemma-4-e4b', prompt: prompt2),
+    ))!;
     expect(partial.length, lessThan(want2.length));
     expect(shown('continue'), isTrue);
 
@@ -97,14 +126,27 @@ void main() {
 
     // B2: two inference nodes behind one model list.
     expect(c.state!.nodeCount, 2);
-    expect(c.models.map((m) => m.id), containsAll(['gemma-4-e4b', 'llama-3.3-70b', 'qwen3-32b']));
-    expect(c.models.firstWhere((m) => m.id == 'gemma-4-e4b').nodes, 2, reason: 'one row for a model on two nodes');
+    expect(
+      c.models.map((m) => m.id),
+      containsAll(['gemma-4-e4b', 'llama-3.3-70b', 'qwen3-32b']),
+    );
+    expect(
+      c.models.firstWhere((m) => m.id == 'gemma-4-e4b').nodes,
+      2,
+      reason: 'one row for a model on two nodes',
+    );
     expect(c.models.firstWhere((m) => m.id == 'llama-3.3-70b').nodes, 1);
 
     Future<void> ask(String text, int messages) async {
       await tester.enterText(find.byKey(const Key('prompt')), text);
       await tester.tap(find.byKey(const Key('send')));
-      await until('the answer', () => !c.streaming && c.messages.length == messages && last().state == 'complete');
+      await until(
+        'the answer',
+        () =>
+            !c.streaming &&
+            c.messages.length == messages &&
+            last().state == 'complete',
+      );
     }
 
     // A model that is not warm anywhere is answered by a stand-in, flagged.
@@ -134,7 +176,9 @@ void main() {
     const dies = 'Keep going even if a node dies.';
     await ask(dies, 2);
     expect(last().resumes, 1);
-    final wantDies = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: dies)))!;
+    final wantDies = (await tester.runAsync(
+      () => rust.demoAnswer(model: 'gemma-4-e4b', prompt: dies),
+    ))!;
     expect(last().text, wantDies);
     expect(find.textContaining('moved to another node'), findsOneWidget);
 
@@ -144,27 +188,50 @@ void main() {
     await tester.tap(find.byKey(const Key('attach')));
     await until('the file chip', () => shown('chip-0'));
     expect(c.attachments.single.name, 'sample-notes.md');
-    await tester.enterText(find.byKey(const Key('prompt')), 'What is on my list?');
+    await tester.enterText(
+      find.byKey(const Key('prompt')),
+      'What is on my list?',
+    );
     await tester.tap(find.byKey(const Key('send')));
-    await until('the answer', () => !c.streaming && c.messages.length == 2 && last().state == 'complete');
+    await until(
+      'the answer',
+      () =>
+          !c.streaming && c.messages.length == 2 && last().state == 'complete',
+    );
     expect(last().text, contains('I read sample-notes.md (3 lines)'));
     expect(c.messages.first.attachments.single.name, 'sample-notes.md');
     expect(c.attachments, isEmpty, reason: 'the chip went with the message');
     // LF-12: the attachment is a file card, and the answer's named code block is one too, saved from its card.
     final note = c.messages.first.files.single;
-    expect((note.name, note.kind, note.origin), ('sample-notes.md', 'text', 'attached'));
+    expect(
+      (note.name, note.kind, note.origin),
+      ('sample-notes.md', 'text', 'attached'),
+    );
     expect(shown('file-${note.id}'), isTrue);
     expect(find.textContaining('text/markdown'), findsOneWidget);
-    await tester.enterText(find.byKey(const Key('prompt')), 'Write hello world as a file');
+    await tester.enterText(
+      find.byKey(const Key('prompt')),
+      'Write hello world as a file',
+    );
     await tester.tap(find.byKey(const Key('send')));
-    await until('the file answer', () => !c.streaming && c.messages.length == 4 && last().state == 'complete');
+    await until(
+      'the file answer',
+      () =>
+          !c.streaming && c.messages.length == 4 && last().state == 'complete',
+    );
     final made = last().files.single;
-    expect((made.name, made.kind, made.origin, made.mime), ('hello.py', 'text', 'reply', 'text/x-python'));
+    expect(
+      (made.name, made.kind, made.origin, made.mime),
+      ('hello.py', 'text', 'reply', 'text/x-python'),
+    );
     expect(made.preview, 'print("Hello from your own cloud")');
     await tester.ensureVisible(find.byKey(Key('save-${made.id}')));
     await tester.pump();
     await tester.tap(find.byKey(Key('save-${made.id}')));
-    await until('the saved notice', () => c.notice?.startsWith('Saved hello.py to ') ?? false);
+    await until(
+      'the saved notice',
+      () => c.notice?.startsWith('Saved hello.py to ') ?? false,
+    );
     final saved = File(c.notice!.substring('Saved hello.py to '.length));
     expect(saved.readAsStringSync(), 'print("Hello from your own cloud")\n');
     saved.parent.deleteSync(recursive: true);
@@ -177,9 +244,16 @@ void main() {
     expect(c.attachments.length, 2, reason: '${c.notice}');
     await tester.enterText(find.byKey(const Key('prompt')), 'Listen to these');
     await tester.tap(find.byKey(const Key('send')));
-    await until('the audio answer', () => !c.streaming && c.messages.length == 6 && last().state == 'complete');
+    await until(
+      'the audio answer',
+      () =>
+          !c.streaming && c.messages.length == 6 && last().state == 'complete',
+    );
     final clips = c.messages[4].files;
-    expect(clips.map((f) => (f.kind, f.durationMs?.toInt())).toList(), [('audio', 3000), ('audio', 2000)]);
+    expect(clips.map((f) => (f.kind, f.durationMs?.toInt())).toList(), [
+      ('audio', 3000),
+      ('audio', 2000),
+    ]);
     expect(find.text('0:00 / 0:03'), findsOneWidget);
     await tester.ensureVisible(find.byKey(Key('play-${clips[0].id}')));
     await tester.pump();
@@ -193,9 +267,16 @@ void main() {
     expect(c.clip!.position, const Duration(milliseconds: 1500));
     await tester.tap(find.byKey(Key('play-${clips[0].id}')));
     await tester.pump(const Duration(milliseconds: 500));
-    expect((c.clip!.playing, c.clip!.position), (false, const Duration(milliseconds: 1500)), reason: 'paused holds');
+    expect(
+      (c.clip!.playing, c.clip!.position),
+      (false, const Duration(milliseconds: 1500)),
+      reason: 'paused holds',
+    );
     await tester.tap(find.byKey(Key('play-${clips[1].id}')));
-    await until('the second clip', () => c.clip?.file == clips[1].id && c.clip!.playing);
+    await until(
+      'the second clip',
+      () => c.clip?.file == clips[1].id && c.clip!.playing,
+    );
     c.newChat();
     await tester.pump();
     expect(c.clip, isNull, reason: 'the clip stops with the chat');
@@ -210,17 +291,27 @@ void main() {
     await tester.tap(find.byKey(const Key('agent')));
     await tester.pump();
     expect(c.agent, isTrue);
-    await tester.enterText(find.byKey(const Key('prompt')), 'Find my notes about groceries.');
+    await tester.enterText(
+      find.byKey(const Key('prompt')),
+      'Find my notes about groceries.',
+    );
     await tester.tap(find.byKey(const Key('send')));
     await until('the approval card', () => shown('approval'));
     expect(c.card!.summary, contains('notes.search'));
     expect(c.card!.tier, 'navigate');
     await tester.tap(find.byKey(const Key('allow-once')));
-    await until('the task', () => !c.streaming && c.messages.length == 2 && last().state == 'complete');
+    await until(
+      'the task',
+      () =>
+          !c.streaming && c.messages.length == 2 && last().state == 'complete',
+    );
     expect(last().text, contains('2 notes mention'));
     expect(last().tools, ['notes.search']);
     expect(last().agent, isTrue);
-    expect(find.textContaining('agent task · used notes.search'), findsOneWidget);
+    expect(
+      find.textContaining('agent task · used notes.search'),
+      findsOneWidget,
+    );
     expect(c.card, isNull);
 
     // Markdown: bragi-core parses the reply; bold, a list, a table and a code block render as
@@ -235,28 +326,61 @@ void main() {
     expect(last().text, contains('2 + 2 equals **4**.'));
     await tester.pump();
     expect(find.byKey(const Key('bubble-markdown')), findsOneWidget);
-    expect(find.textContaining('equals **'), findsNothing, reason: 'no literal asterisks');
-    expect(find.textContaining('2 + 2 equals 4.', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('equals **'),
+      findsNothing,
+      reason: 'no literal asterisks',
+    );
+    expect(
+      find.textContaining('2 + 2 equals 4.', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.byType(Table), findsOneWidget);
     expect(find.byKey(const Key('code-copy')), findsOneWidget);
-    expect(find.textContaining('What Bragi renders', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('What Bragi renders', findRichText: true),
+      findsOneWidget,
+    );
     final doc = c.markdown(last().text, false);
-    expect((doc['blocks'] as List).map((b) => (b as Map)['type']), containsAll(['heading', 'list', 'table', 'code', 'quote']));
-    expect((c.markdown('2 + 2 equals **4', true)['blocks'] as List).first['spans'][1], containsPair('bold', true));
+    expect(
+      (doc['blocks'] as List).map((b) => (b as Map)['type']),
+      containsAll(['heading', 'list', 'table', 'code', 'quote']),
+    );
+    expect(
+      (c.markdown('2 + 2 equals **4', true)['blocks'] as List)
+          .first['spans'][1],
+      containsPair('bold', true),
+    );
     c.newChat();
     await tester.pump();
     const thinkPrompt = 'Think it through: which node answers?';
     await tester.enterText(find.byKey(const Key('prompt')), thinkPrompt);
     await tester.tap(find.byKey(const Key('send')));
-    await until('the reasoning', () => c.messages.length == 2 && last().reasoning.split(' ').length > 5 && last().text.isEmpty);
-    expect(find.byKey(const Key('thinking-text')), findsOneWidget, reason: 'open while the model reasons');
+    await until(
+      'the reasoning',
+      () =>
+          c.messages.length == 2 &&
+          last().reasoning.split(' ').length > 5 &&
+          last().text.isEmpty,
+    );
+    expect(
+      find.byKey(const Key('thinking-text')),
+      findsOneWidget,
+      reason: 'open while the model reasons',
+    );
     expect(find.textContaining('Thinking…'), findsOneWidget);
     await until('the answer', () => !c.streaming && last().state == 'complete');
-    final wantThink = (await tester.runAsync(() => rust.demoAnswer(model: 'gemma-4-e4b', prompt: thinkPrompt)))!;
+    final wantThink = (await tester.runAsync(
+      () => rust.demoAnswer(model: 'gemma-4-e4b', prompt: thinkPrompt),
+    ))!;
     expect(last().text, wantThink);
     expect(last().reasoning, isNotEmpty);
     expect(last().thinkingMs, isNotNull);
-    expect(find.byKey(const Key('thinking-text')), findsNothing, reason: 'closed once the answer starts');
+    expect(
+      find.byKey(const Key('thinking-text')),
+      findsNothing,
+      reason: 'closed once the answer starts',
+    );
     expect(find.textContaining('Thought for'), findsOneWidget);
     await tester.tap(find.byKey(const Key('thinking')));
     await tester.pump();
@@ -264,7 +388,8 @@ void main() {
 
     // A node address pasted into Link a device is kept and dialed (core: add_node), as on the
     // desktop; one without a peer id is refused in the core's words.
-    const address = '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
+    const address =
+        '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
     await until('the drawer', () => shown('link-code'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -277,9 +402,16 @@ void main() {
     expect(c.nodeSearchLine, contains("isn't one of your linked devices"));
     expect(find.byKey(const Key('node-search')), findsOneWidget);
     expect(find.text(address), findsNothing, reason: 'the box is cleared');
-    expect(await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')), isFalse);
+    expect(
+      await tester.runAsync(() => c.linkDevice('/ip4/192.0.2.7/tcp/4848')),
+      isFalse,
+    );
     expect(c.notice, contains('peer'));
-    expect(c.linkCheck, isNull, reason: 'an address is never opened as a link code');
+    expect(
+      c.linkCheck,
+      isNull,
+      reason: 'an address is never opened as a link code',
+    );
     // Anything else the user does cleared the line (it arrives with the next state).
     await until('the line cleared', () => c.nodeSearchLine == null);
 
@@ -325,13 +457,19 @@ void main() {
     await until('the reaction bar', () => shown('reaction-bar'));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byKey(const Key('react-👍')));
-    await until('the first reaction', () => c.messages[3].reactions.length == 1);
+    await until(
+      'the first reaction',
+      () => c.messages[3].reactions.length == 1,
+    );
     await tester.pump(const Duration(milliseconds: 400));
     await tester.longPress(find.byKey(const Key('bubble-3')));
     await until('the reaction bar', () => shown('react-🤔'));
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.byKey(const Key('react-🤔')));
-    await until('the second reaction', () => c.messages[3].reactions.length == 2);
+    await until(
+      'the second reaction',
+      () => c.messages[3].reactions.length == 2,
+    );
     expect(c.messages[3].reactions, ['👍', '🤔']);
     expect(c.messages[2].reactions, isEmpty);
     await tester.pump(const Duration(milliseconds: 400));
@@ -346,9 +484,15 @@ void main() {
     await tester.tap(find.byKey(const Key('training-off')));
     await until('the training confirm', () => shown('training-confirm'));
     await tester.tap(find.byKey(const Key('training-confirm')));
-    await until('the training mark', () => c.current?.training == true && shown('training-on'));
+    await until(
+      'the training mark',
+      () => c.current?.training == true && shown('training-on'),
+    );
     await tester.tap(find.byKey(const Key('training-on')));
-    await until('the withdrawal', () => c.current?.training == false && shown('training-off'));
+    await until(
+      'the withdrawal',
+      () => c.current?.training == false && shown('training-off'),
+    );
 
     final before = c.conversations.length;
     tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
@@ -358,7 +502,12 @@ void main() {
     await tester.scrollUntilVisible(
       find.byKey(Key('delete-conv-${target.id}')),
       120,
-      scrollable: find.descendant(of: find.byType(SessionsTree), matching: find.byType(Scrollable)).first,
+      scrollable: find
+          .descendant(
+            of: find.byType(SessionsTree),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
     await tester.pump(const Duration(milliseconds: 300));
     await tester.ensureVisible(find.byKey(Key('delete-conv-${target.id}')));
@@ -366,12 +515,27 @@ void main() {
     await tester.tap(find.byKey(Key('delete-conv-${target.id}')));
     await until('the confirm', () => shown('delete-confirm'));
     await tester.tap(find.byKey(const Key('delete-confirm')));
-    await until('the conversation gone', () => c.conversations.length == before - 1);
+    await until(
+      'the conversation gone',
+      () => c.conversations.length == before - 1,
+    );
     expect(c.current, isNull);
 
-    await tester.tap(find.byKey(const Key('settings')));
-    await until('settings', () => shown('clear-history'));
-    await tester.pump(const Duration(milliseconds: 400));
+    tester.state<ScaffoldState>(find.byType(Scaffold).first).openDrawer();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('settings')).hitTestable());
+    await until('settings', () => shown('settings-list'));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const Key('settings-list')),
+      const Offset(0, -8000),
+    );
+    await tester.pumpAndSettle();
+    if (!shown('clear-history')) {
+      fail(
+        'no clear-history after settings-list (linked=${c.linked} pair=${c.pairState} notice=${c.notice} settings-list=${shown('settings-list')} add-pool=${shown('add-pool')} history-heading=${find.text('HISTORY').evaluate().isNotEmpty})',
+      );
+    }
     await tester.ensureVisible(find.byKey(const Key('clear-history')));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.byKey(const Key('clear-history')));
@@ -379,7 +543,10 @@ void main() {
     await tester.tap(find.byKey(const Key('clear-confirm')));
     await tester.pump();
     expect(c.conversations, isNotEmpty, reason: 'not before the word is typed');
-    await tester.enterText(find.byKey(const Key('clear-confirm-text')), 'delete');
+    await tester.enterText(
+      find.byKey(const Key('clear-confirm-text')),
+      'delete',
+    );
     await tester.pump();
     await tester.tap(find.byKey(const Key('clear-confirm')));
     await until('all history gone', () => c.conversations.isEmpty);

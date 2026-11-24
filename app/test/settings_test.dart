@@ -30,21 +30,47 @@ class MockOpenAi {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
       final auth = req.headers.value('authorization');
-      seen.add('${req.method} ${req.uri.path} ${auth == null ? 'no-key' : 'key'}');
+      seen.add(
+        '${req.method} ${req.uri.path} ${auth == null ? 'no-key' : 'key'}',
+      );
       if (auth != 'Bearer $secretKey') {
         req.response.statusCode = 401;
         req.response.headers.contentType = ContentType.json;
-        req.response.write('{"error":{"message":"Incorrect API key provided"}}');
+        req.response.write(
+          '{"error":{"message":"Incorrect API key provided"}}',
+        );
       } else if (req.uri.path.endsWith('/models')) {
         req.response.headers.contentType = ContentType.json;
-        req.response.write(jsonEncode({'data': [{'id': 'mock-1'}, {'id': 'mock-2'}]}));
+        req.response.write(
+          jsonEncode({
+            'data': [
+              {'id': 'mock-1'},
+              {'id': 'mock-2'},
+            ],
+          }),
+        );
       } else {
         await utf8.decoder.bind(req).drain<void>();
         req.response.headers.contentType = ContentType('text', 'event-stream');
         for (final w in ['Hello ', 'from ', 'the mock']) {
-          req.response.write('data: ${jsonEncode({'choices': [{'delta': {'content': w}, 'finish_reason': null}]})}\n\n');
+          req.response.write(
+            'data: ${jsonEncode({
+              'choices': [
+                {
+                  'delta': {'content': w},
+                  'finish_reason': null,
+                },
+              ],
+            })}\n\n',
+          );
         }
-        req.response.write('data: ${jsonEncode({'choices': [{'delta': {}, 'finish_reason': 'stop'}]})}\n\ndata: [DONE]\n\n');
+        req.response.write(
+          'data: ${jsonEncode({
+            'choices': [
+              {'delta': {}, 'finish_reason': 'stop'},
+            ],
+          })}\n\ndata: [DONE]\n\n',
+        );
       }
       await req.response.close();
     });
@@ -59,7 +85,9 @@ void main() {
 
   setUpAll(() async {
     final lib = Platform.environment['BRAGI_BRIDGE_LIB'];
-    await RustLib.init(externalLibrary: lib == null ? null : ExternalLibrary.open(lib));
+    await RustLib.init(
+      externalLibrary: lib == null ? null : ExternalLibrary.open(lib),
+    );
     dir = Directory.systemTemp.createTempSync('bragi-settings-test');
     await mock.start();
   });
@@ -70,12 +98,21 @@ void main() {
     dir.deleteSync(recursive: true);
   });
 
-  testWidgets('settings and sessions: endpoints, links, targets, folders', (tester) async {
+  testWidgets('settings and sessions: endpoints, links, targets, folders', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 2200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.runAsync(() => rust.startDemo(dir: dir.path, label: 'Bragi test', acceptAfterMs: 200, wordDelayMs: 5));
+    await tester.runAsync(
+      () => rust.startDemo(
+        dir: dir.path,
+        label: 'Bragi test',
+        acceptAfterMs: 200,
+        wordDelayMs: 5,
+      ),
+    );
     final c = BragiController(const RustBragiApi());
     await tester.runAsync(c.attach);
     await tester.pumpWidget(BragiApp(controller: c));
@@ -83,7 +120,9 @@ void main() {
     Future<void> until(String what, bool Function() done) async {
       for (var i = 0; i < 600; i++) {
         if (done()) return;
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
         await tester.pump();
       }
       fail('timed out waiting for $what');
@@ -94,7 +133,9 @@ void main() {
       final dir = Platform.environment['BRAGI_SHOTS'];
       if (dir == null) return;
       await tester.runAsync(() async {
-        final boundary = tester.renderObject<RenderRepaintBoundary>(find.byType(RepaintBoundary).first);
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find.byType(RepaintBoundary).first,
+        );
         final image = await boundary.toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
         File('$dir/$name.png').writeAsBytesSync(bytes!.buffer.asUint8List());
@@ -103,7 +144,20 @@ void main() {
 
     bool shown(String key) => find.byKey(Key(key)).evaluate().isNotEmpty;
     Future<void> tap(String key) async {
-      await tester.tap(find.byKey(Key(key)));
+      final f = find.byKey(Key(key));
+      // Dialogs sit above the list; only scroll list rows into view.
+      if (f.evaluate().length == 1 &&
+          find
+              .descendant(
+                of: find.byKey(const Key('settings-list')),
+                matching: f,
+              )
+              .evaluate()
+              .isNotEmpty) {
+        await tester.ensureVisible(f);
+        await tester.pumpAndSettle();
+      }
+      await tester.tap(f);
       await tester.pump();
     }
 
@@ -116,7 +170,9 @@ void main() {
     Future<void> settle() async {
       // Each core call resolves on a real event-loop turn, and a screen refresh makes several in a row.
       for (var i = 0; i < 12; i++) {
-        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 40)));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 40)),
+        );
         await tester.pump();
       }
       await tester.pumpAndSettle();
@@ -138,6 +194,7 @@ void main() {
     }
 
     await openSettings();
+    expect(shown('add-pool'), isTrue);
     expect(shown('no-endpoints'), isTrue);
     await tap('add-endpoint');
     await tester.pumpAndSettle();
@@ -149,9 +206,19 @@ void main() {
     expect(find.textContaining('refused the API key'), findsOneWidget);
     await type('ep-key', secretKey);
     await tap('ep-test');
-    await until('a good test', () => find.textContaining('Connected; 2 models').evaluate().isNotEmpty);
+    await until(
+      'a good test',
+      () => find.textContaining('Connected; 2 models').evaluate().isNotEmpty,
+    );
     expect(find.byKey(const Key('ep-model')).evaluate().isNotEmpty, isTrue);
-    expect(tester.widget<TextField>(find.byKey(const Key('ep-model'))).controller!.text, 'mock-1', reason: 'Test fills in the first model');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('ep-model')))
+          .controller!
+          .text,
+      'mock-1',
+      reason: 'Test fills in the first model',
+    );
     await tap('ep-alongside');
     await tap('ep-save');
     await settle();
@@ -159,7 +226,11 @@ void main() {
     expect(c.endpoints.single.hasKey, isTrue);
     expect(c.endpoints.single.mode, 'alongside');
     expect(find.textContaining('key set'), findsOneWidget);
-    expect(find.textContaining(secretKey), findsNothing, reason: 'the key is never drawn');
+    expect(
+      find.textContaining(secretKey),
+      findsNothing,
+      reason: 'the key is never drawn',
+    );
     final a = c.endpoints.single;
 
     // A bad form is refused with the core's words and nothing is added.
@@ -189,8 +260,17 @@ void main() {
     await settle();
     expect(c.endpoints.map((e) => e.name), ['Mock B', 'Mock A']);
     await tester.runAsync(c.reloadSettings);
-    expect(c.endpoints.map((e) => e.name), ['Mock B', 'Mock A'], reason: 'the order is stored by the core');
-    expect(tester.widget<IconButton>(find.byKey(Key('endpoint-up-${b.id}'))).onPressed, isNull, reason: 'first can not go up');
+    expect(c.endpoints.map((e) => e.name), [
+      'Mock B',
+      'Mock A',
+    ], reason: 'the order is stored by the core');
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(Key('endpoint-up-${b.id}')))
+          .onPressed,
+      isNull,
+      reason: 'first can not go up',
+    );
 
     // Test from the list; edit (rename, keep the key, off).
     await tap('endpoint-test-${a.id}');
@@ -198,15 +278,32 @@ void main() {
     expect(find.textContaining('Mock A: Connected; 2 models'), findsOneWidget);
     await tap('endpoint-edit-${a.id}');
     await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(find.byKey(const Key('ep-name'))).controller!.text, 'Mock A');
-    expect(tester.widget<TextField>(find.byKey(const Key('ep-key'))).controller!.text, isEmpty, reason: 'the saved key is never shown');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('ep-name')))
+          .controller!
+          .text,
+      'Mock A',
+    );
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('ep-key')))
+          .controller!
+          .text,
+      isEmpty,
+      reason: 'the saved key is never shown',
+    );
     await type('ep-name', 'Mock Alpha');
     await tap('ep-enabled');
     await tap('ep-save');
     await settle();
     expect(c.endpoints.firstWhere((e) => e.id == a.id).name, 'Mock Alpha');
     expect(c.endpoints.firstWhere((e) => e.id == a.id).enabled, isFalse);
-    expect(c.endpoints.firstWhere((e) => e.id == a.id).hasKey, isTrue, reason: 'an empty key field keeps the key');
+    expect(
+      c.endpoints.firstWhere((e) => e.id == a.id).hasKey,
+      isTrue,
+      reason: 'an empty key field keeps the key',
+    );
     await tap('endpoint-edit-${a.id}');
     await tester.pumpAndSettle();
     await tap('ep-enabled');
@@ -218,32 +315,57 @@ void main() {
     // ---- Sessions: a chat bound to Mock Alpha, and one bound to Mock B (same server) ----
     Navigator.of(tester.element(find.byKey(const Key('settings-list')))).pop();
     await tester.pumpAndSettle();
-    expect(c.targets.map((t) => t.label), ['Weirdnet pool', 'Mock Alpha · mock-1']);
+    expect(c.targets.map((t) => t.label), [
+      'Weirdnet pool',
+      'Mock Alpha · mock-1',
+    ]);
     Future<void> chatTo(TargetView? t, String text) async {
       c.newChat();
       if (t != null) c.pickTarget(t);
       await tester.pump();
       await tester.enterText(find.byKey(const Key('prompt')), text);
-      ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+      ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt'))))
+          .clearSnackBars();
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('send')));
-      await until('the answer', () => !c.streaming && c.messages.length == 2 && c.messages.last.state == 'complete');
+      await until(
+        'the answer',
+        () =>
+            !c.streaming &&
+            c.messages.length == 2 &&
+            c.messages.last.state == 'complete',
+      );
     }
 
     await chatTo(c.targets[1], 'hello endpoint');
     expect(c.messages.last.text, 'Hello from the mock');
     expect(c.messages.last.node, 'Mock Alpha');
     expect(find.byKey(const Key('target-label')).evaluate().isNotEmpty, isTrue);
-    expect(tester.widget<Text>(find.byKey(const Key('target-label'))).data, 'Mock Alpha · mock-1');
+    expect(
+      tester.widget<Text>(find.byKey(const Key('target-label'))).data,
+      'Mock Alpha · mock-1',
+    );
     final onEndpoint = c.current!.id;
     await chatTo(null, 'hello pool');
     expect(c.messages.last.text, isNot('Hello from the mock'));
     final onPool = c.current!.id;
     await chatTo(c.targets[1], 'second on the endpoint');
     final second = c.current!.id;
-    expect(c.sessions.where((s) => s.id == onEndpoint || s.id == second).every((s) => s.targetLabel == 'Mock Alpha · mock-1'), isTrue);
-    expect(c.sessions.firstWhere((s) => s.id == onPool).targetLabel, 'Weirdnet pool');
-    expect(mock.seen.where((s) => s.startsWith('POST') && s.endsWith('key')), hasLength(2), reason: 'only the bound chats used the endpoint');
+    expect(
+      c.sessions
+          .where((s) => s.id == onEndpoint || s.id == second)
+          .every((s) => s.targetLabel == 'Mock Alpha · mock-1'),
+      isTrue,
+    );
+    expect(
+      c.sessions.firstWhere((s) => s.id == onPool).targetLabel,
+      'Weirdnet pool',
+    );
+    expect(
+      mock.seen.where((s) => s.startsWith('POST') && s.endsWith('key')),
+      hasLength(2),
+      reason: 'only the bound chats used the endpoint',
+    );
 
     // ---- Delete with the confirm and the rebind flow ----
     await openSettings();
@@ -251,7 +373,10 @@ void main() {
     await tester.pumpAndSettle();
     await shot('delete-confirm-rebind');
     expect(find.textContaining('2 chats are bound to it'), findsOneWidget);
-    expect(find.textContaining('Your chats and their history are kept'), findsOneWidget);
+    expect(
+      find.textContaining('Your chats and their history are kept'),
+      findsOneWidget,
+    );
     await tap('ep-delete-cancel');
     await tester.pumpAndSettle();
     expect(c.endpoints, hasLength(2), reason: 'cancel deletes nothing');
@@ -262,9 +387,19 @@ void main() {
     await settle();
     expect(c.endpoints.map((e) => e.name), ['Mock B']);
     expect(shown('endpoint-deleted'), isTrue);
-    expect(find.textContaining('2 chats moved to Weirdnet pool'), findsOneWidget);
-    expect(c.sessions.firstWhere((s) => s.id == onEndpoint).targetLabel, 'Weirdnet pool');
-    expect((await tester.runAsync(() => c.api.conversation(onEndpoint)))!.messages, hasLength(2), reason: 'history is kept');
+    expect(
+      find.textContaining('2 chats moved to Weirdnet pool'),
+      findsOneWidget,
+    );
+    expect(
+      c.sessions.firstWhere((s) => s.id == onEndpoint).targetLabel,
+      'Weirdnet pool',
+    );
+    expect(
+      (await tester.runAsync(() => c.api.conversation(onEndpoint)))!.messages,
+      hasLength(2),
+      reason: 'history is kept',
+    );
 
     // Bind a chat to Mock B (make it alongside first), delete B with "leave without a target".
     await tap('endpoint-edit-${b.id}');
@@ -286,7 +421,11 @@ void main() {
     expect(shown('no-endpoints'), isTrue);
     final ub = c.sessions.firstWhere((s) => s.id == onB);
     expect(ub.unbound, isTrue);
-    expect((await tester.runAsync(() => c.api.conversation(onB)))!.messages, hasLength(2), reason: 'history is kept');
+    expect(
+      (await tester.runAsync(() => c.api.conversation(onB)))!.messages,
+      hasLength(2),
+      reason: 'history is kept',
+    );
     Navigator.of(tester.element(find.byKey(const Key('settings-list')))).pop();
     await tester.pumpAndSettle();
     await tester.runAsync(() => c.open(onB));
@@ -294,7 +433,8 @@ void main() {
     expect(find.textContaining('Its endpoint was deleted'), findsOneWidget);
     // Sending asks for a target; picking the pool rebinds it and it answers.
     await tester.enterText(find.byKey(const Key('prompt')), 'still there?');
-    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt'))))
+        .clearSnackBars();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('send')));
     await settle();
@@ -305,14 +445,23 @@ void main() {
     await settle();
     expect(c.needsTarget, isFalse);
     await tester.enterText(find.byKey(const Key('prompt')), 'still there?');
-    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt')))).clearSnackBars();
+    ScaffoldMessenger.of(tester.element(find.byKey(const Key('prompt'))))
+        .clearSnackBars();
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('send')));
-    await until('the answer', () => !c.streaming && c.messages.length == 4 && c.messages.last.state == 'complete');
+    await until(
+      'the answer',
+      () =>
+          !c.streaming &&
+          c.messages.length == 4 &&
+          c.messages.last.state == 'complete',
+    );
 
     // ---- Weirdnet links: add, edit, delete ----
-    const addr1 = '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
-    const addr2 = '/ip4/192.0.2.8/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
+    const addr1 =
+        '/ip4/192.0.2.7/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
+    const addr2 =
+        '/ip4/192.0.2.8/tcp/4848/p2p/12D3KooWQH96LGJd33JquZXNyrmrs7HAeaeviiFqdwnzwfdmj1VY';
     await openSettings();
     final before = c.links.length;
     await tap('add-link');
@@ -331,7 +480,14 @@ void main() {
     await type('link-address', addr2);
     await tap('link-save');
     await settle();
-    expect(c.links.map((l) => l.address), allOf(contains(addr2), isNot(contains(addr1))));
+    expect(
+      c.links.map((l) => l.address),
+      allOf(contains(addr2), isNot(contains(addr1))),
+    );
+    if (find.byType(AlertDialog).evaluate().isNotEmpty) {
+      Navigator.of(tester.element(find.byType(AlertDialog))).pop();
+      await tester.pumpAndSettle();
+    }
     final idx2 = c.links.indexWhere((l) => l.address == addr2);
     await tap('link-delete-$idx2');
     await tester.pumpAndSettle();
@@ -369,13 +525,21 @@ void main() {
     await tap('pick-${reports.id}');
     await settle();
     expect(c.sessions.firstWhere((s) => s.id == onPool).folder, reports.id);
-    expect(shown('conv-$onPool'), isTrue, reason: 'shown inside the open folders');
+    expect(
+      shown('conv-$onPool'),
+      isTrue,
+      reason: 'shown inside the open folders',
+    );
     // A folder can't go inside its own subfolder.
     await tap('folder-menu-${work.id}');
     await tester.pumpAndSettle();
     await tap('folder-move');
     await tester.pumpAndSettle();
-    expect(shown('pick-${reports.id}'), isFalse, reason: 'its own subfolder is not offered');
+    expect(
+      shown('pick-${reports.id}'),
+      isFalse,
+      reason: 'its own subfolder is not offered',
+    );
     await tap('pick-top');
     await settle();
     // Collapsing hides what is inside; deleting the folder moves chats up and deletes none.
@@ -391,7 +555,14 @@ void main() {
     await settle();
     expect(c.folders.map((f) => f.name), ['Work']);
     await shot('sessions-folders');
-    expect(c.sessions.firstWhere((s) => s.id == onPool).folder, work.id, reason: 'moved up to the parent');
-    expect((await tester.runAsync(() => c.api.conversation(onPool)))!.messages, hasLength(2));
+    expect(
+      c.sessions.firstWhere((s) => s.id == onPool).folder,
+      work.id,
+      reason: 'moved up to the parent',
+    );
+    expect(
+      (await tester.runAsync(() => c.api.conversation(onPool)))!.messages,
+      hasLength(2),
+    );
   });
 }

@@ -517,8 +517,8 @@ impl Core {
         if self.inner.cfg.transport != crate::core::Transport::Internet {
             return;
         }
-        let kept: String = crate::core::load_peers(&self.inner.cfg.dir).into_iter().filter(|a| a != address).map(|a| format!("{a}\n")).collect();
-        if let Err(e) = std::fs::write(self.inner.cfg.dir.join(crate::core::PEERS_FILE), kept) {
+        let kept: String = crate::core::load_peers(&self.pool_dir()).into_iter().filter(|a| a != address).map(|a| format!("{a}\n")).collect();
+        if let Err(e) = std::fs::write(self.pool_dir().join(crate::core::PEERS_FILE), kept) {
             tracing::warn!("saving node addresses: {e}");
         }
     }

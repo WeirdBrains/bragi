@@ -177,7 +177,7 @@ impl BragiView {
 
     /// Saves the picked theme and mode.
     pub fn theme_use(&mut self, cx: &mut Context<Self>) {
-        let p = Preference { theme: self.themes.sel.clone(), mode: self.themes.mode };
+        let p = Preference { theme: self.themes.sel.clone(), mode: self.themes.mode, ..self.appearance().preference() };
         match self.appearance().set_preference(&p) {
             Ok(()) => {
                 self.themes.msg = Some(format!("Using {} ({}).", self.themes.sel, p.mode.name()));
