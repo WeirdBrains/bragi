@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
 ### Added
 
 - Training consent per chat (Ymir's training plan P2): a chat is used for training only when you mark it. The phone and desktop apps have a cap button in the chat's top bar (it asks first and says what is left out), the GPUI desktop app a Training button next to Agent, and the terminal app `/train` and `/train off` (the chat's title shows `· training`). It syncs to your linked devices as Ymir's `{conversation}/train` record, and your Ymir nodes export only marked chats (`ymirctl context export --training`), on your own devices, without system prompts, attachments, tool results or reasoning. Withdrawing it takes the chat out of later exports.
