@@ -228,7 +228,9 @@ async fn a_ymir_server_is_linked_cert_only_without_the_seed() {
     let tmp = tempfile::tempdir().unwrap();
     let (demo, core) = paired(tmp.path(), 5).await;
     until(&core, "the catalog", |s| !s.catalog.models.is_empty()).await;
-    for (name, role) in [("model-srv", ServerRole::Model), ("inf-srv", ServerRole::Inference)] {
+    // None: the default confirm, which links a server's code cert-only as inference.
+    for (name, chosen) in [("model-srv", Some(ServerRole::Model)), ("inf-srv", Some(ServerRole::Inference)), ("default-srv", None)] {
+        let role = chosen.unwrap_or(ServerRole::Inference);
         let cfg = demo.app_config(&tmp.path().join(name), name);
         let net = bragi_core::node_config(&cfg, true).unwrap();
         let key = Keypair::generate_ed25519();
@@ -237,13 +239,17 @@ async fn a_ymir_server_is_linked_cert_only_without_the_seed() {
         let host = tokio::task::spawn_blocking(move || HostNode::start("weirdnet-ymir://", k, net, "Ymir on server")).await.unwrap().unwrap();
         let check = core.pair_accept(host.link()).await.unwrap();
         assert_eq!(check.device, "Ymir on server");
+        assert!(core.pairing_is_server());
         let deadline = Instant::now() + Duration::from_secs(20);
         while !matches!(host.status(), HostStatus::Paired { .. }) {
             assert!(Instant::now() < deadline, "{:?}", host.status());
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         host.confirm();
-        core.pair_accept_confirm_server(true, role).await.unwrap();
+        match chosen {
+            Some(r) => core.pair_accept_confirm_server(true, r).await.unwrap(),
+            None => core.pair_accept_confirm(true).await.unwrap(),
+        }
         while !matches!(host.status(), HostStatus::Received { .. }) {
             assert!(Instant::now() < deadline, "{:?}", host.status());
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -264,4 +270,22 @@ async fn a_ymir_server_is_linked_cert_only_without_the_seed() {
         assert!(mine.roster().active().any(|cert| cert.peer_id == peer));
         assert!(mine.is_service(&peer));
     }
+    // The opt-out: the full-identity link sends the seed to a server's code.
+    let cfg = demo.app_config(&tmp.path().join("full-srv"), "full-srv");
+    let net = bragi_core::node_config(&cfg, true).unwrap();
+    let key = Keypair::generate_ed25519();
+    let host = tokio::task::spawn_blocking(move || HostNode::start("weirdnet-ymir://", key, net, "Ymir on server")).await.unwrap().unwrap();
+    core.pair_accept(host.link()).await.unwrap();
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while !matches!(host.status(), HostStatus::Paired { .. }) {
+        assert!(Instant::now() < deadline, "{:?}", host.status());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    host.confirm();
+    core.pair_accept_confirm_full(true).await.unwrap();
+    while !matches!(host.status(), HostStatus::Received { .. }) {
+        assert!(Instant::now() < deadline, "{:?}", host.status());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(matches!(host.take_any().unwrap(), Received::Full(_)), "--full-identity sends the seed");
 }

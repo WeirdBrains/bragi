@@ -33,8 +33,10 @@ usage:
   bragi-tui link [CODE | NODE-ADDRESS] [--yes]     link this terminal: show a code to open on a linked
                                                    device, open a code shown elsewhere, or add a node
                                                    address (ymirctl pool addresses)
-  bragi-tui link CODE --server inference|model     link a Ymir server cert-only, without your identity
-                                                   seed (`ymirctl pool link --cert-only` shows CODE)
+  bragi-tui link CODE [--server inference|model]   a Ymir server's code (`ymirctl pool link`) links it
+                                                   cert-only, without your identity seed, as an
+                                                   inference node unless --server model
+  bragi-tui link CODE --full-identity              send the server your identity seed instead
   bragi-tui linker pair|serve|devices|revoke|roots|confirm
                                                    share this computer's projects with Bragi on your
                                                    phone: a QR code to pair, then code mode on the phone
@@ -88,8 +90,11 @@ pub enum Cmd {
     Link {
         arg: Option<String>,
         yes: bool,
-        /// `--server ROLE`: link a Ymir server cert-only as this role.
+        /// `--server ROLE`: link a Ymir server cert-only as this role (a server's code is
+        /// cert-only as inference without it).
         server: Option<ServerRole>,
+        /// `--full-identity`: send the identity seed even to a Ymir server.
+        full: bool,
     },
     Status,
     Code {
@@ -180,6 +185,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     let mut words: Vec<String> = Vec::new();
     let (mut task, mut context, mut model, mut apply, mut yes, mut force) = (None, Vec::new(), None, false, false, false);
     let mut server = None;
+    let mut full = false;
     let mut it = args.into_iter();
     let mut code = false;
     while let Some(a) = it.next() {
@@ -215,6 +221,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
                 let v = value("--server")?;
                 server = Some(ServerRole::parse(&v).ok_or_else(|| format!("--server takes inference or model, not {v}"))?);
             }
+            "--full-identity" => full = true,
             "--force" => force = true,
             "--version" | "-V" => out.command = Cmd::Version,
             "--help" | "-h" => out.command = Cmd::Help,
@@ -236,10 +243,13 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             if words.len() > 2 {
                 return Err("link takes one code or address".into());
             }
-            if server.is_some() && words.get(1).is_none_or(|a| a.starts_with('/')) {
-                return Err("--server needs the code the Ymir server shows (`ymirctl pool link --cert-only`)".into());
+            if (server.is_some() || full) && words.get(1).is_none_or(|a| a.starts_with('/')) {
+                return Err("--server and --full-identity need the code the Ymir server shows (`ymirctl pool link`)".into());
             }
-            Cmd::Link { arg: words.get(1).cloned(), yes, server }
+            if server.is_some() && full {
+                return Err("--server links cert-only; --full-identity sends the seed: pick one".into());
+            }
+            Cmd::Link { arg: words.get(1).cloned(), yes, server, full }
         }
         Some("status") if words.len() == 1 => Cmd::Status,
         Some("undo") if words.len() == 1 => Cmd::Undo { force },
@@ -287,7 +297,7 @@ pub fn run(args: Args) -> i32 {
         }
         Cmd::Linker(rest) => crate::linker_cli::parse(rest).and_then(|sub| crate::linker_cli::run(&home_of(&args), sub)),
         Cmd::Pool(rest) => crate::pool_cli::parse(rest).and_then(|sub| crate::pool_cli::run(&args.launch, sub)),
-        Cmd::Link { arg, yes, server } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes, server)),
+        Cmd::Link { arg, yes, server, full } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes, server, full)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
             Err("--suggest needs files: add --context PATH (a file or folder)".into())
@@ -374,7 +384,7 @@ fn ask(question: &str) -> bool {
     matches!(line.trim(), "y" | "Y" | "yes")
 }
 
-fn link(s: &Session, arg: Option<String>, yes: bool, server: Option<ServerRole>) -> Result<(), String> {
+fn link(s: &Session, arg: Option<String>, yes: bool, server: Option<ServerRole>, full: bool) -> Result<(), String> {
     let core = &s.core;
     if let Some(a) = arg.as_deref().map(str::trim).filter(|a| a.starts_with('/')) {
         core.add_peer(a).map_err(|e| e.message)?;
@@ -396,15 +406,25 @@ fn link(s: &Session, arg: Option<String>, yes: bool, server: Option<ServerRole>)
     if let Some(code) = arg {
         let check = rt.block_on(core.pair_accept(&code)).map_err(|e| e.message)?;
         let ok = yes || ask(&format!("Does {} show {}?", check.device, check.sas));
-        match server {
-            Some(role) => rt.block_on(core.pair_accept_confirm_server(ok, role)).map_err(|e| e.message)?,
-            None => rt.block_on(core.pair_accept_confirm(ok)).map_err(|e| e.message)?,
-        }
+        // A server's code is cert-only (as inference) unless --full-identity.
+        let cert_only = server.is_some() || (!full && core.pairing_is_server());
+        let done = match (server, full) {
+            (Some(role), _) => rt.block_on(core.pair_accept_confirm_server(ok, role)),
+            (None, true) => rt.block_on(core.pair_accept_confirm_full(ok)),
+            (None, false) => rt.block_on(core.pair_accept_confirm(ok)),
+        };
+        done.map_err(|e| {
+            if cert_only {
+                format!("{} (a Ymir older than 0.8.0 can't take a cert-only link: update it, or pass --full-identity)", e.message)
+            } else {
+                e.message
+            }
+        })?;
         println!(
             "{}",
             if !ok {
                 "Cancelled."
-            } else if server.is_some() {
+            } else if cert_only {
                 "Linked cert-only: the server has no copy of your identity seed."
             } else {
                 "Linked."
@@ -571,16 +591,22 @@ mod tests {
         assert!(p("--demo").unwrap().launch.demo);
         let t = p("--theme nord --mode light").unwrap().theme;
         assert_eq!((t.theme.as_deref(), t.mode.as_deref()), (Some("nord"), Some("light")));
-        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None });
+        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None, full: false });
         assert_eq!(
             p("link /ip4/1.2.3.4/tcp/1/p2p/X").unwrap().command,
-            Cmd::Link { arg: Some("/ip4/1.2.3.4/tcp/1/p2p/X".into()), yes: false, server: None }
+            Cmd::Link { arg: Some("/ip4/1.2.3.4/tcp/1/p2p/X".into()), yes: false, server: None, full: false }
         );
         assert_eq!(
             p("link weirdnet-ymir://link/x --server model").unwrap().command,
-            Cmd::Link { arg: Some("weirdnet-ymir://link/x".into()), yes: false, server: Some(ServerRole::Model) }
+            Cmd::Link { arg: Some("weirdnet-ymir://link/x".into()), yes: false, server: Some(ServerRole::Model), full: false }
         );
         assert!(p("link --server inference").is_err(), "a server link needs its code");
+        assert_eq!(
+            p("link weirdnet-ymir://link/x --full-identity").unwrap().command,
+            Cmd::Link { arg: Some("weirdnet-ymir://link/x".into()), yes: false, server: None, full: true }
+        );
+        assert!(p("link weirdnet-ymir://link/x --full-identity --server model").is_err());
+        assert!(p("link --full-identity").is_err());
         assert!(p("link weirdnet-ymir://link/x --server gpu").is_err());
         assert_eq!(p("undo --force").unwrap().command, Cmd::Undo { force: true });
         let a = p("--rewrite src/a.rs:10-40 make it faster --apply").unwrap();
@@ -617,7 +643,7 @@ mod tests {
         assert_eq!(p("--path serve").unwrap().open.as_deref(), Some("serve"));
         assert_eq!(p("./link").unwrap().open.as_deref(), Some("./link"));
         assert_eq!(p("./link").unwrap().command, Cmd::Tui);
-        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None });
+        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None, full: false });
         assert_eq!(p("pool list").unwrap().command, Cmd::Pool(vec!["list".into()]));
         assert_eq!(p("pools").unwrap().command, Cmd::Pool(vec!["list".into()]));
         assert_eq!(p("status").unwrap().open, None);

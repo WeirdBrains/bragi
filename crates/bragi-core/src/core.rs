@@ -34,6 +34,13 @@ const OTHER_SCHEMES: [&str; 2] = ["weirdnet-ymir://", "weirdnet-morph://"];
 /// Reads a pasted code as a Bragi one: a `weirdnet-ymir://link/` or `weirdnet-morph://link/` code is
 /// the same payload under another app's scheme, so a Bragi device can open codes shown by Ymir or
 /// Morph. Anything else (invites, other schemes) is left for the link check to refuse.
+/// Whether a link code is a Ymir server's (`ymirctl pool link` shows `weirdnet-ymir://link/...`).
+/// Such a link is cert-only by default: the server gets a certificate and a service grant, never
+/// the identity seed.
+pub fn is_server_link(code: &str) -> bool {
+    code.trim().starts_with("weirdnet-ymir://link/")
+}
+
 pub fn normalize_link(code: &str) -> String {
     let code = code.trim();
     for other in OTHER_SCHEMES {
@@ -275,6 +282,8 @@ pub(crate) struct Inner {
     pub(crate) net: Mutex<Option<Arc<Net>>>,
     pub(crate) offer: Mutex<Option<Arc<HostNode>>>,
     pub(crate) pairing: Mutex<Option<Pairing>>,
+    /// The link in progress came from a Ymir server's code ([`is_server_link`]).
+    pub(crate) pairing_server: std::sync::atomic::AtomicBool,
     pub(crate) requests: Mutex<HashMap<String, CancelToken>>,
     /// Approval cards waiting for an answer, by request id (agent mode).
     pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
@@ -417,6 +426,7 @@ impl Core {
                 net: Mutex::new(None),
                 offer: Mutex::new(None),
                 pairing: Mutex::new(None),
+                pairing_server: std::sync::atomic::AtomicBool::new(false),
                 requests: Mutex::new(HashMap::new()),
                 cards: Mutex::new(HashMap::new()),
                 search: Mutex::new((0, NODE_SEARCH_LIMIT)),
@@ -689,6 +699,7 @@ impl Core {
     /// with the other screen, then [`Core::pair_accept_confirm`].
     pub async fn pair_accept(&self, link: &str) -> Result<LinkCheck> {
         self.net()?;
+        let server = is_server_link(link);
         let (cfg, link) = (node_config(&self.inner.cfg, true)?, normalize_link(link));
         let pairing = tokio::task::spawn_blocking(move || Pairing::start(SCHEME, &link, cfg))
             .await
@@ -696,12 +707,28 @@ impl Core {
             .map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string()))?;
         let check = LinkCheck { sas: pairing.sas().to_string(), device: pairing.device().to_string() };
         *lock(&self.inner.pairing) = Some(pairing);
+        self.inner.pairing_server.store(server, std::sync::atomic::Ordering::SeqCst);
         Ok(check)
     }
 
-    /// The codes match (send the identity and link the device) or they don't (cancel).
+    /// The codes match (link the device) or they don't (cancel). A device gets the identity; a
+    /// Ymir server's code ([`is_server_link`]) is linked cert-only as an inference node, as
+    /// [`Core::pair_accept_confirm_server`] does. [`Core::pair_accept_confirm_full`] opts out.
     pub async fn pair_accept_confirm(&self, matches: bool) -> Result<()> {
+        let server = self.inner.pairing_server.load(std::sync::atomic::Ordering::SeqCst).then_some(ServerRole::Inference);
+        self.confirm_link(matches, server).await
+    }
+
+    /// Like [`Core::pair_accept_confirm`], but always sends the identity seed, a Ymir server's
+    /// code included (the full-identity link, for a server that must link devices itself).
+    pub async fn pair_accept_confirm_full(&self, matches: bool) -> Result<()> {
         self.confirm_link(matches, None).await
+    }
+
+    /// Whether the link in progress is a Ymir server's, so [`Core::pair_accept_confirm`] links it
+    /// cert-only.
+    pub fn pairing_is_server(&self) -> bool {
+        self.inner.pairing_server.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Like [`Core::pair_accept_confirm`] for a Ymir server, linked cert-only as `role`: it gets
