@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: v0.6.0 released
+
+`release: v0.6.0` (`30f294e`, tag `v0.6.0`): Ymir rollouts in the model list (`feat/rollout-versions`, merged in `c47608f`). The Release workflow passed on every platform ([run 45431928019](https://github.com/WeirdBrains/bragi/actions/runs/45431928019)). Artifacts scanned: only the RPM packager field (the public maintainer address) matched; no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.6.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.6.0-1 on TAUR (`46ace46`); `packaging/nix/release.json` and the site's `latestVersion` at 0.6.0.
+
 ## 2026-11-24: Ymir rollouts as one row (branch `feat/rollout-versions`)
 
 Ymir's training plan P4b (Ymir main `a48fed7`) lists a rollout's name and each `name@N` in the catalog. [`catalog`](crates/bragi-core/src/catalog.rs): `ModelInfo::versions` holds a rollout's versions under its name's row (only when the name is listed too, and only for a numeric `@N`). `CatalogView::model(id)` finds a row or a folded version, so `nodes_for`, `context_for`, `refusal` and `Core::pick_model` still work for a pinned version, and the desktop keeps a pinned choice. The terminal picker lists versions after their name. The Flutter and GPUI pickers show the name only. Docs: [CHANGELOG.md](CHANGELOG.md), [roadmap.toml](roadmap.toml) (B2; [ROADMAP.md](ROADMAP.md) and the site regenerated), and the B2 line in Ymir's [DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones) (`6099104`).
