@@ -39,6 +39,7 @@ weirdnet-model.workspace = true
 weirdnet-device-link.workspace = true
 weirdnet-net.workspace = true
 weirdnet-sync.workspace = true
+zeroize.workspace = true
 weirdnet-themes.workspace = true
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]

@@ -51,7 +51,7 @@ pub use crate::catalog::{CatalogView, ModelInfo, ModelStatus};
 pub use crate::chat::ChatEvent;
 pub use crate::core::{
     AppState, ChatHandle, Config, Core, LinkCheck, NODE_ADDED, NODE_FOUND_SHOWN, NODE_SEARCH_LIMIT, NodeSearch, PEERS_FILE, PairState, SCHEME,
-    Transport, is_node_address, merge_turns, node_config, normalize_link,
+    ServerRole, Transport, is_node_address, merge_turns, node_config, normalize_link,
 };
 pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
 pub use crate::error::{CoreError, ErrorKind, Result};

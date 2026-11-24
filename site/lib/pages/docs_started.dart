@@ -42,6 +42,11 @@ dials it at once and remembers it.</p>
 <p><strong>The other device shows the code:</strong> a linked Bragi can admit a new Ymir node. Run
 <code>ymirctl pool link</code> on the node, open the <code>weirdnet-ymir://link/…</code> code in Bragi, compare the six
 digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
+<p><strong>A server without your identity seed:</strong> to link a Ymir server so it never holds your identity seed, run
+<code>ymirctl pool link --cert-only</code> on it and, in the terminal app, <code>bragi-tui link 'weirdnet-ymir://link/…'
+--server inference</code> (or <code>--server model</code> for a node that only runs models). The server gets a certificate
+and a signed grant for that role; it serves and syncs as usual but cannot link or revoke devices, and revoking it later
+never means a new identity. It needs a Ymir with cert-only links; an older one fails the link and keeps nothing.</p>
 <p>Paste a code from another device into the box (Ctrl+V or Ctrl+Shift+V).</p>
 
 <h2 id="chat">Chat</h2>

@@ -84,7 +84,11 @@ async fn main() -> Result<()> {
     std::fs::write(work.join("bragi.accept.sas"), &check.sas)?;
     // The script compares the check code with what ymirctl shows, then lets us confirm.
     read_file(&work.join("confirm2"), "the script's go-ahead", 120).await?;
-    core.pair_accept_confirm(true).await?;
+    if std::env::var("BRAGI_E2E_CERT_ONLY").as_deref() == Ok("1") {
+        core.pair_accept_confirm_server(true, bragi_core::ServerRole::Model).await?;
+    } else {
+        core.pair_accept_confirm(true).await?;
+    }
     println!("BRAGI_ADDED {}", check.device);
     std::fs::write(work.join("bragi.done2"), "ok")?;
     tokio::time::sleep(Duration::from_secs(2)).await;

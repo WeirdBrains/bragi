@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use bragi_core::code::diff::unified_all;
 use bragi_core::code::{CodeRequest, CodeTask, Journal, parse_target};
-use bragi_core::{ChatEvent, PairState};
+use bragi_core::{ChatEvent, PairState, ServerRole};
 
 use crate::code::CodeState;
 use crate::session::{Launch, Session};
@@ -33,6 +33,8 @@ usage:
   bragi-tui link [CODE | NODE-ADDRESS] [--yes]     link this terminal: show a code to open on a linked
                                                    device, open a code shown elsewhere, or add a node
                                                    address (ymirctl pool addresses)
+  bragi-tui link CODE --server inference|model     link a Ymir server cert-only, without your identity
+                                                   seed (`ymirctl pool link --cert-only` shows CODE)
   bragi-tui linker pair|serve|devices|revoke|roots|confirm
                                                    share this computer's projects with Bragi on your
                                                    phone: a QR code to pair, then code mode on the phone
@@ -84,6 +86,8 @@ pub enum Cmd {
     Link {
         arg: Option<String>,
         yes: bool,
+        /// `--server ROLE`: link a Ymir server cert-only as this role.
+        server: Option<ServerRole>,
     },
     Status,
     Code {
@@ -150,6 +154,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     }
     let mut words: Vec<String> = Vec::new();
     let (mut task, mut context, mut model, mut apply, mut yes, mut force) = (None, Vec::new(), None, false, false, false);
+    let mut server = None;
     let mut it = args.into_iter();
     let mut code = false;
     while let Some(a) = it.next() {
@@ -181,6 +186,10 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--model" | "-m" => model = Some(value("--model")?),
             "--apply" => apply = true,
             "--yes" | "-y" => yes = true,
+            "--server" => {
+                let v = value("--server")?;
+                server = Some(ServerRole::parse(&v).ok_or_else(|| format!("--server takes inference or model, not {v}"))?);
+            }
             "--force" => force = true,
             "--version" | "-V" => out.command = Cmd::Version,
             "--help" | "-h" => out.command = Cmd::Help,
@@ -202,7 +211,10 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             if words.len() > 2 {
                 return Err("link takes one code or address".into());
             }
-            Cmd::Link { arg: words.get(1).cloned(), yes }
+            if server.is_some() && words.get(1).is_none_or(|a| a.starts_with('/')) {
+                return Err("--server needs the code the Ymir server shows (`ymirctl pool link --cert-only`)".into());
+            }
+            Cmd::Link { arg: words.get(1).cloned(), yes, server }
         }
         Some("status") if words.len() == 1 => Cmd::Status,
         Some("undo") if words.len() == 1 => Cmd::Undo { force },
@@ -249,7 +261,7 @@ pub fn run(args: Args) -> i32 {
             crate::mcp_cli::parse(rest).and_then(|sub| Session::open(&args.launch).and_then(|s| crate::mcp_cli::run(&s.core, sub, &ask)))
         }
         Cmd::Linker(rest) => crate::linker_cli::parse(rest).and_then(|sub| crate::linker_cli::run(&home_of(&args), sub)),
-        Cmd::Link { arg, yes } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes)),
+        Cmd::Link { arg, yes, server } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes, server)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
             Err("--suggest needs files: add --context PATH (a file or folder)".into())
@@ -336,7 +348,7 @@ fn ask(question: &str) -> bool {
     matches!(line.trim(), "y" | "Y" | "yes")
 }
 
-fn link(s: &Session, arg: Option<String>, yes: bool) -> Result<(), String> {
+fn link(s: &Session, arg: Option<String>, yes: bool, server: Option<ServerRole>) -> Result<(), String> {
     let core = &s.core;
     if let Some(a) = arg.as_deref().map(str::trim).filter(|a| a.starts_with('/')) {
         core.add_peer(a).map_err(|e| e.message)?;
@@ -358,8 +370,20 @@ fn link(s: &Session, arg: Option<String>, yes: bool) -> Result<(), String> {
     if let Some(code) = arg {
         let check = rt.block_on(core.pair_accept(&code)).map_err(|e| e.message)?;
         let ok = yes || ask(&format!("Does {} show {}?", check.device, check.sas));
-        rt.block_on(core.pair_accept_confirm(ok)).map_err(|e| e.message)?;
-        println!("{}", if ok { "Linked." } else { "Cancelled." });
+        match server {
+            Some(role) => rt.block_on(core.pair_accept_confirm_server(ok, role)).map_err(|e| e.message)?,
+            None => rt.block_on(core.pair_accept_confirm(ok)).map_err(|e| e.message)?,
+        }
+        println!(
+            "{}",
+            if !ok {
+                "Cancelled."
+            } else if server.is_some() {
+                "Linked cert-only: the server has no copy of your identity seed."
+            } else {
+                "Linked."
+            }
+        );
         return Ok(());
     }
     let link = rt.block_on(core.pair_offer()).map_err(|e| e.message)?;
@@ -518,8 +542,17 @@ mod tests {
         assert!(p("--demo").unwrap().launch.demo);
         let t = p("--theme nord --mode light").unwrap().theme;
         assert_eq!((t.theme.as_deref(), t.mode.as_deref()), (Some("nord"), Some("light")));
-        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false });
-        assert_eq!(p("link /ip4/1.2.3.4/tcp/1/p2p/X").unwrap().command, Cmd::Link { arg: Some("/ip4/1.2.3.4/tcp/1/p2p/X".into()), yes: false });
+        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None });
+        assert_eq!(
+            p("link /ip4/1.2.3.4/tcp/1/p2p/X").unwrap().command,
+            Cmd::Link { arg: Some("/ip4/1.2.3.4/tcp/1/p2p/X".into()), yes: false, server: None }
+        );
+        assert_eq!(
+            p("link weirdnet-ymir://link/x --server model").unwrap().command,
+            Cmd::Link { arg: Some("weirdnet-ymir://link/x".into()), yes: false, server: Some(ServerRole::Model) }
+        );
+        assert!(p("link --server inference").is_err(), "a server link needs its code");
+        assert!(p("link weirdnet-ymir://link/x --server gpu").is_err());
         assert_eq!(p("undo --force").unwrap().command, Cmd::Undo { force: true });
         let a = p("--rewrite src/a.rs:10-40 make it faster --apply").unwrap();
         assert_eq!(
@@ -555,7 +588,7 @@ mod tests {
         assert_eq!(p("--path serve").unwrap().open.as_deref(), Some("serve"));
         assert_eq!(p("./link").unwrap().open.as_deref(), Some("./link"));
         assert_eq!(p("./link").unwrap().command, Cmd::Tui);
-        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false });
+        assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None });
         assert_eq!(p("status").unwrap().open, None);
         assert_eq!(p("src").unwrap().command, Cmd::Tui);
         assert!(p("a b").is_err());

@@ -6,6 +6,14 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Cert-only links for Ymir servers (Ymir's M10): `bragi-tui link CODE --server inference|model` links a server shown by `ymirctl pool link --cert-only` with a certificate and a service grant signed with your identity, never the identity seed. An inference server also gets the keys for the pool's conversations; a model server gets no data keys. `Core::pair_accept_confirm_server` does the same for the other shells.
+
+### Changed
+
+- `weirdnet-sync` 0.7.1 and `weirdnet-device-link` 0.4.2, so Bragi syncs with servers linked cert-only (including roster-only model nodes).
+
 ## [0.3.0] - 2026-11-24
 
 ### Added

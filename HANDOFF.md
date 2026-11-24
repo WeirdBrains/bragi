@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-24: cert-only Ymir servers (branch `feat/cert-only-servers`)
+
+Michael's pt169u (alternate Ymir and Bragi phases); the Bragi side of Ymir M10, which is on Ymir main (`cf5c1ba`, not yet released). Workspace: `weirdnet-sync` 0.7.1 (service devices) and `weirdnet-device-link` 0.4.2 (`Pairing::send_credential`), `zeroize`. Core [`identity`](crates/bragi-core/src/identity.rs): the seed is optional in sync 0.7, `user_keypair()`, `service_bundle(peer, roles, types)` (zeroized, saved), `is_service(peer)`. [`core`](crates/bragi-core/src/core.rs): `ServerRole { Inference, Model }` (Ymir's role and type names: inference gets `ymir.pool` and `ymir.context`, model none); `pair_accept_confirm_server(matches, role)` grants the server a scoped certificate and sends only the user key and the bundle, never the seed. A Ymir from before M10 (device-link 0.3.2) can't take a credential and the error says to update it and link again; there is no fallback that sends the seed. Terminal: `bragi-tui link CODE --server inference|model` (a code, not an address). Docs: README, the site's getting-started page, [roadmap.toml](roadmap.toml) (B1; ROADMAP.md and the site regenerated), CHANGELOG.
+
+Cert-only is opt-in. Making it the default for Ymir codes would break linking with released Ymir 0.7.0, so that is left for Michael once a Ymir with M10 is out.
+
+Checks: `cargo fmt`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace`: 293 passed, 0 failed, 4 ignored (new: `a_ymir_server_is_linked_cert_only_without_the_seed`); the real cross-app e2e [`scripts/ymir-link-e2e.sh`](scripts/ymir-link-e2e.sh) against Ymir main's `ymird`/`ymirctl` passed both ways, full and with `BRAGI_E2E_CERT_ONLY=1` (node2 `pool link --cert-only`, Bragi sends a credential; node2 has `credential.json` and no `seed`, and node1's roster lists it). A first cert-only run where the env var didn't reach Bragi also showed Ymir's refusal: Bragi sent the seed, `ymirctl` said nothing was stored. No Flutter or bridge change, so the Flutter checks were not rerun.
+
+Not tested: real machines; the Flutter and GPUI apps have no cert-only option yet (terminal and core only).
+
 ## 2026-11-24: v0.3.0 released
 
 `release: v0.3.0` (`4595f13`, tag `v0.3.0`) with the training consent; the Release workflow passed on every platform; artifacts scanned (only the CI cargo-registry paths and the rpm packager line, as in 0.2.1); [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.3.0) with 42 files and `SHA256SUMS`, `assets` ok; `bragi-bin` 0.3.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.3.0.

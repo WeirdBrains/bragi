@@ -89,7 +89,7 @@ ADDR1=$(node_addr "$N1"); ok "node1 is up on Weirdnet at a loopback address"
 USER1=$(YMIRCTL "$N1" pool devices | sed -n 's/^Identity //p')
 
 # 2. Bragi (headless) shows its code; `ymirctl pool add` opens it. Check the codes match.
-env -i PATH="$PATH" HOME="$ROOT/home" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" RUST_LOG=warn \
+env -i PATH="$PATH" HOME="$ROOT/home" XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" RUST_LOG=warn BRAGI_E2E_CERT_ONLY="${BRAGI_E2E_CERT_ONLY:-}" \
   "$BRAGI_EXAMPLE" "$ROOT/bragi" "$ADDR1" "$WORK" > "$ROOT/bragi.out" 2>&1 &
 BPID=$!; PIDS+=($BPID)
 wait_for 60 "Bragi's link code" test -s "$WORK/bragi.link"
@@ -111,7 +111,9 @@ ok "node1 roster lists Bragi (bragi-e2e)"
 
 # 3. A second Ymir node shows `ymirctl pool link`; the linked Bragi opens that code.
 N2="$ROOT/ymir2"; node_toml "$N2" node2 "model" "\"$ADDR1\""
-( sleep 8; echo y ) | YMIRCTL "$N2" pool link > "$ROOT/link2.out" 2>&1 &
+# With BRAGI_E2E_CERT_ONLY=1, node2 takes only a cert-only link and Bragi sends one (no seed).
+LINK_ARGS=(); [[ ${BRAGI_E2E_CERT_ONLY:-} == 1 ]] && LINK_ARGS=(--cert-only)
+( sleep 8; echo y ) | YMIRCTL "$N2" pool link "${LINK_ARGS[@]}" > "$ROOT/link2.out" 2>&1 &
 LPID=$!; PIDS+=($LPID)
 wait_for 60 "node2's link code" grep -q "weirdnet-ymir://link/" "$ROOT/link2.out"
 sed -n 's/^ *\(weirdnet-ymir:\/\/link\/[^ ]*\)$/\1/p' "$ROOT/link2.out" | head -1 > "$WORK/ymir2.link"
@@ -121,11 +123,16 @@ YSAS2=$(sed -n 's/.*Does the other device show \([0-9]*\)?.*/\1/p' "$ROOT/link2.
 [[ "$YSAS2" == "$(cat "$WORK/bragi.accept.sas")" ]] || fail "check codes differ for node2: ymirctl $YSAS2, Bragi $(cat "$WORK/bragi.accept.sas")"
 ok "Bragi opened a weirdnet-ymir:// code; both showed the same check code $YSAS2"
 echo go > "$WORK/confirm2"
-wait_for 60 "node2 to be linked" grep -q "^Linked as" "$ROOT/link2.out" || fail "pool link did not finish: $(cat "$ROOT/link2.out")"
+wait_for 60 "node2 to be linked" grep -q "^Linked\( cert-only\)\? as" "$ROOT/link2.out" || fail "pool link did not finish: $(cat "$ROOT/link2.out")"
 wait_for 60 "Bragi to finish" test -f "$WORK/bragi.done2"
-USER2=$(YMIRCTL "$N2" pool devices | sed -n 's/^Identity //p')
+USER2=$(YMIRCTL "$N2" pool devices | sed -n 's/^Identity \([^ ]*\).*/\1/p')
 [[ -n $USER1 && "$USER1" == "$USER2" ]] || fail "node2 joined a different identity ($USER1 vs $USER2)"
 ok "node2 was linked by Bragi (direction 2) into the same identity"
+if [[ ${BRAGI_E2E_CERT_ONLY:-} == 1 ]]; then
+  [[ ! -e "$N2/state/pool/seed" && -f "$N2/state/pool/credential.json" ]] || fail "node2 holds a seed after a cert-only link"
+  grep -q "^Linked cert-only as" "$ROOT/link2.out" || fail "node2 was not linked cert-only"
+  ok "node2 holds no seed (cert-only)"
+fi
 
 # 4. node2 joins Weirdnet; the roster change reaches node1 and node1 sees node2.
 start_ymird "$N2"
