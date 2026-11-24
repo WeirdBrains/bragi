@@ -84,6 +84,7 @@ bragi-tui --no-serve                                        # without starting `
 bragi serve ensure                                         # start `bragi serve` in the background if none is running
 bragi-tui link /ip4/…/tcp/4848/p2p/…                       # dial a node Bragi can't find by itself
 bragi pool list                                            # saved Ymir pools (also: add, switch, rename, remove)
+bragi-tui link 'weirdnet-ymir://link/…' --server inference  # link a Ymir server cert-only, without your seed
 bragi-tui code --rewrite src/lib.rs:10-40 "use iterators"  # prints a unified diff
 bragi-tui code --suggest --context src "find bugs" --apply # writes the change
 bragi-tui undo                                             # puts the last written change back

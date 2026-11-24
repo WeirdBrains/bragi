@@ -1129,6 +1129,7 @@ dependencies = [
  "weirdnet-net",
  "weirdnet-sync",
  "weirdnet-themes",
+ "zeroize",
 ]
 
 [[package]]
@@ -7798,7 +7799,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10015,9 +10016,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-device-link"
-version = "0.3.2"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50aec13f18c9aaa3bb53748c993343059bee335a60ade77ce3e565792cd072a"
+checksum = "2c1ab27c5ae5612ab91e3fba4ff603120531488c1950ec2900790ecd7e4b119d"
 dependencies = [
  "base64 0.22.1",
  "cbor4ii",
@@ -10122,14 +10123,16 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-sync"
-version = "0.5.2"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e72069ce49f1186ba44d06dcf6aefdbcb028f0c960ac45ed86796eb83b7317f"
+checksum = "ef64f9f02036cb50ad2984a5df77e556b5abce9448863b4b4ff77d833beac9a4"
 dependencies = [
  "blake3",
  "cbor4ii",
+ "getrandom 0.3.4",
  "hex",
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "weirdnet-keys",
  "weirdnet-net",

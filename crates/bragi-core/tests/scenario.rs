@@ -214,3 +214,54 @@ async fn codes_under_another_apps_scheme_link_too() {
         accepting.await.unwrap().unwrap();
     }
 }
+
+/// A Ymir server linked cert-only from Bragi (`ymirctl pool link --cert-only` on the server):
+/// it gets a certificate and a signed service grant, never the seed, and the grant stays in
+/// this device's roster.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_ymir_server_is_linked_cert_only_without_the_seed() {
+    use bragi_core::ServerRole;
+    use weirdnet_device_link::{HostNode, HostStatus, Received};
+    use weirdnet_net::{Keypair, PublicKey};
+    use weirdnet_sync::{DeviceClass, LinkBundle, SyncState};
+
+    let tmp = tempfile::tempdir().unwrap();
+    let (demo, core) = paired(tmp.path(), 5).await;
+    until(&core, "the catalog", |s| !s.catalog.models.is_empty()).await;
+    for (name, role) in [("model-srv", ServerRole::Model), ("inf-srv", ServerRole::Inference)] {
+        let cfg = demo.app_config(&tmp.path().join(name), name);
+        let net = bragi_core::node_config(&cfg, true).unwrap();
+        let key = Keypair::generate_ed25519();
+        let peer = key.public().to_peer_id().to_string();
+        let k = key.clone();
+        let host = tokio::task::spawn_blocking(move || HostNode::start("weirdnet-ymir://", k, net, "Ymir on server")).await.unwrap().unwrap();
+        let check = core.pair_accept(host.link()).await.unwrap();
+        assert_eq!(check.device, "Ymir on server");
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !matches!(host.status(), HostStatus::Paired { .. }) {
+            assert!(Instant::now() < deadline, "{:?}", host.status());
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        host.confirm();
+        core.pair_accept_confirm_server(true, role).await.unwrap();
+        while !matches!(host.status(), HostStatus::Received { .. }) {
+            assert!(Instant::now() < deadline, "{:?}", host.status());
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let Received::Service(c) = host.take_any().unwrap() else { panic!("the seed was sent") };
+        assert_eq!(c.user_id, demo.identity.user_id());
+        let bundle = LinkBundle::from_bytes(&c.bundle).unwrap();
+        assert_eq!(bundle.grant.class, DeviceClass::Service);
+        assert_eq!(bundle.grant.roles, role.roles());
+        assert_eq!(bundle.grant.roster_only(), role == ServerRole::Model);
+        assert_eq!(bundle.keys.is_some(), role == ServerRole::Inference);
+        // What the server does with it: a service state, no seed.
+        let user_key = PublicKey::try_decode_protobuf(&c.user_key).unwrap();
+        let st = SyncState::new_service(user_key, c.node_cert.clone(), &key, vec!["ymir.pool".into()], &bundle).unwrap();
+        assert!(st.is_service() && st.seed.is_none());
+        // This device keeps its certificate and grant.
+        let mine = Identity::open(&tmp.path().join("app/identity")).unwrap().unwrap();
+        assert!(mine.roster().active().any(|cert| cert.peer_id == peer));
+        assert!(mine.is_service(&peer));
+    }
+}

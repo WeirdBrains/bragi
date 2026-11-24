@@ -23,7 +23,7 @@ use crate::catalog::CatalogView;
 use crate::chat::{ChatEvent, Streamed, coalesce};
 use crate::error::{CoreError, ErrorKind, Result};
 use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, History, MessageState, Role, now_ms, title_for};
-use crate::identity::{Identity, LinkSettings, SYNC_TYPE, SyncNode};
+use crate::identity::{CONTEXT_TYPE, Identity, LinkSettings, SYNC_TYPE, SyncNode};
 
 /// Bragi's link scheme (`weirdnet-bragi://link/…`). Never bare `weirdnet://`.
 pub const SCHEME: &str = "weirdnet-bragi://";
@@ -205,6 +205,45 @@ pub struct ChatHandle {
 pub struct LinkCheck {
     pub sas: String,
     pub device: String,
+}
+
+/// What a Ymir server linked cert-only from here may do ([`Core::pair_accept_confirm_server`]).
+/// It gets a certificate and a service grant signed with this identity, never the seed, so a
+/// stolen server is never you, and revoking it never means a new identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ServerRole {
+    /// An inference node: also gets the keys for the pool's conversations (`ymir.inference`).
+    Inference,
+    /// A model node: no data keys at all (`ymir.model`, roster only).
+    Model,
+}
+
+impl ServerRole {
+    /// The roles its grant carries (Ymir's role names).
+    pub fn roles(self) -> Vec<String> {
+        vec![match self {
+            Self::Inference => "ymir.inference".to_string(),
+            Self::Model => "ymir.model".to_string(),
+        }]
+    }
+
+    /// The sync types it may hold keys for (Ymir's pool and conversation types; none for a
+    /// model node).
+    pub fn types(self) -> Vec<String> {
+        match self {
+            Self::Inference => vec!["ymir.pool".to_string(), CONTEXT_TYPE.to_string()],
+            Self::Model => Vec::new(),
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "inference" => Some(Self::Inference),
+            "model" => Some(Self::Model),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) struct Net {
@@ -662,20 +701,44 @@ impl Core {
 
     /// The codes match (send the identity and link the device) or they don't (cancel).
     pub async fn pair_accept_confirm(&self, matches: bool) -> Result<()> {
+        self.confirm_link(matches, None).await
+    }
+
+    /// Like [`Core::pair_accept_confirm`] for a Ymir server, linked cert-only as `role`: it gets
+    /// a certificate and a signed service grant, never the identity seed. The server must run a
+    /// Ymir that takes cert-only links; an older one fails the link and keeps nothing.
+    pub async fn pair_accept_confirm_server(&self, matches: bool, role: ServerRole) -> Result<()> {
+        self.confirm_link(matches, Some(role)).await
+    }
+
+    async fn confirm_link(&self, matches: bool, server: Option<ServerRole>) -> Result<()> {
         let net = self.net()?;
         let mut pairing = lock(&self.inner.pairing).take().ok_or_else(|| CoreError::new(ErrorKind::Pairing, "no link in progress"))?;
         if !matches {
             let _ = tokio::task::spawn_blocking(move || pairing.cancel()).await;
             return Ok(());
         }
-        let seed = net.identity.seed()?;
         let mut peers = net.node.reachable_addrs();
         merge_peers(&mut peers, lock(&self.inner.peers).clone());
         let settings = net.identity.link_settings_with(peers);
-        let cert = tokio::task::spawn_blocking(move || pairing.send_with(&seed, "Bragi", &settings, &[SYNC_TYPE.to_string()]))
-            .await
-            .map_err(|e| CoreError::new(ErrorKind::Other, e.to_string()))?
-            .map_err(|e| CoreError::new(ErrorKind::Pairing, e.to_string()))?;
+        let sync = [SYNC_TYPE.to_string()];
+        let sent = match server {
+            None => {
+                let seed = net.identity.seed()?;
+                tokio::task::spawn_blocking(move || pairing.send_with(&seed, "Bragi", &settings, &sync).map_err(|e| e.to_string())).await
+            }
+            Some(role) => {
+                let bundle = net.identity.service_bundle(&pairing.peer().to_string(), &role.roles(), &role.types())?;
+                let user = net.identity.user_keypair()?;
+                tokio::task::spawn_blocking(move || {
+                    pairing
+                        .send_credential(&user, "Bragi", &settings, &sync, &bundle)
+                        .map_err(|e| format!("{e} (a Ymir from before cert-only links can't take one; update Ymir there and link again)"))
+                })
+                .await
+            }
+        };
+        let cert = sent.map_err(|e| CoreError::new(ErrorKind::Other, e.to_string()))?.map_err(|e| CoreError::new(ErrorKind::Pairing, e))?;
         net.identity.approve(cert)?;
         Ok(())
     }

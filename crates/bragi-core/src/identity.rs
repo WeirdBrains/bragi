@@ -229,7 +229,7 @@ impl Identity {
             user_key: user.public(),
             our_node: weirdnet_sync::NodeId::new(our_cert.peer_id.clone()),
             our_cert,
-            seed,
+            seed: Some(seed),
             types: vec![SYNC_TYPE.to_string()],
             roster,
             log: weirdnet_sync::OpLog::new(),
@@ -258,8 +258,10 @@ impl Identity {
             let entries: Vec<&LogEntry> = st.log.iter().collect();
             (st.seed.clone(), serde_json::to_vec_pretty(&st.roster)?, st.keys.export(), serde_json::to_vec(&entries)?)
         };
-        if !self.dir.join("seed").is_file() {
-            write_private(&self.dir.join("seed"), &seed)?;
+        if let Some(seed) = &seed
+            && !self.dir.join("seed").is_file()
+        {
+            write_private(&self.dir.join("seed"), seed)?;
         }
         if !self.dir.join("node.key").is_file() {
             write_private(&self.dir.join("node.key"), &self.node_key.to_protobuf_encoding().map_err(|e| anyhow!("node key: {e}"))?)?;
@@ -430,7 +432,31 @@ impl Identity {
 
     /// The seed, for a device link sent from here.
     pub fn seed(&self) -> Result<weirdnet_net::Key32> {
-        weirdnet_net::Key32::from_slice(&self.lock().seed).map_err(|e| anyhow!("identity seed: {e}"))
+        let st = self.lock();
+        let seed = st.seed.as_ref().ok_or_else(|| anyhow!("this device holds no identity seed"))?;
+        weirdnet_net::Key32::from_slice(seed).map_err(|e| anyhow!("identity seed: {e}"))
+    }
+
+    /// The user keypair (from the seed), to certify a server linked cert-only from here.
+    pub fn user_keypair(&self) -> Result<Keypair> {
+        let st = self.lock();
+        let seed = st.seed.as_ref().ok_or_else(|| anyhow!("this device holds no identity seed"))?;
+        user_from_seed(seed)
+    }
+
+    /// The sync bundle for a server linked cert-only from here (`weirdnet_sync::LinkBundle`
+    /// bytes): signs its service grant with `roles` and the sync `types` it may hold keys for
+    /// (the grant joins this roster too; with types and no key chain yet this rotates first).
+    /// Saves.
+    pub fn service_bundle(&self, peer: &str, roles: &[String], types: &[String]) -> Result<zeroize::Zeroizing<Vec<u8>>> {
+        let b = self.lock().service_bundle(peer, roles, types, now_ms()).map_err(|e| anyhow!("the server's grant: {e}"))?;
+        self.save()?;
+        b.to_bytes().map_err(|e| anyhow!("the sync bundle: {e}"))
+    }
+
+    /// Whether `peer`'s signed grant makes it a service device (a server linked without the seed).
+    pub fn is_service(&self, peer: &str) -> bool {
+        self.lock().roster.is_service(peer)
     }
 
     /// The user linked `cert`'s device from here: it joins the roster (and the key chain once
@@ -447,7 +473,8 @@ impl Identity {
             if peer == st.our_cert.peer_id {
                 bail!("this is this node's own certificate");
             }
-            let user = user_from_seed(&st.seed)?;
+            let seed = st.seed.as_ref().ok_or_else(|| anyhow!("this device holds no identity seed"))?;
+            let user = user_from_seed(seed)?;
             st.revoke(&user, peer, now_ms()).map_err(|e| anyhow!("revoking {peer}: {e}"))?
         };
         self.save()?;

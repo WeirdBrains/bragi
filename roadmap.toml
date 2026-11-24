@@ -15,7 +15,7 @@ unpublished = ["weirdnet-push"]   # planned crates with no crates.io page yet
 id = "B1"
 title = "Core and both shells"
 status = "done"
-summary = "Pair with your own devices, list the models your cloud offers, stream a chat, stop it and continue it, and keep local history. Works in the Linux desktop app (GPUI) and the Android app (Flutter), both on one shared Rust core."
+summary = "Pair with your own devices, list the models your cloud offers, stream a chat, stop it and continue it, and keep local history. Works in the Linux desktop app (GPUI) and the Android app (Flutter), both on one shared Rust core. A Ymir server can be linked cert-only (`bragi-tui link CODE --server inference`), so it gets a scoped certificate and never your identity seed."
 crates = ["weirdnet-agent", "weirdnet-device-link", "weirdnet-sync", "weirdnet-net", "weirdnet-relay"]
 
 [[milestone]]
