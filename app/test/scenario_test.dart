@@ -526,19 +526,24 @@ void main() {
     await tester.tap(find.byKey(const Key('settings')).hitTestable());
     await until('settings', () => shown('settings-list'));
     await tester.pumpAndSettle();
-    await tester.drag(
-      find.byKey(const Key('settings-list')),
-      const Offset(0, -8000),
-    );
-    await tester.pumpAndSettle();
-    if (!shown('clear-history')) {
+    final clear = find.byKey(const Key('clear-history'));
+    if (clear.evaluate().isEmpty) {
       fail(
         'no clear-history after settings-list (linked=${c.linked} pair=${c.pairState} notice=${c.notice} settings-list=${shown('settings-list')} add-pool=${shown('add-pool')} history-heading=${find.text('HISTORY').evaluate().isNotEmpty})',
       );
     }
-    await tester.ensureVisible(find.byKey(const Key('clear-history')));
-    await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byKey(const Key('clear-history')));
+    await tester.scrollUntilVisible(
+      clear,
+      400,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const Key('settings-list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(clear.hitTestable());
     await until('the typed confirm', () => shown('clear-confirm-text'));
     await tester.tap(find.byKey(const Key('clear-confirm')));
     await tester.pump();
