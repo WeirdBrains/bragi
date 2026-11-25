@@ -1132,6 +1132,7 @@ impl BragiView {
             } else {
                 String::new()
             };
+            let from = m.origin_tag().map(|o| format!(" · {o}")).unwrap_or_default();
             let id = m.id.clone();
             row = row.child(
                 div()
@@ -1151,7 +1152,7 @@ impl BragiView {
                     .on_click(cx.listener(move |v, _, _, cx| v.pick_model(&id, cx)))
                     .child(div().w(px(8.)).h(px(8.)).rounded(px(4.)).bg(rgb(dot)))
                     .child(div().text_size(px(13.)).text_color(rgb(t.text_primary)).child(m.id.clone()))
-                    .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(format!("{label}{speed}{on}"))),
+                    .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(format!("{label}{speed}{on}{from}"))),
             );
         }
         row

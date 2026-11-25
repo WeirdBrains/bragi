@@ -43,9 +43,27 @@ pub struct ModelInfo {
     /// a version per conversation; a version id pins it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub versions: Vec<ModelInfo>,
+    /// Where it came from (`hub`, `upload`, `train`), as the first node that knows says
+    /// (catalog/1 from Ymir nodes on weirdnet-agent 0.5.4). `None` from older nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    /// Its license (an SPDX id, or `unknown`), when given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub license: Option<String>,
 }
 
 impl ModelInfo {
+    /// The tag the model lists show for a model the user sent or trained (`upload, MIT`,
+    /// `train`); Hub models, the usual case, and models of unknown origin have none, as on the
+    /// Models screen.
+    pub fn origin_tag(&self) -> Option<String> {
+        let o = self.origin.as_deref().filter(|o| matches!(*o, "upload" | "train"))?;
+        Some(match &self.license {
+            Some(l) => format!("{o}, {l}"),
+            None => o.to_string(),
+        })
+    }
+
     /// Whether it reads what `needed` asks for (text always).
     pub fn takes(&self, needed: Modalities) -> bool {
         Modalities::new(self.vision, self.audio).covers(needed)
@@ -94,6 +112,8 @@ fn info(m: &CatalogModel) -> ModelInfo {
         vision: m.inputs.vision,
         audio: m.inputs.audio,
         versions: Vec::new(),
+        origin: m.origin.clone(),
+        license: m.license.clone(),
     }
 }
 
@@ -152,6 +172,9 @@ impl CatalogView {
                         i.audio |= m.inputs.audio;
                         if i.standin.is_none() {
                             i.standin = m.standin.clone();
+                        }
+                        if i.origin.is_none() && i.license.is_none() {
+                            (i.origin, i.license) = (m.origin.clone(), m.license.clone());
                         }
                     }
                 }
@@ -232,6 +255,28 @@ mod tests {
         assert_eq!(v.context_for("other"), None);
         let v = CatalogView::merge(&[("c".into(), at(None))]);
         assert_eq!(v.context_for("inkling-2-mini"), None);
+    }
+
+    #[test]
+    fn the_catalog_says_where_a_model_came_from() {
+        use weirdnet_agent::remote::catalog::{ORIGIN_HUB, ORIGIN_TRAIN, ORIGIN_UPLOAD};
+        let m = |id: &str| CatalogModel::new(id, Purpose::Chat, ModelState::Warm);
+        // a is an older node (no origin); b knows.
+        let a = Catalog::new(1, vec![m("tuned"), m("qwen")]);
+        let b = Catalog::new(
+            1,
+            vec![m("tuned").with_origin(ORIGIN_UPLOAD).with_license("MIT"), m("qwen").with_origin(ORIGIN_HUB), m("mine").with_origin(ORIGIN_TRAIN)],
+        );
+        let v = CatalogView::merge(&[("a".into(), a), ("b".into(), b)]);
+        let tag = |id: &str| v.model(id).unwrap().origin_tag();
+        assert_eq!(tag("tuned").as_deref(), Some("upload, MIT"));
+        assert_eq!(tag("mine").as_deref(), Some("train"));
+        assert_eq!(v.model("qwen").unwrap().origin.as_deref(), Some("hub"));
+        assert_eq!(tag("qwen"), None, "Hub models are the usual case and carry no tag");
+        // Older views (no fields) still read, and an unknown origin has no tag.
+        let old: ModelInfo =
+            serde_json::from_value(serde_json::json!({"id": "x", "status": "warm", "replicas": 1, "tokens_per_sec": null, "context": null})).unwrap();
+        assert_eq!((old.origin_tag(), old.license), (None, None));
     }
 
     #[test]
