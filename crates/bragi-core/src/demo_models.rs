@@ -153,6 +153,18 @@ pub const KEEP_MORE_THAN_FREE: u64 = u64::MAX;
 
 /// [`service`] taking uploads that leave `keep_free` bytes free on its disk.
 pub fn service_keeping(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<dyn Authorize>, keep_free: u64) -> Arc<ModelsService> {
+    service_peering(dir, hub, usable, auth, keep_free, None)
+}
+
+/// [`service_keeping`] that copies uploads from other nodes over `peers` (a pool upload).
+pub fn service_peering(
+    dir: &std::path::Path,
+    hub: &str,
+    usable: u64,
+    auth: Arc<dyn Authorize>,
+    keep_free: u64,
+    peers: Option<Arc<dyn weirdnet_agent::remote::Dialer>>,
+) -> Arc<ModelsService> {
     use weirdnet_backends::models::{KeepFree, WritePolicy};
     const GIB: u64 = 1 << 30;
     let sup = Supervisor::new(vec![], vec![], SupervisorOptions::default());
@@ -160,5 +172,9 @@ pub fn service_keeping(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<
     let store = ModelStore::new(dir).with_hub(hub);
     let keep_free = if keep_free == KEEP_MORE_THAN_FREE { (store.free_bytes() / GIB + 2) * GIB } else { keep_free };
     let policy = WritePolicy::default().with_keep_free(KeepFree::new(0, keep_free));
-    Arc::new(ModelsService::new(store, sup, auth).with_budget(budget).with_write_policy(policy))
+    let svc = ModelsService::new(store, sup, auth).with_budget(budget).with_write_policy(policy);
+    Arc::new(match peers {
+        Some(d) => svc.with_peer_dialer(d, None),
+        None => svc,
+    })
 }

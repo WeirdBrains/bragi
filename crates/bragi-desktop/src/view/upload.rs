@@ -28,6 +28,8 @@ pub(super) struct UploadDialog {
     pub inference: Option<String>,
     /// Its weight there (0 to `MAX_WEIGHT`: a canary).
     pub weight: u32,
+    /// Other model nodes (by peer) that copy it from `peer`, node to node.
+    pub copy_to: Vec<String>,
     pub run: Option<String>,
     /// Done, total, and the node's label.
     pub progress: Option<(u64, u64, String)>,
@@ -140,6 +142,20 @@ impl BragiView {
         if let Some(d) = self.models.upload.as_mut().filter(|d| !d.sending()) {
             d.peer = Some(peer.to_string());
             d.base = None;
+            d.copy_to.retain(|p| p != peer);
+        }
+        cx.notify();
+    }
+
+    /// Adds `peer` to the nodes that copy it from the one it goes to, or takes it off.
+    pub fn models_upload_toggle_copy(&mut self, peer: &str, cx: &mut Context<Self>) {
+        if let Some(d) = self.models.upload.as_mut().filter(|d| !d.sending()) {
+            match d.copy_to.iter().position(|p| p == peer) {
+                Some(i) => {
+                    d.copy_to.remove(i);
+                }
+                None => d.copy_to.push(peer.to_string()),
+            }
         }
         cx.notify();
     }
@@ -198,6 +214,7 @@ impl BragiView {
         spec.license = (!license.is_empty()).then_some(license);
         spec.adapter_for = d.base.clone().filter(|_| preview.is_adapter());
         spec.persist = d.persist;
+        spec.copy_to = d.copy_to.iter().filter(|p| d.peer.as_deref() != Some(p.as_str())).cloned().collect();
         if !rollout.is_empty() {
             let Some(inference) = d.inference.clone() else {
                 d.problem = Some("Pick the inference node of the rollout.".into());
@@ -288,6 +305,7 @@ impl BragiView {
             persist: p.spec.persist,
             inference: p.spec.rollout.as_ref().map(|r| r.inference.clone()),
             weight: p.spec.rollout.as_ref().map_or(0, |r| r.weight),
+            copy_to: p.spec.copy_to.clone(),
             ..Default::default()
         });
         self.upload_rollout.update(cx, |i, cx| i.set_text(p.spec.rollout.as_ref().map_or("", |r| r.name.as_str()), cx));
@@ -439,6 +457,23 @@ impl BragiView {
             );
         }
         card = card.child(nodes);
+        // The other nodes that copy it from there, node to node (Ymir 0.14.0).
+        let others: Vec<_> =
+            self.models.nodes.iter().flatten().filter(|n| n.status.is_ready() && d.peer.as_deref() != Some(n.node.peer.as_str())).collect();
+        if !others.is_empty() {
+            let mut row = div().flex().flex_row().flex_wrap().items_center().gap(px(6.)).child(div().text_size(px(12.)).child("Also copy to"));
+            for n in others {
+                let peer = n.node.peer.clone();
+                let on = d.copy_to.contains(&peer);
+                row = row.child(
+                    self.upload_chip(SharedString::from(format!("upload-copy-{peer}")), n.node.label.clone(), on)
+                        .on_click(cx.listener(move |v, _, _, cx| v.models_upload_toggle_copy(&peer, cx))),
+                );
+            }
+            card = card.child(row).child(small(
+                "Sent once from this device; the others copy it from that node. A node without room after what it keeps free is left out.".into(),
+            ));
+        }
         let adapter = matches!(&d.preview, Some(Ok(p)) if p.is_adapter());
         if adapter && let Some(peer) = &d.peer {
             let bases = self.upload_bases(peer);
@@ -524,6 +559,14 @@ impl BragiView {
                 let mut ok = div().id("upload-result").flex().flex_col().gap(px(4.)).text_size(px(13.));
                 for l in lines {
                     ok = ok.child(div().child(l));
+                }
+                for (i, (label, r)) in u.copies.iter().enumerate() {
+                    let (text, warn) = match r {
+                        Ok(said) => (format!("{label}: {said}"), false),
+                        Err(e) => (format!("{label}: not copied: {e}"), true),
+                    };
+                    let line = div().id(SharedString::from(format!("upload-copy-result-{i}"))).text_size(px(12.)).child(text);
+                    ok = ok.child(if warn { line.text_color(rgb(t.warning)) } else { line });
                 }
                 if let Some(n) = &u.adapter_note {
                     ok = ok.child(div().id("upload-adapter-note").text_size(px(12.)).text_color(rgb(t.warning)).child(n.clone()));
@@ -612,6 +655,7 @@ mod tests {
             adapter_note: None,
             rollout: None,
             rollout_commands: vec![],
+            copies: vec![],
         }
     }
 

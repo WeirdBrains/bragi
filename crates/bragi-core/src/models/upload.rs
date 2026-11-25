@@ -134,11 +134,15 @@ pub struct UploadSpec {
     /// Add it to a rollout on an inference node once it is stored.
     #[serde(default)]
     pub rollout: Option<RolloutAsk>,
+    /// Other model nodes (peer ids) that copy it from `peer` once it is stored there, node to node
+    /// (Ymir's pool upload, U6; needs Ymir 0.14.0 on them).
+    #[serde(default)]
+    pub copy_to: Vec<String>,
 }
 
 impl UploadSpec {
     pub fn new(path: impl Into<PathBuf>, peer: impl Into<String>) -> Self {
-        Self { path: path.into(), peer: peer.into(), name: None, adapter_for: None, license: None, persist: true, rollout: None }
+        Self { path: path.into(), peer: peer.into(), name: None, adapter_for: None, license: None, persist: true, rollout: None, copy_to: Vec::new() }
     }
 }
 
@@ -173,6 +177,9 @@ pub struct UploadedView {
     pub rollout: Option<Result<String, String>>,
     /// `ymirctl` commands that add it to a rollout, when no rollout was asked for or adding failed.
     pub rollout_commands: Vec<String>,
+    /// The other nodes that copied it ([`UploadSpec::copy_to`]): each one's label and what happened.
+    #[serde(default)]
+    pub copies: Vec<(String, Result<String, String>)>,
 }
 
 /// Uploads that were under way (cancelled, cut off, or Bragi quit): kept in the pool's data so
@@ -300,6 +307,7 @@ impl ModelsManager {
         }
         let mut up = Upload::new(id.clone(), &artifact, prov).serving();
         up.adapter_for = spec.adapter_for.clone();
+        let copy = up.clone();
         let local = vec![spec.path.clone()];
         let revision = artifact.revision.clone();
         let total = artifact.size();
@@ -356,6 +364,7 @@ impl ModelsManager {
             Ok(r) => (Some(r.note.unwrap_or_else(|| format!("saved in {}'s node.toml", node.label))), None),
             Err(m) => (None, Some(m)),
         };
+        let copies = self.copy_to(&spec, &node, &copy, &revision, tx).await;
         let rollout = match (&spec.rollout, &self.uploads) {
             (None, _) => None,
             (Some(_), None) => Some(Err("this Bragi can't reach rollouts".to_string())),
@@ -387,8 +396,85 @@ impl ModelsManager {
             adapter_note,
             rollout,
             rollout_commands,
+            copies,
         };
         let _ = tx.send(ModelsEvent::Uploaded { node, result: Ok(view) });
+    }
+
+    /// Has the nodes in `spec.copy_to` copy `up` from `stage`, node to node, and saves it in each
+    /// one's `node.toml` like an upload. A node without room after what it keeps free is left out
+    /// first.
+    async fn copy_to(
+        &self,
+        spec: &UploadSpec,
+        stage: &ModelNode,
+        up: &Upload,
+        revision: &str,
+        tx: &UnboundedSender<ModelsEvent>,
+    ) -> Vec<(String, Result<String, String>)> {
+        let devices = (self.devices)();
+        let label = |peer: &str| devices.iter().find(|n| n.peer == peer).map_or_else(|| peer.chars().take(12).collect(), |n| n.label.clone());
+        let total = up.files.iter().map(|f| f.size).sum::<u64>();
+        let mut out = Vec::new();
+        let mut go = Vec::new();
+        for peer in spec.copy_to.iter().filter(|p| **p != stage.peer) {
+            match self.client.disk(peer).await {
+                Ok(d) if d.free.saturating_sub(d.keep_free) < total => out.push((
+                    label(peer),
+                    Err(format!(
+                        "left out: {} free, it keeps {} free, and this needs {}",
+                        human_bytes(d.free),
+                        human_bytes(d.keep_free),
+                        human_bytes(total)
+                    )),
+                )),
+                _ => go.push(peer.clone()),
+            }
+        }
+        if go.is_empty() {
+            return out;
+        }
+        let ptx = tx.clone();
+        let copies = self
+            .client
+            .replicate(&stage.peer, &go, up, |peer, p| {
+                let _ = ptx.send(ModelsEvent::Progress { peer: peer.to_string(), label: label(peer), done: p.done, total: p.total });
+            })
+            .await;
+        for (peer, got) in copies {
+            let name = label(&peer);
+            let node = ModelNode { peer: peer.clone(), label: name.clone() };
+            let r = match got {
+                Ok(_) => Ok(()),
+                Err(e) if refusal_reason(&e) == Some(refusal::EXISTS) => Ok(()),
+                Err(e) => Err(explain_refusal(&name, &e).unwrap_or_else(|| explain(&node, &e))),
+            };
+            let r = match r {
+                Err(m) => Err(m),
+                Ok(()) => {
+                    let reg = Register {
+                        cert: None,
+                        id: up.id.clone(),
+                        revision: revision.to_string(),
+                        adapter_for: spec.adapter_for.clone(),
+                        persist: spec.persist,
+                        role: None,
+                    };
+                    match &self.uploads {
+                        Some((dialer, cert)) => ymir_uploads::register(&**dialer, cert.clone(), &peer, &name, reg).await.map(|_| {
+                            if spec.persist {
+                                format!("copied from {}, saved in its node.toml", stage.label)
+                            } else {
+                                format!("copied from {}, not saved in its node.toml", stage.label)
+                            }
+                        }),
+                        None => Err("copied, but this Bragi can't save uploads on the node".to_string()),
+                    }
+                }
+            };
+            out.push((name, r));
+        }
+        out
     }
 
     fn upload_failed(&self, tx: &UnboundedSender<ModelsEvent>, node: &ModelNode, e: &RemoteError) {
