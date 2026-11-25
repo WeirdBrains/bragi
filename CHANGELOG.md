@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-25
+
 ### Added
 
 - Upload a model from this device (Ymir's model-upload plan, U4; needs Ymir 0.12.0 on the model node): the desktop Models screen has an Upload dialog for a GGUF model or LoRA adapter. It shows what the file is before anything is sent (model or adapter, format, architecture, size), then takes the node, the name, an optional license, an adapter's base (one the node serves) and whether to keep it in the node's `node.toml` (on by default). Progress shows with Cancel; the node keeps what was sent, and the screen lists unfinished uploads with Resume and Forget, also after Bragi restarts. The node's refusals are shown with what to do: no space left after the free space its owner keeps (`upload_keep_free`), a name in use, an adapter for a base it doesn't serve, a Ymir too old to take uploads. An adapter for llama.cpp says it is used from the base's next start. The result shows the `ymirctl` commands that add it to a rollout. `bragi-core` has the logic (`Core::models_inspect_upload`, `models_upload`, `models_pending_uploads`, `models_forget_upload`) and the bridge passes the new event through; the Flutter dialog comes later.
