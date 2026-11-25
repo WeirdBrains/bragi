@@ -4,7 +4,7 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 ## 2026-11-25 03:26 EST: v0.8.0 release in progress
 
-`release: v0.8.0` (`32a517d`, tag `v0.8.0`), cut on main `60ec613` after Pages was green: an upload can join a rollout (needs Ymir 0.13.0, released alongside). Left: the Release workflow, scan, `github`/`assets`, signing the Arch packages, packaging (this branch) and `taur`.
+`release: v0.8.0` (`32a517d`, tag `v0.8.0`), cut on main `60ec613` after Pages was green: an upload can join a rollout (needs Ymir 0.13.0, released alongside). The Release workflow passed on the tag ([run 45576032646](https://github.com/WeirdBrains/bragi/actions/runs/45576032646)); its 41 files were downloaded and scanned unpacked (no host names, tailnet names, private IPs or home paths). State at 04:05 EST: `github 0.8.0` running. Left: `assets`, signing the Arch packages, packaging (this branch) and `taur`.
 
 ## 2026-11-25 03:14 EST: add an upload to a rollout (branch `feature/upload-rollout`)
 
