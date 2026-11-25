@@ -205,6 +205,27 @@ async fn steps(
     }
     shot(cx, "54-upload-rollout-added").await;
     this.update(cx, |v, cx| v.models_close_upload(cx)).map_err(e)?;
+
+    // Copied on to another node: the second keeps more free than it has, so it is left out first.
+    this.update(cx, |v, cx| v.models_open_upload(cx)).map_err(e)?;
+    choose(cx, small)?;
+    wait_for(this, cx, "the copy preview", previewed).await?;
+    let (f, s2) = (first.clone(), second.clone());
+    this.update(cx, move |v, cx| {
+        v.models_upload_pick_node(&f, cx);
+        v.models_upload_toggle_copy(&s2, cx);
+    })
+    .map_err(e)?;
+    shot(cx, "55-upload-copy-ask").await;
+    this.update(cx, |v, cx| v.models_upload_start(cx)).map_err(e)?;
+    wait_for(this, cx, "the copy upload", |v| v.models.upload.as_ref().is_some_and(|d| d.result.is_some() || d.ended.is_some())).await?;
+    let got = this.read_with(cx, |v, _| v.models.upload.as_ref().and_then(|d| d.result.clone())).map_err(e)?;
+    match got {
+        Some(Ok(u)) if u.copies.len() == 1 && u.copies[0].1.as_ref().is_err_and(|m| m.starts_with("left out:")) => {}
+        other => return Err(format!("the copy was not left out: {other:?}")),
+    }
+    shot(cx, "56-upload-copy-left-out").await;
+    this.update(cx, |v, cx| v.models_close_upload(cx)).map_err(e)?;
     println!("bragi-scenario: uploads");
     Ok(())
 }
