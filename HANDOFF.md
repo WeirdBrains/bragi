@@ -34,7 +34,7 @@ Michael approved: linking a Ymir server is cert-only by default, with an explici
 2. Front ends that show a link code dialog (desktop `view.rs`, Flutter via the bridge) could show "cert-only" for a server code and offer the full-identity opt-out. The core default already applies to them.
 3. Docs: README, site `docs_started.dart`, CHANGELOG (Changed: server codes are cert-only by default), DESIGN in Ymir (B-section), roadmap.
 4. `scripts/ymir-link-e2e.sh`: the default should now be cert-only (`BRAGI_E2E_CERT_ONLY` becomes the default; add a full-identity case).
-5. Vendor weirdnet-project-helpers 0.3.3 (`python3 ../weirdnet-project-helpers/vendor.py .`, `helpers = "0.3.3"`), then release per AGENTS.md: `weirdnet_release.py --dry-run`, cut, Release workflow, dist scan, `assets`, packaging, `taur` (the signing machine has `taurctl`), site and roadmap.
+5. Vendor weirdnet-project-helpers 0.3.3 (`python3 ../weirdnet-project-helpers/vendor.py .`, `helpers = "0.3.3"`), then release per [AGENTS.md](AGENTS.md): `weirdnet_release.py --dry-run`, cut, Release workflow, dist scan, `assets`, packaging, `taur` (the signing machine has `taurctl`), site and roadmap.
 
 **Other branches pushed so nothing stays on one machine:** `feat/training-consent` (merged earlier, kept).
 
