@@ -120,8 +120,19 @@ fn a_server_for_another_home_is_not_taken_over() {
 #[test]
 fn no_binary_is_reported() {
     let d = tempfile::tempdir().unwrap();
-    let mut o = options(d.path(), free_port());
-    o.spawn = Some(Spawn { program: d.path().join("no-such-bragi"), args: vec![] });
-    let e = ensure::ensure(&o).unwrap_err();
+    // A test running beside this one may take the port free_port released; try a fresh one then.
+    let mut e = None;
+    for _ in 0..5 {
+        let mut o = options(d.path(), free_port());
+        o.spawn = Some(Spawn { program: d.path().join("no-such-bragi"), args: vec![] });
+        match ensure::ensure(&o).unwrap_err() {
+            EnsureError::PortTaken(_) => continue,
+            other => {
+                e = Some(other);
+                break;
+            }
+        }
+    }
+    let e = e.expect("every port tried was taken");
     assert!(matches!(&e, EnsureError::Failed(m) if m.contains("couldn't start")), "{e}");
 }
