@@ -274,7 +274,7 @@ async fn an_upload_joins_a_rollout_as_its_next_version() {
 }
 
 /// Copied on to other nodes, node to node: saved there; a node without room is left out first; a
-/// node that can't copy from a peer says why.
+/// node that can't copy from a peer gets it from this device instead.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_upload_is_copied_on_to_other_nodes() {
     let f = fixture();
@@ -287,7 +287,12 @@ async fn an_upload_is_copied_on_to_other_nodes() {
     assert_eq!(got.len(), 3, "not to the node it was sent to: {v:?}");
     assert_eq!(got["copy"].as_deref(), Ok("copied from gpu, saved in its node.toml"), "{v:?}");
     assert!(got["full"].as_ref().is_err_and(|e| e.starts_with("left out:") && e.contains("it keeps")), "{v:?}");
-    assert!(got["old"].is_err(), "{v:?}");
+    // "old" can't copy from a peer, so it is sent from this device; it can't record uploads.
+    assert!(
+        got["old"].as_ref().is_err_and(|e| e.starts_with("gpu could not copy it to old, so it was sent from this device; old runs a Ymir without")),
+        "{v:?}"
+    );
+    assert!(f.svcs[2].list().iter().any(|e| e.id() == "pool-q4_0"), "sent to peer-old from this device");
     let e = f.svcs[3].list().into_iter().find(|e| e.id() == "pool-q4_0").expect("copied to peer-copy");
     assert_eq!(e.provenance().unwrap().origin, ORIGIN_UPLOAD);
     assert!(!f.svcs[1].list().iter().any(|e| e.id() == "pool-q4_0"));

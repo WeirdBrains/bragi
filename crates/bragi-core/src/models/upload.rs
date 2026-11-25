@@ -364,7 +364,7 @@ impl ModelsManager {
             Ok(r) => (Some(r.note.unwrap_or_else(|| format!("saved in {}'s node.toml", node.label))), None),
             Err(m) => (None, Some(m)),
         };
-        let copies = self.copy_to(&spec, &node, &copy, &revision, tx).await;
+        let copies = self.copy_to(&spec, &node, &copy, &local, &revision, tx).await;
         let rollout = match (&spec.rollout, &self.uploads) {
             (None, _) => None,
             (Some(_), None) => Some(Err("this Bragi can't reach rollouts".to_string())),
@@ -403,12 +403,14 @@ impl ModelsManager {
 
     /// Has the nodes in `spec.copy_to` copy `up` from `stage`, node to node, and saves it in each
     /// one's `node.toml` like an upload. A node without room after what it keeps free is left out
-    /// first.
+    /// first. A node that can't copy from `stage` (it can't reach it, or runs an older Ymir) gets
+    /// `local` from this device instead, as `ymirctl` does; a refusal is reported as it is.
     async fn copy_to(
         &self,
         spec: &UploadSpec,
         stage: &ModelNode,
         up: &Upload,
+        local: &[PathBuf],
         revision: &str,
         tx: &UnboundedSender<ModelsEvent>,
     ) -> Vec<(String, Result<String, String>)> {
@@ -444,34 +446,59 @@ impl ModelsManager {
         for (peer, got) in copies {
             let name = label(&peer);
             let node = ModelNode { peer: peer.clone(), label: name.clone() };
+            let mut sent_instead = false;
             let r = match got {
                 Ok(_) => Ok(()),
                 Err(e) if refusal_reason(&e) == Some(refusal::EXISTS) => Ok(()),
-                Err(e) => Err(explain_refusal(&name, &e).unwrap_or_else(|| explain(&node, &e))),
-            };
-            let r = match r {
-                Err(m) => Err(m),
-                Ok(()) => {
-                    let reg = Register {
-                        cert: None,
-                        id: up.id.clone(),
-                        revision: revision.to_string(),
-                        adapter_for: spec.adapter_for.clone(),
-                        persist: spec.persist,
-                        role: None,
-                    };
-                    match &self.uploads {
-                        Some((dialer, cert)) => ymir_uploads::register(&**dialer, cert.clone(), &peer, &name, reg).await.map(|_| {
-                            if spec.persist {
-                                format!("copied from {}, saved in its node.toml", stage.label)
-                            } else {
-                                format!("copied from {}, not saved in its node.toml", stage.label)
-                            }
-                        }),
-                        None => Err("copied, but this Bragi can't save uploads on the node".to_string()),
+                Err(e @ (RemoteError::Refused { .. } | RemoteError::Cancelled)) => {
+                    Err(explain_refusal(&name, &e).unwrap_or_else(|| explain(&node, &e)))
+                }
+                Err(_) => {
+                    // It can't copy from the stage: send it from here.
+                    sent_instead = true;
+                    let ptx = tx.clone();
+                    let (p2, l2) = (peer.clone(), name.clone());
+                    match self
+                        .client
+                        .upload(&peer, up.clone(), local, |p| {
+                            let _ = ptx.send(ModelsEvent::Progress { peer: p2.clone(), label: l2.clone(), done: p.done, total: p.total });
+                        })
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(e) if refusal_reason(&e) == Some(refusal::EXISTS) => Ok(()),
+                        Err(e) => Err(explain_refusal(&name, &e).unwrap_or_else(|| explain(&node, &e))),
                     }
                 }
             };
+            let how = if sent_instead {
+                format!("{} could not copy it to {name}, so it was sent from this device", stage.label)
+            } else {
+                format!("copied from {}", stage.label)
+            };
+            let r =
+                match r {
+                    Err(m) => Err(m),
+                    Ok(()) => {
+                        let reg = Register {
+                            cert: None,
+                            id: up.id.clone(),
+                            revision: revision.to_string(),
+                            adapter_for: spec.adapter_for.clone(),
+                            persist: spec.persist,
+                            role: None,
+                        };
+                        match &self.uploads {
+                            Some((dialer, cert)) => ymir_uploads::register(&**dialer, cert.clone(), &peer, &name, reg)
+                                .await
+                                .map(|_| {
+                                    if spec.persist { format!("{how}, saved in its node.toml") } else { format!("{how}, not saved in its node.toml") }
+                                })
+                                .map_err(|e| if sent_instead { format!("{how}; {e}") } else { e }),
+                            None => Err("copied, but this Bragi can't save uploads on the node".to_string()),
+                        }
+                    }
+                };
             out.push((name, r));
         }
         out
