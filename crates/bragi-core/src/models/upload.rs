@@ -25,7 +25,7 @@ use weirdnet_agent::CancelToken;
 use weirdnet_agent::remote::RemoteError;
 use weirdnet_backends::AdapterChange;
 use weirdnet_backends::models::{Upload, refusal, refusal_reason};
-use weirdnet_model::artifact::{Artifact, ArtifactFormat, ArtifactKind, Provenance, ProvenanceBase, inspect as inspect_files};
+use weirdnet_model::artifact::{Artifact, ArtifactFormat, ArtifactKind, Provenance, inspect as inspect_files};
 
 use super::ymir_uploads::{self, Register};
 use super::{ModelNode, ModelsEvent, ModelsManager, explain, human_bytes};
@@ -280,7 +280,7 @@ impl ModelsManager {
             prov.extra.insert("architecture".into(), serde_json::Value::String(arch.clone()));
         }
         if let Some(base) = spec.adapter_for.clone() {
-            let mut b = prov.base.clone().unwrap_or_else(ProvenanceBase::default);
+            let mut b = prov.base.clone().unwrap_or_default();
             b.id = Some(base);
             prov.base = Some(b);
         }

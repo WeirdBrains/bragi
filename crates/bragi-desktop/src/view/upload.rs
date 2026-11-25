@@ -260,7 +260,15 @@ impl BragiView {
     /// "Unfinished uploads" on the Models screen.
     pub(super) fn upload_pending_list(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let t = self.theme;
-        if self.models_pending.is_empty() {
+        // The one being sent is in the dialog, not here.
+        let sending = self.models.upload.as_ref().filter(|d| d.sending()).and_then(|d| d.path.clone().zip(d.peer.clone()));
+        let shown: Vec<(usize, &PendingUpload)> = self
+            .models_pending
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !sending.as_ref().is_some_and(|(path, peer)| *path == p.spec.path && *peer == p.spec.peer))
+            .collect();
+        if shown.is_empty() {
             return None;
         }
         let mut col = div()
@@ -269,7 +277,7 @@ impl BragiView {
             .flex_col()
             .gap(px(4.))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("UNFINISHED UPLOADS"));
-        for (i, p) in self.models_pending.iter().enumerate() {
+        for (i, p) in shown {
             let file = p.spec.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             let (a, b) = (p.clone(), p.clone());
             col = col.child(
@@ -341,7 +349,11 @@ impl BragiView {
             .child(div().text_size(px(16.)).child("Upload a model"))
             .child(small("A GGUF model or LoRA adapter on this device goes to one of your model nodes, which serves it.".into()));
         // The file.
-        let file = d.path.as_ref().map_or("No file picked".to_string(), |p| p.display().to_string());
+        // The file's name; its folder is in the rollout command once it is sent.
+        let file = d
+            .path
+            .as_ref()
+            .map_or("No file picked".to_string(), |p| p.file_name().map_or_else(|| p.display().to_string(), |n| n.to_string_lossy().into_owned()));
         card = card.child(
             div().flex().flex_row().items_center().gap(px(8.)).child(div().id("upload-path").flex_1().text_size(px(13.)).child(file)).child(
                 self.button("upload-browse", "Choose…", false).when(d.sending(), |b| b.opacity(0.5)).on_click(cx.listener(|v, _, _, cx| {
@@ -437,15 +449,7 @@ impl BragiView {
         }
         match &d.result {
             Some(Ok(u)) => {
-                let mut lines = vec![if u.already_there {
-                    format!("{} already had {} with the same contents; nothing was sent.", self.upload_node_label(d), u.id)
-                } else if u.resumed > 0 {
-                    format!("Stored {} ({}), resumed after {} already there.", u.id, human_bytes(u.size), human_bytes(u.resumed))
-                } else {
-                    format!("Stored {} ({}) and serving it.", u.id, human_bytes(u.size))
-                }];
-                lines.extend(u.saved.clone());
-                lines.extend(u.register_error.clone());
+                let lines = result_lines(u, &self.upload_node_label(d));
                 let mut ok = div().id("upload-result").flex().flex_col().gap(px(4.)).text_size(px(13.));
                 for l in lines {
                     ok = ok.child(div().child(l));
@@ -486,5 +490,61 @@ impl BragiView {
             .as_ref()
             .and_then(|p| self.models.nodes.iter().flatten().find(|n| &n.node.peer == p).map(|n| n.node.label.clone()))
             .unwrap_or_else(|| "The node".into())
+    }
+}
+
+/// What the dialog says once the node has it: stored (resumed or not), already there, where it
+/// was saved, and a register problem.
+pub(super) fn result_lines(u: &UploadedView, node: &str) -> Vec<String> {
+    let mut lines = vec![if u.already_there {
+        format!("{node} already had {} with the same contents; nothing was sent.", u.id)
+    } else if u.resumed >= u.size {
+        format!("Stored {} ({}): the node already had all of it from the earlier try.", u.id, human_bytes(u.size))
+    } else if u.resumed > 0 {
+        format!("Stored {} ({}), resumed after {} already there.", u.id, human_bytes(u.size), human_bytes(u.resumed))
+    } else {
+        format!("Stored {} ({}) and serving it.", u.id, human_bytes(u.size))
+    }];
+    lines.extend(u.saved.clone());
+    lines.extend(u.register_error.clone());
+    lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn view() -> UploadedView {
+        UploadedView {
+            id: "m".into(),
+            revision: "r".into(),
+            size: 2_000_000,
+            resumed: 0,
+            already_there: false,
+            saved: Some("saved in gpu's node.toml".into()),
+            register_error: None,
+            adapter_note: None,
+            rollout_commands: vec![],
+        }
+    }
+
+    #[test]
+    fn the_result_says_how_it_got_there() {
+        assert_eq!(result_lines(&view(), "gpu"), ["Stored m (2.0 MB) and serving it.", "saved in gpu's node.toml"]);
+        let resumed = UploadedView { resumed: 500_000, ..view() };
+        assert!(result_lines(&resumed, "gpu")[0].contains("resumed after 500.0 kB"), "{:?}", result_lines(&resumed, "gpu"));
+        let all = UploadedView { resumed: 2_000_000, ..view() };
+        assert!(result_lines(&all, "gpu")[0].contains("already had all of it"));
+        let there = UploadedView { already_there: true, saved: None, ..view() };
+        assert_eq!(result_lines(&there, "gpu"), ["gpu already had m with the same contents; nothing was sent."]);
+    }
+
+    #[test]
+    fn a_dialog_is_sending_until_it_ends() {
+        let mut d = UploadDialog { run: Some("run".into()), ..Default::default() };
+        assert!(d.sending());
+        d.ended = Some("Cancelled.".into());
+        assert!(!d.sending());
+        assert!(!UploadDialog::default().sending());
     }
 }

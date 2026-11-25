@@ -76,8 +76,8 @@ impl NodeSpec {
             embedding: false,
             memory: 11_000_000_000,
             standins: true,
-            // More than any disk: uploads here are refused with no-space.
-            keep_free: 1 << 60,
+            // More than its disk has free: uploads here are refused with no-space.
+            keep_free: crate::demo_models::KEEP_MORE_THAN_FREE,
         }
     }
 }

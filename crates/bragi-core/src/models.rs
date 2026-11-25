@@ -312,12 +312,16 @@ pub fn human_bytes(n: u64) -> String {
     if i == 0 { format!("{n} B") } else { format!("{v:.1} {}", U[i]) }
 }
 
+/// How an upload is recorded after it is placed (Ymir's `/ymir/uploads/1`, temporary): the
+/// dialer and this device's certificate.
+type UploadsRecord = (Arc<dyn weirdnet_agent::remote::Dialer>, Option<Vec<u8>>);
+
 /// The part of the models feature that does not depend on the live network.
 pub struct ModelsManager {
     client: Arc<ModelsClient>,
     /// Where an upload is recorded after it is placed (Ymir's `/ymir/uploads/1`, temporary): the
     /// dialer and this device's certificate.
-    uploads: Option<(Arc<dyn weirdnet_agent::remote::Dialer>, Option<Vec<u8>>)>,
+    uploads: Option<UploadsRecord>,
     /// The user's other devices, as the roster has them now.
     devices: Arc<dyn Fn() -> Vec<ModelNode> + Send + Sync>,
     hub: String,
