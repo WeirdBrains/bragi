@@ -1,11 +1,11 @@
 {
-  "version": "0.8.0",
+  "version": "0.9.0",
   "x86_64-linux": {
-    "url": "https://github.com/WeirdBrains/bragi/releases/download/v0.8.0/bragi-0.8.0-x86_64-unknown-linux-gnu.tar.gz",
-    "sha256": "1408d44c1428a39b511969489f491b2377f15997527c649c8d1b2f8024dad7cc"
+    "url": "https://github.com/WeirdBrains/bragi/releases/download/v0.9.0/bragi-0.9.0-x86_64-unknown-linux-gnu.tar.gz",
+    "sha256": "a3cad5a8f65527e9866b6ea4a425d091aecec5463f90d8db99e388acf260391e"
   },
   "aarch64-linux": {
-    "url": "https://github.com/WeirdBrains/bragi/releases/download/v0.8.0/bragi-0.8.0-aarch64-unknown-linux-gnu.tar.gz",
-    "sha256": "00c2630dedcee0f365c1a47675a90b19ff7358bffdf1d340935a456d9318724c"
+    "url": "https://github.com/WeirdBrains/bragi/releases/download/v0.9.0/bragi-0.9.0-aarch64-unknown-linux-gnu.tar.gz",
+    "sha256": "70265c9e01c6a8ebfaaec61a93a5e3a44d92b8c1c46e95de0c377ed488941b9d"
   }
 }
