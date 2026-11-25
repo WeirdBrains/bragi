@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-25
+
 ### Added
 
 - Add an upload to a rollout (Ymir's model-upload plan, U4 follow-up; needs Ymir 0.13.0 on the inference node): the desktop Upload dialog takes an optional rollout name, the inference node that runs the rollout and a canary weight (0, 1, 5 or 10%). After the upload, Bragi adds the model as the rollout's next version over Ymir's `/ymir/rollouts/1`, saved in that node's `node.toml`, and shows the result. Raising a version above 10% stays with `ymirctl models rollout weight --eval`. If the node refuses or runs an older Ymir, the dialog says why and shows the `ymirctl` command instead. `bragi-core` has a small, temporary copy of the rollouts wire types (`models/ymir_rollouts.rs`), and the demo nodes answer rollouts too.
