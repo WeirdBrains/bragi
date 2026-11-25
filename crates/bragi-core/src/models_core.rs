@@ -11,6 +11,7 @@ use weirdnet_model::ModelStore;
 
 use crate::core::{Core, lock, random_id};
 use crate::error::Result;
+use crate::models::upload::{self, Pending, PendingUpload, UploadPreview, UploadSpec};
 use crate::models::{ModelNode, ModelsEvent, ModelsManager, NodeModels, PullSpec, SEARCH_LIMIT};
 
 /// A search or a pull under way: its events, and the id [`Core::cancel`] takes.
@@ -34,7 +35,8 @@ impl Core {
         });
         // The demo nodes start a mock Hub; otherwise `WEIRDNET_HF_URL` (a mirror) or Hugging Face.
         let hub = crate::demo::hub_override().unwrap_or_else(|| ModelStore::from_env().hub().to_string());
-        Ok(ModelsManager::new(client, devices, hub))
+        let cert = Some(encode_cert(&net.identity.our_cert()));
+        Ok(ModelsManager::new(client, devices, hub).with_uploads(net.dialer.clone(), cert))
     }
 
     /// What each of the user's other devices has, and whether it takes model management
@@ -78,6 +80,81 @@ impl Core {
     /// shells ask the user first.
     pub async fn models_remove(&self, peer: &str, id: &str, confirmed: bool) -> std::result::Result<u64, String> {
         self.models_manager().map_err(|e| e.message)?.remove(peer, id, confirmed).await
+    }
+
+    /// Reads and hashes a file (or model directory) on this device for the upload dialog: what it
+    /// is, before anything is sent.
+    pub async fn models_inspect_upload(&self, path: std::path::PathBuf) -> std::result::Result<UploadPreview, String> {
+        match tokio::task::spawn_blocking(move || upload::inspect(&path)).await {
+            Ok(r) => r.map(|(p, _)| p),
+            Err(e) => Err(format!("reading the file failed: {e}")),
+        }
+    }
+
+    /// Uploads to one model node. Events: `Progress`, then `Uploaded` (or `Failed`); [`Core::cancel`]
+    /// with the run's id stops it (`Cancelled`) and the node keeps the parts. Until it is done or
+    /// refused it is listed in [`Core::models_pending_uploads`], also after Bragi restarts, so the
+    /// shells can offer Resume (the same upload again).
+    pub fn models_upload(&self, spec: UploadSpec) -> Result<ModelsRun> {
+        let mgr = self.models_manager()?;
+        let (tx, events) = unbounded_channel();
+        let (id, cancel) = self.new_models_run();
+        let (core, run, dir) = (self.clone(), id.clone(), self.pool_dir());
+        let label = mgr.label_of(&spec.peer).unwrap_or_else(|| spec.peer.clone());
+        let size = std::fs::metadata(&spec.path).map_or(0, |m| m.len());
+        {
+            let _held = lock(&self.inner.uploads_file);
+            let mut p = Pending::load(&dir);
+            p.put(PendingUpload { spec: spec.clone(), label, size, started_ms: crate::history::now_ms() as u64 });
+            if let Err(e) = p.save(&dir) {
+                tracing::warn!("could not save the pending upload: {e}");
+            }
+        }
+        self.inner.handle.spawn(async move {
+            let (itx, mut irx) = unbounded_channel();
+            let (path, peer) = (spec.path.clone(), spec.peer.clone());
+            let work = mgr.upload(spec, &itx, &cancel);
+            tokio::pin!(work);
+            let mut finished = false;
+            loop {
+                tokio::select! {
+                    () = &mut work, if !finished => { finished = true; }
+                    e = irx.recv() => match e {
+                        Some(e) => {
+                            if matches!(e, ModelsEvent::Uploaded { .. } | ModelsEvent::Failed { .. }) {
+                                let _held = lock(&core.inner.uploads_file);
+                                let mut p = Pending::load(&dir);
+                                p.forget(&path, &peer);
+                                let _ = p.save(&dir);
+                            }
+                            let _ = tx.send(e);
+                        }
+                        None => break,
+                    },
+                }
+                if finished && irx.is_empty() {
+                    break;
+                }
+            }
+            lock(&core.inner.requests).remove(&run);
+        });
+        Ok(ModelsRun { id, events })
+    }
+
+    /// Uploads that were cancelled, cut off or under way when Bragi quit, in the active pool;
+    /// uploading one again resumes from the parts its node kept.
+    pub fn models_pending_uploads(&self) -> Vec<PendingUpload> {
+        let _held = lock(&self.inner.uploads_file);
+        Pending::load(&self.pool_dir()).uploads
+    }
+
+    /// Drops a pending upload from the list (the node deletes its parts after 7 days).
+    pub fn models_forget_upload(&self, path: &std::path::Path, peer: &str) {
+        let _held = lock(&self.inner.uploads_file);
+        let dir = self.pool_dir();
+        let mut p = Pending::load(&dir);
+        p.forget(path, peer);
+        let _ = p.save(&dir);
     }
 
     fn new_models_run(&self) -> (String, CancelToken) {

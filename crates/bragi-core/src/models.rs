@@ -248,9 +248,14 @@ pub enum ModelsEvent {
     Done,
     /// The user cancelled; partial files stay on the nodes and pulling again resumes them.
     Cancelled,
-    /// The pull could not start (no node fits, none answered, ...).
+    /// The pull or upload could not start (no node fits, none answered, an unreadable file, ...).
     Failed {
         message: String,
+    },
+    /// An upload finished (or was refused) on its node.
+    Uploaded {
+        node: ModelNode,
+        result: Result<upload::UploadedView, String>,
     },
 }
 
@@ -310,6 +315,9 @@ pub fn human_bytes(n: u64) -> String {
 /// The part of the models feature that does not depend on the live network.
 pub struct ModelsManager {
     client: Arc<ModelsClient>,
+    /// Where an upload is recorded after it is placed (Ymir's `/ymir/uploads/1`, temporary): the
+    /// dialer and this device's certificate.
+    uploads: Option<(Arc<dyn weirdnet_agent::remote::Dialer>, Option<Vec<u8>>)>,
     /// The user's other devices, as the roster has them now.
     devices: Arc<dyn Fn() -> Vec<ModelNode> + Send + Sync>,
     hub: String,
@@ -317,7 +325,18 @@ pub struct ModelsManager {
 
 impl ModelsManager {
     pub fn new(client: ModelsClient, devices: Arc<dyn Fn() -> Vec<ModelNode> + Send + Sync>, hub: impl Into<String>) -> Self {
-        Self { client: Arc::new(client), devices, hub: hub.into() }
+        Self { client: Arc::new(client), uploads: None, devices, hub: hub.into() }
+    }
+
+    /// The roster label of a device.
+    pub fn label_of(&self, peer: &str) -> Option<String> {
+        (self.devices)().into_iter().find(|n| n.peer == peer).map(|n| n.label)
+    }
+
+    /// Lets uploads be recorded and saved on the node (Ymir's `/ymir/uploads/1`).
+    pub fn with_uploads(mut self, dialer: Arc<dyn weirdnet_agent::remote::Dialer>, cert: Option<Vec<u8>>) -> Self {
+        self.uploads = Some((dialer, cert));
+        self
     }
 
     /// What every device of the user's has, and whether it takes model management.
@@ -514,6 +533,9 @@ fn stored_view(e: &StoredEntry) -> StoredView {
 fn hub_hit(h: &SearchHit) -> HubHit {
     HubHit { repo: h.id.clone(), downloads: h.downloads, likes: h.likes, gated: h.gated, updated: h.last_modified.clone() }
 }
+
+pub mod upload;
+pub mod ymir_uploads;
 
 #[cfg(test)]
 mod tests;
