@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 17:25 EST: v0.11.0 released
+
+`release: v0.11.0` (`9030973`, tag `v0.11.0`), cut on main `5a6805a` after Pages and Platforms (macOS and Windows desktop) were green: the model picker tags uploaded and trained models with their origin and license from the pool catalog (Ymir's U8; needs Ymir 0.15.3), weirdnet-agent 0.5.4 and weirdnet-backends 0.4.5, and the Windows sync-test race fix. The cut's checks passed. Every platform built in the Release workflow ([run 45703741360](https://github.com/WeirdBrains/bragi/actions/runs/45703741360)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.11.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.11.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.11.0 (branch `release/0.11.0-packaging`).
+
 ## 2026-11-25 15:02 EST: origin and license tags in the model picker (branch `feature/catalog-origin`)
 
 Ymir's model-upload U8, now that Weirdnet request D shipped. `ModelInfo` has `origin` and `license` from catalog/1 (`CatalogModel::origin`/`license`, weirdnet-agent 0.5.4), taken from the first inference node that says them; `ModelInfo::origin_tag()` gives `upload, MIT` or `train` and nothing for Hub or unknown models, as the Models screen already does for a node's stored files. The desktop picker chip and the terminal model line add the tag. weirdnet-agent 0.5.4 and weirdnet-backends 0.4.5. Older inference nodes send neither field and nothing is shown; saved views without the fields still read. The Flutter app's `ModelView` is unchanged (it would need the bridge regenerated); a later slice.
