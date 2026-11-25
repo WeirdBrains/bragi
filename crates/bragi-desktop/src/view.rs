@@ -31,6 +31,8 @@ mod models_scenario;
 mod react;
 mod settings_scenario;
 mod themes;
+mod upload;
+mod upload_scenario;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 
@@ -136,6 +138,11 @@ pub struct BragiView {
     models: models::Models,
     models_query: Entity<TextInput>,
     models_scroll: ScrollHandle,
+    /// The upload dialog's name and license fields.
+    upload_name: Entity<TextInput>,
+    upload_license: Entity<TextInput>,
+    /// Unfinished uploads (Resume), as `bragi-core` keeps them.
+    models_pending: Vec<bragi_core::PendingUpload>,
     /// Endpoints, links, folders and the target picker (see `endpoints`).
     prefs: endpoints::Prefs,
     fields: endpoints::Fields,
@@ -213,6 +220,8 @@ impl BragiView {
             }
         })
         .detach();
+        let upload_name = cx.new(|cx| TextInput::new("my-model-q4_k_m", theme, cx));
+        let upload_license = cx.new(|cx| TextInput::new("mit", theme, cx));
         let theme_input = cx.new(|cx| TextInput::new("Name or path", theme, cx));
         cx.subscribe_in(&theme_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
             TextInputEvent::Submit { .. } => this.theme_ask_submit(cx),
@@ -276,6 +285,9 @@ impl BragiView {
             models: models::Models { serve: true, ..Default::default() },
             models_query,
             models_scroll: ScrollHandle::new(),
+            upload_name,
+            upload_license,
+            models_pending: Vec::new(),
             prefs: endpoints::Prefs::default(),
             fields,
             _tasks: vec![follow],
@@ -1694,6 +1706,7 @@ impl Render for BragiView {
             .children(self.confirm_card(cx))
             .children(self.prefs_overlay(cx))
             .children(self.models_overlay(cx))
+            .children(self.upload_overlay(cx))
     }
 }
 

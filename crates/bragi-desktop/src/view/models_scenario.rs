@@ -142,6 +142,7 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
     })
     .await?;
     shot(cx, "46-models-removed").await;
+    super::upload_scenario::run(this, cx, pause).await?;
     this.update(cx, |v, cx| v.toggle_models(cx)).map_err(e)?;
     println!("bragi-scenario: models");
     Ok(())

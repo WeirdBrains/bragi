@@ -59,6 +59,7 @@ pub use crate::error::{CoreError, ErrorKind, Result};
 pub use crate::files::{ChatFile, FileKind, FileOrigin};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Mode, Role, UNDO_MS};
 pub use crate::mcp_servers::{McpScope, McpSecrets, McpServer, McpServerInput, McpServerView, McpTestReport, McpTransport};
+pub use crate::models::upload::{PendingUpload, UploadPreview, UploadSpec, UploadedView};
 pub use crate::models::{
     HubHit, ModelNode, ModelsEvent, NodeFit, NodeModels, NodeStatus, PullSpec, PullTarget, PulledView, QuantFit, StoredView, Verdict, human_bytes,
 };
