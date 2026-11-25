@@ -64,3 +64,21 @@ pub async fn register(dialer: &dyn Dialer, cert: Option<Vec<u8>>, peer: &str, la
         Err(e) => Err(remote(e)),
     }
 }
+
+/// The demo nodes' and tests' stand-in for Ymir's side: checks that `svc` holds the entry at that
+/// revision and answers as if it saved it (nothing is written).
+pub(crate) async fn serve_stand_in(mut ch: weirdnet_agent::remote::Channel, svc: &weirdnet_backends::models::ModelsService) {
+    let Ok(Some(req)) = ch.recv::<Register>().await else { return };
+    let have = svc.list().iter().any(|e| e.id() == req.id && e.provenance().is_some_and(|p| p.revision == req.revision));
+    let reply = if have {
+        RegisterReply::Registered(Registered {
+            saved: req.persist.then(|| format!("[[model.local]]\nid = \"{}\"\n", req.id)),
+            id: req.id,
+            revision: req.revision,
+            note: None,
+        })
+    } else {
+        RegisterReply::Failed { message: format!("there is no `{}` on this node", req.id) }
+    };
+    let _ = ch.send(&reply).await;
+}

@@ -144,7 +144,14 @@ fn serve_one(mut stream: std::net::TcpStream, repos: &[MockRepo], chunk_delay: D
 /// A `ModelsService` on `dir` against `hub`, with `usable` bytes of model memory, admitting
 /// whoever `auth` admits.
 pub fn service(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<dyn Authorize>) -> Arc<ModelsService> {
+    service_keeping(dir, hub, usable, auth, 0)
+}
+
+/// [`service`] taking uploads that leave `keep_free` bytes free on its disk.
+pub fn service_keeping(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<dyn Authorize>, keep_free: u64) -> Arc<ModelsService> {
+    use weirdnet_backends::models::{KeepFree, WritePolicy};
     let sup = Supervisor::new(vec![], vec![], SupervisorOptions::default());
     let budget = Budget { pool_bytes: usable, reserve_bytes: 0, usable_bytes: usable };
-    Arc::new(ModelsService::new(ModelStore::new(dir).with_hub(hub), sup, auth).with_budget(budget))
+    let policy = WritePolicy::default().with_keep_free(KeepFree::new(0, keep_free));
+    Arc::new(ModelsService::new(ModelStore::new(dir).with_hub(hub), sup, auth).with_budget(budget).with_write_policy(policy))
 }

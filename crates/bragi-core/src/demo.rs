@@ -45,6 +45,9 @@ pub struct NodeSpec {
     pub memory: u64,
     /// A model that isn't warm here is answered by a warm one, flagged (else it just answers).
     pub standins: bool,
+    /// Disk space uploads must leave free here (0: none), so a demo node can refuse with
+    /// `no-space`.
+    pub keep_free: u64,
 }
 
 impl NodeSpec {
@@ -61,6 +64,7 @@ impl NodeSpec {
             embedding: true,
             memory: 24_000_000_000,
             standins: true,
+            keep_free: 0,
         }
     }
 
@@ -72,6 +76,8 @@ impl NodeSpec {
             embedding: false,
             memory: 11_000_000_000,
             standins: true,
+            // More than any disk: uploads here are refused with no-space.
+            keep_free: 1 << 60,
         }
     }
 }
@@ -509,6 +515,7 @@ pub struct DemoNode {
     server: Mutex<Option<Server>>,
     /// Accepts task/1 streams (agent mode); the published `Server` doesn't serve them.
     tasks: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    uploads: Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// The other nodes of the cloud demo, which share this one's identity.
     siblings: Mutex<Vec<Arc<DemoNode>>>,
     /// Serves models/1 to the user's linked devices: the same `RosterAuth` a Ymir node uses.
@@ -590,15 +597,26 @@ impl DemoNode {
                 });
             }
         });
-        let (spec_memory, auth_models) = (spec.memory, auth.clone());
+        let (spec_memory, spec_keep_free, auth_models, auth_uploads) = (spec.memory, spec.keep_free, auth.clone(), auth.clone());
         let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
         // Model management, as a Ymir model node serves it: owner-only through the roster.
         let models_dir = dir.join("models");
         std::fs::create_dir_all(&models_dir).map_err(other)?;
-        let service = crate::demo_models::service(&models_dir, &hub_url(), spec_memory, auth_models);
-        let models = weirdnet_backends::models::ModelsServer::start(&node, service).map_err(other)?;
+        let service = crate::demo_models::service_keeping(&models_dir, &hub_url(), spec_memory, auth_models, spec_keep_free);
+        let models = weirdnet_backends::models::ModelsServer::start(&node, service.clone()).map_err(other)?;
+        // Ymir's `/ymir/uploads/1` after an upload, as a stand-in (see `models::ymir_uploads`).
+        let mut uploads_in = node.accept_streams(crate::models::ymir_uploads::UPLOADS_PROTOCOL, stream_limits()).map_err(other)?;
+        let uploads = tokio::spawn(async move {
+            while let Some(stream) = uploads_in.next().await {
+                if auth_uploads.authorize(&Caller::new(stream.peer().to_string())).is_err() {
+                    continue;
+                }
+                let svc = service.clone();
+                tokio::spawn(async move { crate::models::ymir_uploads::serve_stand_in(channel(stream), &svc).await });
+            }
+        });
         Ok(Self {
             identity,
             node,
@@ -606,6 +624,7 @@ impl DemoNode {
             faults,
             server: Mutex::new(Some(server)),
             tasks: Mutex::new(Some(tasks)),
+            uploads: Mutex::new(Some(uploads)),
             siblings: Mutex::default(),
             models: Mutex::new(Some(models)),
         })
@@ -616,6 +635,9 @@ impl DemoNode {
         lock(&self.server).take();
         lock(&self.models).take();
         if let Some(t) = lock(&self.tasks).take() {
+            t.abort();
+        }
+        if let Some(t) = lock(&self.uploads).take() {
             t.abort();
         }
         self.node.halt();

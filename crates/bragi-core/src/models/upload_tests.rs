@@ -7,12 +7,12 @@ use std::sync::Arc;
 use tokio::sync::mpsc::unbounded_channel;
 use weirdnet_agent::CancelToken;
 use weirdnet_agent::remote::{Authorize, Caller, Dialer, MemoryDialer, RemoteError};
-use weirdnet_backends::models::{KeepFree, MODELS_PROTOCOL, ModelsClient, ModelsService, WritePolicy};
+use weirdnet_backends::models::{MODELS_PROTOCOL, ModelsClient, ModelsService};
 
 use super::upload::*;
-use super::ymir_uploads::{RegisterReply, Registered, UPLOADS_PROTOCOL};
+use super::ymir_uploads::UPLOADS_PROTOCOL;
 use super::*;
-use crate::demo_models::service;
+use crate::demo_models::service_keeping;
 
 /// A GGUF model header for `arch`, padded to `len` bytes.
 pub(crate) fn gguf(len: usize, arch: &str) -> Vec<u8> {
@@ -75,32 +75,16 @@ fn fixture() -> Fixture {
     let owner: Arc<dyn Authorize> = Arc::new(|c: &Caller| if c.peer == "me" { Ok(()) } else { Err(RemoteError::refused("unknown-device")) });
     let dialer = MemoryDialer::new();
     let (mut dirs, mut svcs) = (Vec::new(), Vec::new());
-    for (peer, keep, uploads) in
-        [("peer-roomy", KeepFree::none(), true), ("peer-full", KeepFree::new(0, u64::MAX / 4), true), ("peer-old", KeepFree::none(), false)]
-    {
+    for (peer, keep, uploads) in [("peer-roomy", 0, true), ("peer-full", u64::MAX / 4, true), ("peer-old", 0, false)] {
         let dir = tempfile::tempdir().unwrap();
-        let svc = service(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone());
-        let svc = Arc::new(Arc::try_unwrap(svc).ok().expect("one owner").with_write_policy(WritePolicy::default().with_keep_free(keep)));
+        let svc = service_keeping(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone(), keep);
         let s = svc.clone();
         let protocols: Vec<&str> = if uploads { vec![MODELS_PROTOCOL, UPLOADS_PROTOCOL] } else { vec![MODELS_PROTOCOL] };
-        dialer.route_only(peer, &protocols, move |mut ch, protocol| {
+        dialer.route_only(peer, &protocols, move |ch, protocol| {
             let s = s.clone();
             tokio::spawn(async move {
                 if protocol == UPLOADS_PROTOCOL {
-                    // Ymir's node side, reduced to its answer: it checks the revision and saves.
-                    let Ok(Some(req)) = ch.recv::<super::ymir_uploads::Register>().await else { return };
-                    let have = s.list().iter().any(|e| e.id() == req.id && e.provenance().is_some_and(|p| p.revision == req.revision));
-                    let reply = if have {
-                        RegisterReply::Registered(Registered {
-                            id: req.id.clone(),
-                            revision: req.revision,
-                            saved: req.persist.then(|| format!("[[model.local]]\nid = \"{}\"\n", req.id)),
-                            note: None,
-                        })
-                    } else {
-                        RegisterReply::Failed { message: format!("there is no `{}` on this node", req.id) }
-                    };
-                    let _ = ch.send(&reply).await;
+                    super::ymir_uploads::serve_stand_in(ch, &s).await;
                 } else {
                     let _ = s.serve(ch, Caller::new("me")).await;
                 }
