@@ -67,7 +67,8 @@ async fn a_conversation_follows_the_user_to_another_device() {
 
     let conv = chat(&a, None, "hello from the first device").await;
     assert_eq!(a.conversation(&conv).unwrap().messages.len(), 2);
-    assert!(b.conversations(0, 10).unwrap().is_empty());
+    // b may already have it: the devices sync in the background as well (seen on Windows CI),
+    // so only the end state is checked.
 
     sync_until(&demo, &[&a, &b], "the conversation on the second device", || b.conversation(&conv).map(|c| c.messages.len() == 2).unwrap_or(false))
         .await;
