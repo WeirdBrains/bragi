@@ -276,6 +276,8 @@ pub(crate) struct Inner {
     pub(crate) offer: Mutex<Option<Arc<HostNode>>>,
     pub(crate) pairing: Mutex<Option<Pairing>>,
     pub(crate) requests: Mutex<HashMap<String, CancelToken>>,
+    /// Serialises edits of the pending uploads file.
+    pub(crate) uploads_file: Mutex<()>,
     /// Approval cards waiting for an answer, by request id (agent mode).
     pub(crate) cards: Mutex<HashMap<String, Arc<crate::agent::Cards>>>,
     /// The node search's generation (a newer search or a dismissal ends the older one) and limit.
@@ -418,6 +420,7 @@ impl Core {
                 offer: Mutex::new(None),
                 pairing: Mutex::new(None),
                 requests: Mutex::new(HashMap::new()),
+                uploads_file: Mutex::new(()),
                 cards: Mutex::new(HashMap::new()),
                 search: Mutex::new((0, NODE_SEARCH_LIMIT)),
                 reactions: tokio::sync::broadcast::channel(64).0,

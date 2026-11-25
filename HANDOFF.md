@@ -2,6 +2,24 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 02:07 EST: model upload dialog on the desktop (branch `feature/model-upload-dialog`)
+
+Ymir's model-upload plan, U4, desktop (GPUI) first, on Ymir 0.12.0's upload. Michael's calls: any linked device may upload, the license is optional, the node keeps max(10%, 20 GiB) free, an upload is kept in the node's `node.toml` by default, and rollouts are not set from Bragi yet (the result shows the `ymirctl` commands; `/ymir/rollouts/1` is the follow-up).
+
+**Changed:**
+- `weirdnet-agent` 0.5.2, `weirdnet-backends` 0.4.4, `weirdnet-model` 0.5.3. `StoredView` carries `base`, `origin` and `license`, and lists adapters too.
+- bragi-core [`models/upload.rs`](crates/bragi-core/src/models/upload.rs): `inspect` (what the file is, hashed here), `UploadSpec`, `ModelsManager::upload` over models/1 (progress that never goes back; `exists` with the same revision counts as already there; the llama.cpp next-start note for an adapter), refusals explained (no-space names `upload_keep_free`), and pending uploads in the pool's `uploads.json` for Resume. `Core::models_inspect_upload`, `models_upload`, `models_pending_uploads`, `models_forget_upload`.
+- [`models/ymir_uploads.rs`](crates/bragi-core/src/models/ymir_uploads.rs): a small, temporary copy of Ymir's `/ymir/uploads/1` wire types, which records the upload with the node. It goes away when Weirdnet's "upload placed" hook on `ModelsService` lands (asked of the Weirdnet Lead).
+- The demo nodes take uploads; the second keeps more free than its disk has, so it refuses with no-space.
+- Desktop [`view/upload.rs`](crates/bragi-desktop/src/view/upload.rs): Upload… on the Models screen opens the dialog (file picker, preview, node, adapter base, name, license, keep in `node.toml`, progress with Cancel, the result with the rollout commands), and the screen lists unfinished uploads with Resume and Forget. The bridge passes the `uploaded` event on; the Flutter dialog comes later.
+- `scripts/desktop-scenario.sh` retries its cleanup while a document portal still holds `run/doc`.
+
+**Checks:** `cargo fmt`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace` 307 passed, 0 failed, 4 ignored (new: 5 upload tests in bragi-core, 2 in the desktop). The desktop scenario passed under Xvfb with the demo profile (`scripts/desktop-scenario.sh`), with new shots 47-52: preview, progress, unfinished, resumed, no-space, adapter. No Dart changed, so Flutter was not run.
+
+**Not tested:** against a real Ymir node over the network; the llama.cpp restart note end to end (the demo's engine takes adapters live, so the scenario's shot 52 seeds that note; the text comes from bragi-core); the system file picker (the scenario sets the path).
+
+**Next:** merge, release, then `/ymir/rollouts/1` in Ymir and a rollout section in the dialog; the Flutter dialog.
+
 ## 2026-11-24 13:25 EST: cert-only default for Ymir server links (in progress, branch `feat/cert-only-default`)
 
 Michael approved: linking a Ymir server is cert-only by default, with an explicit opt-out for the full-identity link.
@@ -16,11 +34,11 @@ Michael approved: linking a Ymir server is cert-only by default, with an explici
 2. Front ends that show a link code dialog (desktop `view.rs`, Flutter via the bridge) could show "cert-only" for a server code and offer the full-identity opt-out. The core default already applies to them.
 3. Docs: README, site `docs_started.dart`, CHANGELOG (Changed: server codes are cert-only by default), DESIGN in Ymir (B-section), roadmap.
 4. `scripts/ymir-link-e2e.sh`: the default should now be cert-only (`BRAGI_E2E_CERT_ONLY` becomes the default; add a full-identity case).
-5. Vendor weirdnet-project-helpers 0.3.3 (`python3 ../weirdnet-project-helpers/vendor.py .`, `helpers = "0.3.3"`), then release per AGENTS.md: `weirdnet_release.py --dry-run`, cut, Release workflow, dist scan, `assets`, packaging, `taur` (alien-blue has `taurctl`), site and roadmap.
+5. Vendor weirdnet-project-helpers 0.3.3 (`python3 ../weirdnet-project-helpers/vendor.py .`, `helpers = "0.3.3"`), then release per AGENTS.md: `weirdnet_release.py --dry-run`, cut, Release workflow, dist scan, `assets`, packaging, `taur` (the signing machine has `taurctl`), site and roadmap.
 
 **Other branches pushed so nothing stays on one machine:** `feat/training-consent` (merged earlier, kept).
 
-**Local state:** alien-blue `~/Projects/WeirdBrains/bragi` has a stash "alien-blue local: bragi-serve ensure.rs" (the older `crates/bragi-serve/src/ensure.rs` change, kept, not applied).
+**Local state:** a local clone on the build machine has a stash "local: bragi-serve ensure.rs" (the older `crates/bragi-serve/src/ensure.rs` change, kept, not applied).
 
 ## 2026-11-24: v0.6.0 released
 

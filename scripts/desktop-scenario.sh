@@ -11,7 +11,16 @@ mkdir -p "$out"
 tmp=${TMPDIR:-/tmp}
 scratch=$(mktemp -d "$tmp/bragi-virtual.XXXXXX")
 mkdir -m 0700 "$scratch/run" "$scratch/home"
-trap 'rm -rf "$scratch"' EXIT
+# A document portal the session started may still hold run/doc for a moment after the app quits.
+cleanup() {
+  for _ in 1 2 3 4 5; do
+    fusermount3 -uz "$scratch/run/doc" 2>/dev/null || fusermount -uz "$scratch/run/doc" 2>/dev/null || true
+    rm -rf "$scratch" 2>/dev/null && return 0
+    sleep 1
+  done
+  rm -rf "$scratch"
+}
+trap cleanup EXIT
 
 cat > "$scratch/inner.sh" <<'INNER'
 #!/usr/bin/env bash

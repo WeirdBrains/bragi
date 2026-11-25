@@ -54,6 +54,7 @@ pub(super) struct Models {
     pub quant: HashMap<String, String>,
     pub pull: Option<PullView>,
     pub remove: Option<RemoveAsk>,
+    pub upload: Option<super::upload::UploadDialog>,
 }
 
 fn ready(n: &NodeModels) -> bool {
@@ -87,6 +88,7 @@ impl BragiView {
         self.themes_open = false;
         if self.models_open {
             self.models_reload(cx);
+            self.models_pending = self.core.models_pending_uploads();
         }
         cx.notify();
     }
@@ -442,11 +444,16 @@ impl BragiView {
                                 .items_center()
                                 .gap(px(8.))
                                 .child(div().flex_1().text_size(px(13.)).child(format!(
-                                    "{} · {}{}{}",
+                                    "{} · {}{}{}{}",
                                     sm.id,
                                     human_bytes(sm.size),
                                     if sm.complete { "" } else { " · incomplete" },
-                                    served
+                                    served,
+                                    match (&sm.origin, &sm.license) {
+                                        (Some(o), Some(l)) if o == "upload" || o == "train" => format!(" · {o}, {l}"),
+                                        (Some(o), None) if o == "upload" || o == "train" => format!(" · {o}"),
+                                        _ => String::new(),
+                                    }
                                 )))
                                 .child(
                                     div()
@@ -468,6 +475,14 @@ impl BragiView {
             }
         }
 
+        col = col.child(
+            div().flex().flex_row().items_center().gap(px(8.)).child(div().flex_1().child(heading("UPLOAD FROM THIS DEVICE"))).child(
+                self.button("models-upload", "Upload…", true)
+                    .when(m.owner_blocked(), |d| d.opacity(0.5))
+                    .on_click(cx.listener(|v, _, _, cx| v.models_open_upload(cx))),
+            ),
+        );
+        col = col.children(self.upload_pending_list(cx));
         col = col.child(heading("FIND A MODEL"));
         let blocked = m.owner_blocked();
         col = col.child(

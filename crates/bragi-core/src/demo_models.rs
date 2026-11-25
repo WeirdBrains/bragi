@@ -144,7 +144,21 @@ fn serve_one(mut stream: std::net::TcpStream, repos: &[MockRepo], chunk_delay: D
 /// A `ModelsService` on `dir` against `hub`, with `usable` bytes of model memory, admitting
 /// whoever `auth` admits.
 pub fn service(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<dyn Authorize>) -> Arc<ModelsService> {
+    service_keeping(dir, hub, usable, auth, 0)
+}
+
+/// `keep_free` for a node that keeps a little more free than its disk has when it starts, so
+/// every upload is refused with no-space.
+pub const KEEP_MORE_THAN_FREE: u64 = u64::MAX;
+
+/// [`service`] taking uploads that leave `keep_free` bytes free on its disk.
+pub fn service_keeping(dir: &std::path::Path, hub: &str, usable: u64, auth: Arc<dyn Authorize>, keep_free: u64) -> Arc<ModelsService> {
+    use weirdnet_backends::models::{KeepFree, WritePolicy};
+    const GIB: u64 = 1 << 30;
     let sup = Supervisor::new(vec![], vec![], SupervisorOptions::default());
     let budget = Budget { pool_bytes: usable, reserve_bytes: 0, usable_bytes: usable };
-    Arc::new(ModelsService::new(ModelStore::new(dir).with_hub(hub), sup, auth).with_budget(budget))
+    let store = ModelStore::new(dir).with_hub(hub);
+    let keep_free = if keep_free == KEEP_MORE_THAN_FREE { (store.free_bytes() / GIB + 2) * GIB } else { keep_free };
+    let policy = WritePolicy::default().with_keep_free(KeepFree::new(0, keep_free));
+    Arc::new(ModelsService::new(store, sup, auth).with_budget(budget).with_write_policy(policy))
 }

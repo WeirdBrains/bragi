@@ -17,10 +17,10 @@ bragi-serve = { path = "crates/bragi-serve" }
 bragi-mcp = { path = "crates/bragi-mcp" }
 
 # Published Weirdnet crates, used as they are.
-weirdnet-agent = { version = "0.5.0", features = ["pool", "serve"] }
+weirdnet-agent = { version = "0.5.2", features = ["pool", "serve"] }
 # Model management over Weirdnet (LF-30): the models/1 client and its types, and the Hub search.
-weirdnet-backends = { version = "0.3.0", features = ["node"] }
-weirdnet-model = { version = "0.5.1", default-features = false }
+weirdnet-backends = { version = "0.4.4", features = ["node"] }
+weirdnet-model = { version = "0.5.3", default-features = false }
 weirdnet-device-link = "0.4.2"
 weirdnet-net = "=0.8.2"
 weirdnet-sync = "0.7.1"
