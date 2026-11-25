@@ -77,9 +77,11 @@ fn fixture() -> Fixture {
     let owner: Arc<dyn Authorize> = Arc::new(|c: &Caller| if c.peer == "me" { Ok(()) } else { Err(RemoteError::refused("unknown-device")) });
     let dialer = MemoryDialer::new();
     let (mut dirs, mut svcs) = (Vec::new(), Vec::new());
-    for (peer, keep, uploads) in [("peer-roomy", 0, true), ("peer-full", u64::MAX / 4, true), ("peer-old", 0, false)] {
+    // "peer-copy" (and "peer-roomy") copy uploads from other nodes; the others can't.
+    for (peer, keep, uploads) in [("peer-roomy", 0, true), ("peer-full", u64::MAX / 4, true), ("peer-old", 0, false), ("peer-copy", 0, true)] {
         let dir = tempfile::tempdir().unwrap();
-        let svc = service_keeping(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone(), keep);
+        let peers: Option<Arc<dyn Dialer>> = matches!(peer, "peer-roomy" | "peer-copy").then(|| Arc::new(dialer.clone()) as Arc<dyn Dialer>);
+        let svc = crate::demo_models::service_peering(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone(), keep, peers);
         let s = svc.clone();
         let protocols: Vec<&str> = if uploads { vec![MODELS_PROTOCOL, UPLOADS_PROTOCOL] } else { vec![MODELS_PROTOCOL] };
         dialer.route_only(peer, &protocols, move |ch, protocol| {
@@ -108,6 +110,7 @@ fn fixture() -> Fixture {
             ModelNode { peer: "peer-full".into(), label: "full".into() },
             ModelNode { peer: "peer-old".into(), label: "old".into() },
             ModelNode { peer: "peer-inf".into(), label: "inf".into() },
+            ModelNode { peer: "peer-copy".into(), label: "copy".into() },
         ]
     });
     let mgr = ModelsManager::new(ModelsClient::new(dialer.clone()), devices, "http://127.0.0.1:9").with_uploads(dialer, None);
@@ -268,4 +271,24 @@ async fn an_upload_joins_a_rollout_as_its_next_version() {
     let e = v.rollout.clone().expect("asked").unwrap_err();
     assert!(e.contains("without /ymir/rollouts/1"), "{e}");
     assert!(v.rollout_commands.iter().any(|c| c.contains("--inference NODE")), "{v:?}");
+}
+
+/// Copied on to other nodes, node to node: saved there; a node without room is left out first; a
+/// node that can't copy from a peer says why.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_upload_is_copied_on_to_other_nodes() {
+    let f = fixture();
+    let p = f.files.path().join("Pool-Q4_0.gguf");
+    std::fs::write(&p, gguf(400_000, "llama")).unwrap();
+    let mut spec = UploadSpec::new(&p, "peer-roomy");
+    spec.copy_to = vec!["peer-copy".into(), "peer-full".into(), "peer-old".into(), "peer-roomy".into()];
+    let v = uploaded(&run(&f, spec).await).unwrap();
+    let got: std::collections::HashMap<_, _> = v.copies.iter().cloned().collect();
+    assert_eq!(got.len(), 3, "not to the node it was sent to: {v:?}");
+    assert_eq!(got["copy"].as_deref(), Ok("copied from gpu, saved in its node.toml"), "{v:?}");
+    assert!(got["full"].as_ref().is_err_and(|e| e.starts_with("left out:") && e.contains("it keeps")), "{v:?}");
+    assert!(got["old"].is_err(), "{v:?}");
+    let e = f.svcs[3].list().into_iter().find(|e| e.id() == "pool-q4_0").expect("copied to peer-copy");
+    assert_eq!(e.provenance().unwrap().origin, ORIGIN_UPLOAD);
+    assert!(!f.svcs[1].list().iter().any(|e| e.id() == "pool-q4_0"));
 }
