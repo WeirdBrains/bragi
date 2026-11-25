@@ -1,6 +1,6 @@
 pkgbase = bragi-bin
 	pkgdesc = Chat with your private AI cloud (Ymir) over Weirdnet, desktop app, prebuilt
-	pkgver = 0.8.0
+	pkgver = 0.9.0
 	pkgrel = 1
 	url = https://github.com/WeirdBrains/bragi
 	arch = x86_64
@@ -25,9 +25,9 @@ pkgbase = bragi-bin
 	conflicts = bragi-tui
 	options = !strip
 	options = !debug
-	source_x86_64 = https://github.com/WeirdBrains/bragi/releases/download/v0.8.0/bragi-0.8.0-x86_64-unknown-linux-gnu.tar.gz
-	sha256sums_x86_64 = 1408d44c1428a39b511969489f491b2377f15997527c649c8d1b2f8024dad7cc
-	source_aarch64 = https://github.com/WeirdBrains/bragi/releases/download/v0.8.0/bragi-0.8.0-aarch64-unknown-linux-gnu.tar.gz
-	sha256sums_aarch64 = 00c2630dedcee0f365c1a47675a90b19ff7358bffdf1d340935a456d9318724c
+	source_x86_64 = https://github.com/WeirdBrains/bragi/releases/download/v0.9.0/bragi-0.9.0-x86_64-unknown-linux-gnu.tar.gz
+	sha256sums_x86_64 = a3cad5a8f65527e9866b6ea4a425d091aecec5463f90d8db99e388acf260391e
+	source_aarch64 = https://github.com/WeirdBrains/bragi/releases/download/v0.9.0/bragi-0.9.0-aarch64-unknown-linux-gnu.tar.gz
+	sha256sums_aarch64 = 70265c9e01c6a8ebfaaec61a93a5e3a44d92b8c1c46e95de0c377ed488941b9d
 
 pkgname = bragi-bin
