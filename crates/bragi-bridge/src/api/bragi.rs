@@ -1341,6 +1341,11 @@ fn models_event_view(e: bragi_core::ModelsEvent) -> ModelsEventView {
         E::Done => ModelsEventView { kind: "done".into(), ..base },
         E::Cancelled => ModelsEventView { kind: "cancelled".into(), ..base },
         E::Failed { message } => ModelsEventView { kind: "failed".into(), text: Some(message), ..base },
+        // Uploads are desktop (GPUI) first; the Flutter app gets its dialog later (Ymir's U4).
+        E::Uploaded { node, result } => match result {
+            Ok(u) => ModelsEventView { kind: "uploaded".into(), node: Some(node_view(&node)), model: Some(u.id), size: u.size, served: true, ..base },
+            Err(m) => ModelsEventView { kind: "uploaded".into(), node: Some(node_view(&node)), text: Some(m), ..base },
+        },
     }
 }
 
