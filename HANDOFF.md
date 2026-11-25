@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 03:26 EST: v0.8.0 release in progress
+
+`release: v0.8.0` (`32a517d`, tag `v0.8.0`), cut on main `60ec613` after Pages was green: an upload can join a rollout (needs Ymir 0.13.0, released alongside). Left: the Release workflow, scan, `github`/`assets`, signing the Arch packages, packaging (this branch) and `taur`.
+
 ## 2026-11-25 03:14 EST: add an upload to a rollout (branch `feature/upload-rollout`)
 
 The follow-up to the upload dialog, on Ymir's new `/ymir/rollouts/1` (Ymir 0.13.0). The rollout decisions were made by llm dev from Michael's upload answers (any linked device, narrowed by the node's `rollout_callers`; above 10% needs scored eval rows or force, so Bragi offers 0-10% only; changes kept in `node.toml` by default). Michael can override them.
