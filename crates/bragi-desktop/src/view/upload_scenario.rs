@@ -181,7 +181,7 @@ async fn steps(
     shot(cx, "52-upload-adapter").await;
     this.update(cx, |v, cx| v.models_close_upload(cx)).map_err(e)?;
 
-    // Into a rollout: the next version on an inference node, at a canary weight.
+    // Into a rollout: the next version on an inference node, with a 20% share.
     this.update(cx, |v, cx| v.models_open_upload(cx)).map_err(e)?;
     choose(cx, small)?;
     wait_for(this, cx, "the rollout preview", previewed).await?;
@@ -192,7 +192,7 @@ async fn steps(
     this.update(cx, move |v, cx| {
         v.models_upload_pick_node(&f, cx);
         v.upload_rollout.update(cx, |i, cx| i.set_text("support", cx));
-        v.models_upload_pick_weight(5, cx);
+        v.models_upload_pick_percent(20, cx);
     })
     .map_err(e)?;
     shot(cx, "53-upload-rollout-ask").await;

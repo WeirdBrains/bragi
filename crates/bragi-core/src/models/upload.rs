@@ -146,13 +146,15 @@ impl UploadSpec {
     }
 }
 
-/// A rollout to add an upload to: its next version, on `inference` (a peer id), at `weight`
-/// (0 to [`ymir_rollouts::MAX_WEIGHT`]: a canary; more needs an eval, from `ymirctl`).
+/// A rollout to add an upload to: its next version, on `inference` (a peer id), with `percent`
+/// (0 to [`ymir_rollouts::MAX_PERCENT`]) of new conversations, the other versions sharing the rest.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RolloutAsk {
     pub inference: String,
     pub name: String,
-    pub weight: u32,
+    /// Saved unfinished uploads from Bragi 0.8.0 and 0.9.0 call it `weight` (it was at most 10).
+    #[serde(alias = "weight")]
+    pub percent: u32,
 }
 
 /// A finished upload on one node.

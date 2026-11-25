@@ -8,6 +8,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Changed
 
+- The desktop Upload dialog's rollout share is a percentage now (Ymir's decision 8, 2026-11-25; needs Ymir 0.15.0 on the inference node): presets 0, 1, 5, 10, 20, 50 and 100%, or any whole percentage from 0 to 100 typed in. It replaces the 0/1/5/10 weight choice. The upload is added at weight 0, then given exactly that share; the other versions share the rest. An inference node on an older Ymir keeps it at weight 0 and the dialog says why and shows the `ymirctl` commands. `RolloutAsk.percent` (was `weight`; unfinished uploads saved by 0.8.0 and 0.9.0 still read).
+
 - Copying an upload on to other nodes: a node that can't copy it from the node it went to (it can't reach that node, or runs an older Ymir) now gets the file from this device instead, as `ymirctl models upload --node all` does, and its result line says so. A node that refuses (no space, a name in use) is still reported as it is.
 
 ## [0.9.0] - 2026-11-25

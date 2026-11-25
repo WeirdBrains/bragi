@@ -13,6 +13,15 @@ use bragi_core::{ModelsEvent, PendingUpload, UploadPreview, UploadSpec, Uploaded
 
 use super::*;
 
+/// A share typed in the dialog: empty is 0; otherwise a whole percentage from 0 to 100 (`%` allowed).
+pub(super) fn parse_percent(text: &str) -> Option<u32> {
+    let t = text.trim().trim_end_matches('%').trim();
+    if t.is_empty() {
+        return Some(0);
+    }
+    t.parse::<u32>().ok().filter(|p| *p <= bragi_core::models::ymir_rollouts::MAX_PERCENT)
+}
+
 #[derive(Default)]
 pub(super) struct UploadDialog {
     pub path: Option<PathBuf>,
@@ -26,8 +35,8 @@ pub(super) struct UploadDialog {
     pub persist: bool,
     /// The inference node of the rollout to add it to (by peer); the name is in `upload_rollout`.
     pub inference: Option<String>,
-    /// Its weight there (0 to `MAX_WEIGHT`: a canary).
-    pub weight: u32,
+    /// The last preset picked for its share (the percentage itself is in `upload_canary`).
+    pub percent: u32,
     /// Other model nodes (by peer) that copy it from `peer`, node to node.
     pub copy_to: Vec<String>,
     pub run: Option<String>,
@@ -54,6 +63,7 @@ impl BragiView {
         self.upload_name.update(cx, |i, cx| i.set_text("", cx));
         self.upload_license.update(cx, |i, cx| i.set_text("", cx));
         self.upload_rollout.update(cx, |i, cx| i.set_text("", cx));
+        self.upload_canary.update(cx, |i, cx| i.set_text("", cx));
         if let Some(d) = self.models.upload.as_mut() {
             d.inference = self.state.catalog.nodes.first().map(|n| n.id.clone());
         }
@@ -68,9 +78,12 @@ impl BragiView {
         cx.notify();
     }
 
-    pub fn models_upload_pick_weight(&mut self, w: u32, cx: &mut Context<Self>) {
+    /// A preset share for the new rollout version (it fills the percentage field).
+    pub fn models_upload_pick_percent(&mut self, p: u32, cx: &mut Context<Self>) {
+        let p = p.min(bragi_core::models::ymir_rollouts::MAX_PERCENT);
         if let Some(d) = self.models.upload.as_mut().filter(|d| !d.sending()) {
-            d.weight = w.min(bragi_core::models::ymir_rollouts::MAX_WEIGHT);
+            d.percent = p;
+            self.upload_canary.update(cx, |i, cx| i.set_text(&p.to_string(), cx));
         }
         cx.notify();
     }
@@ -190,6 +203,7 @@ impl BragiView {
     pub fn models_upload_start(&mut self, cx: &mut Context<Self>) {
         let (name, license) = (self.upload_name.read(cx).text().trim().to_string(), self.upload_license.read(cx).text().trim().to_string());
         let rollout = self.upload_rollout.read(cx).text().trim().to_string();
+        let canary = parse_percent(self.upload_canary.read(cx).text());
         let Some(d) = self.models.upload.as_mut() else { return };
         if d.sending() {
             return;
@@ -221,7 +235,12 @@ impl BragiView {
                 cx.notify();
                 return;
             };
-            spec.rollout = Some(bragi_core::RolloutAsk { inference, name: rollout, weight: d.weight });
+            let Some(percent) = canary else {
+                d.problem = Some("The share is a percentage from 0 to 100, such as 20.".into());
+                cx.notify();
+                return;
+            };
+            spec.rollout = Some(bragi_core::RolloutAsk { inference, name: rollout, percent });
         }
         self.models_upload_send(spec, cx);
     }
@@ -304,11 +323,13 @@ impl BragiView {
             base: p.spec.adapter_for.clone(),
             persist: p.spec.persist,
             inference: p.spec.rollout.as_ref().map(|r| r.inference.clone()),
-            weight: p.spec.rollout.as_ref().map_or(0, |r| r.weight),
+            percent: p.spec.rollout.as_ref().map_or(0, |r| r.percent),
             copy_to: p.spec.copy_to.clone(),
             ..Default::default()
         });
         self.upload_rollout.update(cx, |i, cx| i.set_text(p.spec.rollout.as_ref().map_or("", |r| r.name.as_str()), cx));
+        let pct = p.spec.rollout.as_ref().map_or(String::new(), |r| r.percent.to_string());
+        self.upload_canary.update(cx, |i, cx| i.set_text(&pct, cx));
         self.upload_name.update(cx, |i, cx| i.set_text(p.spec.name.as_deref().unwrap_or(""), cx));
         self.upload_license.update(cx, |i, cx| i.set_text(p.spec.license.as_deref().unwrap_or(""), cx));
         self.models_upload_send(p.spec, cx);
@@ -506,7 +527,7 @@ impl BragiView {
                 .child(div().text_size(px(13.)).child("Keep it after the node restarts (saved in its node.toml)"))
                 .on_click(cx.listener(|v, _, _, cx| v.models_upload_toggle_persist(cx))),
         );
-        // A rollout to add it to (optional): an inference node, the name, a canary weight.
+        // A rollout to add it to (optional): an inference node, the name, its share in percent.
         card = card.child(field("Add to a rollout (optional): its name, such as support", self.upload_rollout.clone()));
         let infs = self.upload_inference_nodes();
         let mut row = div().flex().flex_row().flex_wrap().items_center().gap(px(6.)).child(div().text_size(px(12.)).child("On"));
@@ -520,15 +541,18 @@ impl BragiView {
                     .on_click(cx.listener(move |v, _, _, cx| v.models_upload_pick_inference(&peer, cx))),
             );
         }
-        row = row.child(div().text_size(px(12.)).child("Weight"));
-        for w in [0u32, 1, 5, 10] {
+        card = card.child(row);
+        let typed = parse_percent(self.upload_canary.read(cx).text());
+        let mut row = div().flex().flex_row().flex_wrap().items_center().gap(px(6.)).child(div().text_size(px(12.)).child("Share"));
+        for p in bragi_core::models::ymir_rollouts::PRESETS {
             row = row.child(
-                self.upload_chip(SharedString::from(format!("upload-weight-{w}")), w.to_string(), d.weight == w)
-                    .on_click(cx.listener(move |v, _, _, cx| v.models_upload_pick_weight(w, cx))),
+                self.upload_chip(SharedString::from(format!("upload-percent-{p}")), format!("{p}%"), typed == Some(p))
+                    .on_click(cx.listener(move |v, _, _, cx| v.models_upload_pick_percent(p, cx))),
             );
         }
-        card = card.child(row).child(small(
-            "A new version starts as a canary (up to 10% of new conversations); raise it with `ymirctl models rollout weight --eval`.".into(),
+        card = card.child(row).child(field("Or type a percentage, 0 to 100", self.upload_canary.clone())).child(small(
+            "The new version gets exactly this share of new conversations; the other versions share the rest. Empty is 0: pinnable, no traffic yet."
+                .into(),
         ));
         // Progress and the outcome.
         if let Some((done, total, label)) = &d.progress {
@@ -642,6 +666,12 @@ pub(super) fn result_lines(u: &UploadedView, node: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_typed_share_is_a_percentage_from_0_to_100() {
+        assert_eq!([" 20 ", "50%", "", "0", "100"].map(parse_percent), [Some(20), Some(50), Some(0), Some(0), Some(100)]);
+        assert_eq!(["101", "-1", "2.5", "lots"].map(parse_percent), [None, None, None, None]);
+    }
 
     fn view() -> UploadedView {
         UploadedView {
