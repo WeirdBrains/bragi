@@ -4,7 +4,7 @@
 
 Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc.
 
-Updated 2026-11-24. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
+Updated 2026-11-25. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
 
 ## B1 Core and both shells (Done)
 
@@ -44,7 +44,7 @@ Weirdnet crates: `weirdnet-agent`.
 
 ## B7 Models on your pool (In progress)
 
-A Models screen on both shells: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting one or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's own identity, and the nodes accept it only from devices linked to their owner; a device a node refuses is shown as needing an owner device. Built in the core, the Flutter app and the GPUI desktop shell, and tried against demo nodes and a mock Hub. The desktop also uploads a GGUF model or LoRA adapter from this device to a node (Ymir 0.12.0), with progress, Cancel and Resume, an optional license, and the node's refusals such as too little free space. Next: the upload dialog in the Flutter app, adding an upload to a rollout from Bragi, and a check against a real Ymir node.
+A Models screen on both shells: search the Hugging Face Hub with a fit badge for each of your Ymir nodes, pull a model to one node, the best-fitting one or all of them with progress and cancel, see what each node has, and remove with a confirm. It runs over Weirdnet with this device's own identity, and the nodes accept it only from devices linked to their owner; a device a node refuses is shown as needing an owner device. Built in the core, the Flutter app and the GPUI desktop shell, and tried against demo nodes and a mock Hub. The desktop also uploads a GGUF model or LoRA adapter from this device to a node (Ymir 0.12.0), with progress, Cancel and Resume, an optional license, and the node's refusals such as too little free space, and can add the upload to a rollout on an inference node as its next version at a canary weight (Ymir 0.13.0). Next: the upload dialog in the Flutter app and a check against a real Ymir node.
 
 Weirdnet crates: `weirdnet-backends`, `weirdnet-model`.
 
