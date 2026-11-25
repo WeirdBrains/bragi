@@ -1366,10 +1366,11 @@ fn model_line(m: &bragi_core::ModelInfo, picked: bool) -> Line<'static> {
     let speed = m.tokens_per_sec.map(|x| format!(" · {x:.0} tok/s")).unwrap_or_default();
     let ctx = m.context.map(|c| format!(" · {}k context", c / 1024)).unwrap_or_default();
     let on = format!(" · on {} node{}", m.nodes.len(), crate::code::plural(m.nodes.len()));
+    let from = m.origin_tag().map(|o| format!(" · {o}")).unwrap_or_default();
     Line::from(vec![
         Span::styled(format!("  {dot} "), t.fg(color)),
         Span::styled(m.id.clone(), if picked { t.bold_accent() } else { t.text() }),
-        Span::styled(format!("  {label}{speed}{ctx}{on}"), t.dim()),
+        Span::styled(format!("  {label}{speed}{ctx}{on}{from}"), t.dim()),
     ])
 }
 
