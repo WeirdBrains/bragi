@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 02:55 EST: v0.7.0 released
+
+`release: v0.7.0` (`420b783`, tag `v0.7.0`): the desktop upload dialog (Ymir's model-upload U4, `feature/model-upload-dialog`, merged in `6cb6742`). Before the cut, `fix/handoff-agents-link` (`1fdaf57`) made the Pages link check pass again. The Release workflow's `check` job first failed on a `bragi-serve` port race in `no_binary_is_reported`; a rerun of that job passed, and `fix/serve-test-port-race` (`17c58b9`) has the test try a fresh port. Every platform built ([run 45566365976](https://github.com/WeirdBrains/bragi/actions/runs/45566365976)). Artifacts scanned (archives and packages unpacked): only the RPM packager field (the public maintainer address) matched; no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.7.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching). `bragi-bin` 0.7.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.7.0.
+
 ## 2026-11-25 02:07 EST: model upload dialog on the desktop (branch `feature/model-upload-dialog`)
 
 Ymir's model-upload plan, U4, desktop (GPUI) first, on Ymir 0.12.0's upload. Michael's calls: any linked device may upload, the license is optional, the node keeps max(10%, 20 GiB) free, an upload is kept in the node's `node.toml` by default, and rollouts are not set from Bragi yet (the result shows the `ymirctl` commands; `/ymir/rollouts/1` is the follow-up).
