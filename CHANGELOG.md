@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-25
+
 ### Added
 
 - Copy an upload on to other model nodes (Ymir's model-upload plan, U6; needs Ymir 0.14.0 on them): the desktop Upload dialog has "Also copy to" for the other ready nodes. The file is sent once from this device; the others copy it from the node it went to, node to node, and each saves it in its own `node.toml` (unless "Keep it" is off). A node without room after what it keeps free is left out before anything is copied, and the result says so per node. `UploadSpec.copy_to` and `UploadedView.copies` in `bragi-core`.
