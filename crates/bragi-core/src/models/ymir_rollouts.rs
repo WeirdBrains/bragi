@@ -95,13 +95,15 @@ pub async fn add_version(
     let next = now.rollouts.iter().filter(|r| r.name == name).flat_map(|r| r.versions.iter().map(|v| v.version)).max().unwrap_or(0) + 1;
     let change = Change::Add { name: name.to_string(), version: next, model: model.to_string(), weight: weight.min(MAX_WEIGHT) };
     let got = request(dialer, peer, label, &Request { cert, change: Some(change), persist }).await?;
-    let said = got.said.unwrap_or_else(|| format!("Added {name}@{next}."));
+    // Ymir words its reply for a terminal; the dialog shows it as one plain sentence.
+    let said = got.said.unwrap_or_else(|| format!("Added {name}@{next}")).replace('`', "");
+    let said = said.trim_end_matches('.');
     let where_ = match (got.saved, got.note) {
         (true, _) => format!("on {label}, saved in its node.toml"),
         (false, Some(n)) => format!("on {label}, live only: {n}"),
         (false, None) => format!("on {label}, live only until it restarts"),
     };
-    Ok(format!("{said} ({where_})"))
+    Ok(format!("{said}, {where_}."))
 }
 
 /// The demo nodes' and tests' stand-in for Ymir's side: keeps rollouts in memory and adds
