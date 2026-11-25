@@ -65,6 +65,15 @@ pub struct StoredView {
     pub served_as: Option<String>,
     /// `unloaded`, `warm`, ... when served.
     pub state: Option<String>,
+    /// For an adapter: the base model it runs on.
+    #[serde(default)]
+    pub base: Option<String>,
+    /// Where it came from (`hf`, `upload`, `train`, ...), from its provenance record.
+    #[serde(default)]
+    pub origin: Option<String>,
+    /// Its license, when the record has one.
+    #[serde(default)]
+    pub license: Option<String>,
 }
 
 /// What one node has.
@@ -484,13 +493,21 @@ impl ModelsManager {
 }
 
 fn stored_view(e: &StoredEntry) -> StoredView {
+    let files = match (&e.model, &e.adapter) {
+        (Some(m), _) => m.files.clone(),
+        (None, Some(a)) => a.path.file_name().map(|n| vec![n.to_string_lossy().into_owned()]).unwrap_or_default(),
+        _ => Vec::new(),
+    };
     StoredView {
-        id: e.model.id.clone(),
-        size: e.model.size,
-        files: e.model.files.clone(),
-        complete: e.model.complete,
+        id: e.id().to_string(),
+        size: e.size(),
+        files,
+        complete: e.model.as_ref().is_none_or(|m| m.complete),
         served_as: e.served_as.clone(),
         state: e.state.as_ref().map(|s| format!("{s:?}").to_lowercase()),
+        base: e.base.clone().or_else(|| e.adapter.as_ref().and_then(|a| a.base_model.clone())),
+        origin: e.provenance().map(|p| p.origin.clone()),
+        license: e.provenance().and_then(|p| p.license.clone()),
     }
 }
 
