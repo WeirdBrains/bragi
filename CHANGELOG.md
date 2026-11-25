@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Copying an upload on to other nodes: a node that can't copy it from the node it went to (it can't reach that node, or runs an older Ymir) now gets the file from this device instead, as `ymirctl models upload --node all` does, and its result line says so. A node that refuses (no space, a name in use) is still reported as it is.
+
 ## [0.9.0] - 2026-11-25
 
 ### Added

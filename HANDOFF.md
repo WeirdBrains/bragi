@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 05:58 EST: a node that can't copy an upload gets it from this device (branch `feature/upload-copy-fallback`)
+
+The fallback `ymirctl models upload --node all` has (Ymir's U6): in `ModelsManager::copy_to` ([crates/bragi-core/src/models/upload.rs](crates/bragi-core/src/models/upload.rs)), a copy that fails for any reason other than a refusal or a cancel (the node can't reach the one the file went to, or runs an older Ymir) is sent from this device with `ModelsClient::upload` and the same local file, then saved as usual. Its result line says "X could not copy it to Y, so it was sent from this device". Refusals (no space, a name in use) are reported as before. CHANGELOG updated.
+
+**Checks:** `cargo fmt --check`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace --locked` 310 passed, 0 failed, 4 ignored (`an_upload_is_copied_on_to_other_nodes` now checks that the node without a peer dialer gets the file from this device).
+
+**Not tested:** against real nodes on different machines; the desktop scenario (the demo nodes still show "left out" for the full node; the result text is the core's).
+
+**Next:** merge; release 0.10.0 with Ymir 0.15.0 (model upload U7).
+
 ## 2026-11-25 05:26 EST: v0.9.0 released
 
 `release: v0.9.0` (`1db8f04`, tag `v0.9.0`), cut on main `77c7a43` after Pages was green: an upload can be copied on to other model nodes (`feature/upload-copies`; needs Ymir 0.14.0, released alongside). The cut's checks passed. Every platform built in the Release workflow ([run 45590082203](https://github.com/WeirdBrains/bragi/actions/runs/45590082203)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.9.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.9.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.9.0 (this branch).
