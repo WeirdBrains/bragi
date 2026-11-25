@@ -2,6 +2,22 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 07:38 EST: the upload dialog's rollout share is a percentage (branch `feature/canary-percent`)
+
+Michael asked at 7:24 AM ET for a canary percentage such as 20 or 50 (Ymir's model-upload decision 8). The 0.10.0 cut that was running then was stopped before it committed, tagged or pushed (its version edits were reverted), so the release includes this.
+
+**What changed**
+- [crates/bragi-core/src/models/ymir_rollouts.rs](crates/bragi-core/src/models/ymir_rollouts.rs) (TEMPORARY mirror): `Change::Share`, `MAX_PERCENT` (100) and `PRESETS`; `add_version` adds at weight 0, then sends the share (an older Ymir says it needs 0.15.0 and the version stays at 0); the stand-in serves shares.
+- `RolloutAsk.percent` (serde alias `weight`, so unfinished uploads from 0.8.0 and 0.9.0 still read).
+- Desktop: presets 0, 1, 5, 10, 20, 50 and 100% (`upload-percent-{p}`) and a typed percentage field (`parse_percent`: empty is 0, `%` allowed, over 100 refused with a message); scenario step 53 picks 20%.
+- CHANGELOG; ROADMAP, roadmap.toml and the site roadmap text.
+
+**Checks:** `cargo fmt --check`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace --locked` 311 passed, 0 failed, 4 ignored; the desktop scenario on Xvfb with the demo profile passed (screenshots 53 and 54 show the share row and the added version).
+
+**Not tested:** against a real Ymir 0.15.0 inference node (the stand-in mirrors its split); the Flutter app (no upload dialog there yet).
+
+**Next:** merge; release 0.10.0 after Ymir 0.15.0.
+
 ## 2026-11-25 05:58 EST: a node that can't copy an upload gets it from this device (branch `feature/upload-copy-fallback`)
 
 The fallback `ymirctl models upload --node all` has (Ymir's U6): in `ModelsManager::copy_to` ([crates/bragi-core/src/models/upload.rs](crates/bragi-core/src/models/upload.rs)), a copy that fails for any reason other than a refusal or a cancel (the node can't reach the one the file went to, or runs an older Ymir) is sent from this device with `ModelsClient::upload` and the same local file, then saved as usual. Its result line says "X could not copy it to Y, so it was sent from this device". Refusals (no space, a name in use) are reported as before. CHANGELOG updated.

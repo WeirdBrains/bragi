@@ -142,6 +142,8 @@ pub struct BragiView {
     upload_name: Entity<TextInput>,
     upload_license: Entity<TextInput>,
     upload_rollout: Entity<TextInput>,
+    /// The new rollout version's share, in percent (0 to 100).
+    upload_canary: Entity<TextInput>,
     /// Unfinished uploads (Resume), as `bragi-core` keeps them.
     models_pending: Vec<bragi_core::PendingUpload>,
     /// Endpoints, links, folders and the target picker (see `endpoints`).
@@ -224,6 +226,7 @@ impl BragiView {
         let upload_name = cx.new(|cx| TextInput::new("my-model-q4_k_m", theme, cx));
         let upload_license = cx.new(|cx| TextInput::new("mit", theme, cx));
         let upload_rollout = cx.new(|cx| TextInput::new("support", theme, cx));
+        let upload_canary = cx.new(|cx| TextInput::new("0", theme, cx));
         let theme_input = cx.new(|cx| TextInput::new("Name or path", theme, cx));
         cx.subscribe_in(&theme_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
             TextInputEvent::Submit { .. } => this.theme_ask_submit(cx),
@@ -290,6 +293,7 @@ impl BragiView {
             upload_name,
             upload_license,
             upload_rollout,
+            upload_canary,
             models_pending: Vec::new(),
             prefs: endpoints::Prefs::default(),
             fields,

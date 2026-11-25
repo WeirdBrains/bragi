@@ -252,21 +252,24 @@ async fn an_upload_joins_a_rollout_as_its_next_version() {
     let p = f.files.path().join("support-r3.gguf");
     std::fs::write(&p, gguf(100_000, "llama")).unwrap();
     let mut spec = UploadSpec::new(&p, "peer-roomy");
-    // Bragi offers canary weights only: more is capped.
-    spec.rollout = Some(RolloutAsk { inference: "peer-inf".into(), name: "support".into(), weight: 50 });
+    // Any share from 0 to 100, set exactly: the old version keeps the rest.
+    spec.rollout = Some(RolloutAsk { inference: "peer-inf".into(), name: "support".into(), percent: 20 });
     let v = uploaded(&run(&f, spec).await).unwrap();
     let said = v.rollout.clone().expect("asked").unwrap();
-    assert!(said.contains("support@3") && said.contains("on inf, saved in its node.toml"), "{said}");
+    assert!(said.contains("support@3 now gets 20.0%") && said.contains("on inf, saved in its node.toml"), "{said}");
     assert!(v.rollout_commands.is_empty(), "no commands needed: {v:?}");
     let rs = f.rollouts.lock().unwrap().clone();
     let v3 = rs[0].versions.iter().find(|v| v.version == 3).expect("added");
-    assert_eq!((v3.model.as_str(), v3.weight), ("support-r3", 10));
+    assert_eq!((v3.model.as_str(), v3.weight), ("support-r3", 20));
+    assert_eq!(rs[0].versions.iter().find(|v| v.version == 2).map(|v| v.weight), Some(80));
+    let old: RolloutAsk = serde_json::from_str(r#"{"inference":"p","name":"s","weight":5}"#).unwrap();
+    assert_eq!(old.percent, 5, "an unfinished upload saved by Bragi 0.9.0 still reads");
 
     // A node without /ymir/rollouts/1: the upload stands, the rollout says why, the commands show.
     let p = f.files.path().join("other-r1.gguf");
     std::fs::write(&p, gguf(90_000, "llama")).unwrap();
     let mut spec = UploadSpec::new(&p, "peer-roomy");
-    spec.rollout = Some(RolloutAsk { inference: "peer-old".into(), name: "support".into(), weight: 0 });
+    spec.rollout = Some(RolloutAsk { inference: "peer-old".into(), name: "support".into(), percent: 0 });
     let v = uploaded(&run(&f, spec).await).unwrap();
     let e = v.rollout.clone().expect("asked").unwrap_err();
     assert!(e.contains("without /ymir/rollouts/1"), "{e}");
