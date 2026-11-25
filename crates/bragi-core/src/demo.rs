@@ -515,7 +515,8 @@ pub struct DemoNode {
     server: Mutex<Option<Server>>,
     /// Accepts task/1 streams (agent mode); the published `Server` doesn't serve them.
     tasks: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    uploads: Mutex<Option<tokio::task::JoinHandle<()>>>,
+    /// The `/ymir/uploads/1` and `/ymir/rollouts/1` stand-ins.
+    uploads: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     /// The other nodes of the cloud demo, which share this one's identity.
     siblings: Mutex<Vec<Arc<DemoNode>>>,
     /// Serves models/1 to the user's linked devices: the same `RosterAuth` a Ymir node uses.
@@ -597,7 +598,8 @@ impl DemoNode {
                 });
             }
         });
-        let (spec_memory, spec_keep_free, auth_models, auth_uploads) = (spec.memory, spec.keep_free, auth.clone(), auth.clone());
+        let (spec_memory, spec_keep_free, auth_models, auth_uploads, auth_rollouts) =
+            (spec.memory, spec.keep_free, auth.clone(), auth.clone(), auth.clone());
         let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
@@ -617,6 +619,18 @@ impl DemoNode {
                 tokio::spawn(async move { crate::models::ymir_uploads::serve_stand_in(channel(stream), &svc).await });
             }
         });
+        // Ymir's `/ymir/rollouts/1`, as a stand-in (see `models::ymir_rollouts`): rollouts kept in memory.
+        let mut rollouts_in = node.accept_streams(crate::models::ymir_rollouts::ROLLOUTS_PROTOCOL, stream_limits()).map_err(other)?;
+        let rollouts = tokio::spawn(async move {
+            let state: Arc<std::sync::Mutex<Vec<crate::models::ymir_rollouts::Rollout>>> = Arc::default();
+            while let Some(stream) = rollouts_in.next().await {
+                if auth_rollouts.authorize(&Caller::new(stream.peer().to_string())).is_err() {
+                    continue;
+                }
+                let state = state.clone();
+                tokio::spawn(async move { crate::models::ymir_rollouts::serve_stand_in(channel(stream), &state).await });
+            }
+        });
         Ok(Self {
             identity,
             node,
@@ -624,7 +638,7 @@ impl DemoNode {
             faults,
             server: Mutex::new(Some(server)),
             tasks: Mutex::new(Some(tasks)),
-            uploads: Mutex::new(Some(uploads)),
+            uploads: Mutex::new(vec![uploads, rollouts]),
             siblings: Mutex::default(),
             models: Mutex::new(Some(models)),
         })
@@ -637,7 +651,7 @@ impl DemoNode {
         if let Some(t) = lock(&self.tasks).take() {
             t.abort();
         }
-        if let Some(t) = lock(&self.uploads).take() {
+        for t in lock(&self.uploads).drain(..) {
             t.abort();
         }
         self.node.halt();

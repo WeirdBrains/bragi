@@ -66,6 +66,8 @@ pub(crate) fn lora(len: usize, arch: &str) -> Vec<u8> {
 
 struct Fixture {
     mgr: ModelsManager,
+    /// The rollouts on the inference node "inf" (peer-inf).
+    rollouts: Arc<std::sync::Mutex<Vec<super::ymir_rollouts::Rollout>>>,
     svcs: Vec<Arc<ModelsService>>,
     files: tempfile::TempDir,
     _dirs: Vec<tempfile::TempDir>,
@@ -93,16 +95,23 @@ fn fixture() -> Fixture {
         dirs.push(dir);
         svcs.push(svc);
     }
+    let rollouts: Arc<std::sync::Mutex<Vec<super::ymir_rollouts::Rollout>>> = Arc::default();
+    let r = rollouts.clone();
+    dialer.route_only("peer-inf", &[super::ymir_rollouts::ROLLOUTS_PROTOCOL], move |ch, _| {
+        let r = r.clone();
+        tokio::spawn(async move { super::ymir_rollouts::serve_stand_in(ch, &r).await });
+    });
     let dialer: Arc<dyn Dialer> = Arc::new(dialer);
     let devices = Arc::new(|| {
         vec![
             ModelNode { peer: "peer-roomy".into(), label: "gpu".into() },
             ModelNode { peer: "peer-full".into(), label: "full".into() },
             ModelNode { peer: "peer-old".into(), label: "old".into() },
+            ModelNode { peer: "peer-inf".into(), label: "inf".into() },
         ]
     });
     let mgr = ModelsManager::new(ModelsClient::new(dialer.clone()), devices, "http://127.0.0.1:9").with_uploads(dialer, None);
-    Fixture { mgr, svcs, files: tempfile::tempdir().unwrap(), _dirs: dirs }
+    Fixture { mgr, rollouts, svcs, files: tempfile::tempdir().unwrap(), _dirs: dirs }
 }
 
 async fn run(f: &Fixture, spec: UploadSpec) -> Vec<ModelsEvent> {
@@ -227,4 +236,36 @@ async fn refusals_say_what_to_do() {
     assert!(e.starts_with("gpu refused the upload (no-base)"), "{e}");
     let e = uploaded(&run(&f, UploadSpec::new(&p, "peer-gone")).await).unwrap_err();
     assert!(e.contains("not on your roster"), "{e}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_upload_joins_a_rollout_as_its_next_version() {
+    use super::upload::RolloutAsk;
+    let f = fixture();
+    f.rollouts.lock().unwrap().push(super::ymir_rollouts::Rollout {
+        name: "support".into(),
+        versions: vec![super::ymir_rollouts::Version { version: 2, model: "old-r2".into(), weight: 100 }],
+    });
+    let p = f.files.path().join("support-r3.gguf");
+    std::fs::write(&p, gguf(100_000, "llama")).unwrap();
+    let mut spec = UploadSpec::new(&p, "peer-roomy");
+    // Bragi offers canary weights only: more is capped.
+    spec.rollout = Some(RolloutAsk { inference: "peer-inf".into(), name: "support".into(), weight: 50 });
+    let v = uploaded(&run(&f, spec).await).unwrap();
+    let said = v.rollout.clone().expect("asked").unwrap();
+    assert!(said.contains("support@3") && said.contains("on inf, saved in its node.toml"), "{said}");
+    assert!(v.rollout_commands.is_empty(), "no commands needed: {v:?}");
+    let rs = f.rollouts.lock().unwrap().clone();
+    let v3 = rs[0].versions.iter().find(|v| v.version == 3).expect("added");
+    assert_eq!((v3.model.as_str(), v3.weight), ("support-r3", 10));
+
+    // A node without /ymir/rollouts/1: the upload stands, the rollout says why, the commands show.
+    let p = f.files.path().join("other-r1.gguf");
+    std::fs::write(&p, gguf(90_000, "llama")).unwrap();
+    let mut spec = UploadSpec::new(&p, "peer-roomy");
+    spec.rollout = Some(RolloutAsk { inference: "peer-old".into(), name: "support".into(), weight: 0 });
+    let v = uploaded(&run(&f, spec).await).unwrap();
+    let e = v.rollout.clone().expect("asked").unwrap_err();
+    assert!(e.contains("without /ymir/rollouts/1"), "{e}");
+    assert!(v.rollout_commands.iter().any(|c| c.contains("--inference NODE")), "{v:?}");
 }
