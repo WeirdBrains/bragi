@@ -12,7 +12,7 @@ use weirdnet_backends::models::{MODELS_PROTOCOL, ModelsClient, ModelsService};
 use super::upload::*;
 use super::ymir_uploads::UPLOADS_PROTOCOL;
 use super::*;
-use crate::demo_models::service_keeping;
+use crate::demo_models::service_peering;
 
 /// A GGUF model header for `arch`, padded to `len` bytes.
 pub(crate) fn gguf(len: usize, arch: &str) -> Vec<u8> {
@@ -81,7 +81,7 @@ fn fixture() -> Fixture {
     for (peer, keep, uploads) in [("peer-roomy", 0, true), ("peer-full", u64::MAX / 4, true), ("peer-old", 0, false), ("peer-copy", 0, true)] {
         let dir = tempfile::tempdir().unwrap();
         let peers: Option<Arc<dyn Dialer>> = matches!(peer, "peer-roomy" | "peer-copy").then(|| Arc::new(dialer.clone()) as Arc<dyn Dialer>);
-        let svc = crate::demo_models::service_peering(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone(), keep, peers);
+        let svc = service_peering(dir.path(), "http://127.0.0.1:9", 1 << 30, owner.clone(), keep, peers);
         let s = svc.clone();
         let protocols: Vec<&str> = if uploads { vec![MODELS_PROTOCOL, UPLOADS_PROTOCOL] } else { vec![MODELS_PROTOCOL] };
         dialer.route_only(peer, &protocols, move |ch, protocol| {

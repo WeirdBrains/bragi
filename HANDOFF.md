@@ -2,6 +2,20 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 04:48 EST: copy an upload on to other nodes (branch `feature/upload-copies`)
+
+Ymir's model-upload U6 (pools) on the desktop: the file goes once to the picked node and the others copy it from there, on Weirdnet's `ModelsClient::replicate` (weirdnet-backends 0.4.4); needs Ymir 0.14.0 on the nodes.
+
+**Changed:**
+- bragi-core [`models/upload.rs`](crates/bragi-core/src/models/upload.rs): `UploadSpec.copy_to`, `UploadedView.copies`, `ModelsManager::copy_to` (each node's free space less what it keeps first, then `replicate`, then each copy recorded with `/ymir/uploads/1`). `demo_models::service_peering` gives a test or demo service a peer dialer.
+- Desktop [`view/upload.rs`](crates/bragi-desktop/src/view/upload.rs): "Also copy to" chips for the other ready nodes and one result line per node.
+
+**Checks:** `cargo fmt`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace` 310 passed, 0 failed, 4 ignored (new: `an_upload_is_copied_on_to_other_nodes`: copied and saved, a full node left out, a node without a peer dialer refused). The desktop scenario passed under Xvfb with the demo profile, with new shots 55-56 (the copy chips; the second demo node, which keeps more free than it has, left out). No Dart changed, so Flutter was not run.
+
+**Not tested:** a successful copy in the desktop demo (the demo nodes have no peer dialer, and the second is full); against real Ymir nodes. Bragi does not fall back to sending from this device when a node can't copy (ymirctl does).
+
+**Next:** release with Ymir 0.14.0.
+
 ## 2026-11-25 04:18 EST: v0.8.0 released
 
 `release: v0.8.0` (`32a517d`, tag `v0.8.0`), cut on main `60ec613` after Pages was green: an upload can join a rollout from the desktop dialog (`feature/upload-rollout`, merged in `60ec613`; needs Ymir 0.13.0, released alongside). The cut's checks passed. Every platform built in the Release workflow ([run 45576032646](https://github.com/WeirdBrains/bragi/actions/runs/45576032646)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.8.0) with 42 files and `SHA256SUMS` (`assets` ok, marked latest), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.8.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.8.0 (this branch). The first `github 0.8.0` attempt was interrupted before it started and was run once.
