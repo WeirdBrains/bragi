@@ -180,6 +180,31 @@ async fn steps(
     }
     shot(cx, "52-upload-adapter").await;
     this.update(cx, |v, cx| v.models_close_upload(cx)).map_err(e)?;
+
+    // Into a rollout: the next version on an inference node, at a canary weight.
+    this.update(cx, |v, cx| v.models_open_upload(cx)).map_err(e)?;
+    choose(cx, small)?;
+    wait_for(this, cx, "the rollout preview", previewed).await?;
+    if this.read_with(cx, |v, _| v.upload_inference_nodes().is_empty()).map_err(e)? {
+        return Err("no inference node for the rollout".into());
+    }
+    let f = first.clone();
+    this.update(cx, move |v, cx| {
+        v.models_upload_pick_node(&f, cx);
+        v.upload_rollout.update(cx, |i, cx| i.set_text("support", cx));
+        v.models_upload_pick_weight(5, cx);
+    })
+    .map_err(e)?;
+    shot(cx, "53-upload-rollout-ask").await;
+    this.update(cx, |v, cx| v.models_upload_start(cx)).map_err(e)?;
+    wait_for(this, cx, "the rollout upload", |v| v.models.upload.as_ref().is_some_and(|d| d.result.is_some() || d.ended.is_some())).await?;
+    let got = this.read_with(cx, |v, _| v.models.upload.as_ref().and_then(|d| d.result.clone())).map_err(e)?;
+    match got {
+        Some(Ok(u)) if u.rollout.as_ref().is_some_and(|r| r.as_ref().is_ok_and(|s| s.contains("support@1"))) => {}
+        other => return Err(format!("the rollout was not added: {other:?}")),
+    }
+    shot(cx, "54-upload-rollout-added").await;
+    this.update(cx, |v, cx| v.models_close_upload(cx)).map_err(e)?;
     println!("bragi-scenario: uploads");
     Ok(())
 }

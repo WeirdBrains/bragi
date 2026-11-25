@@ -539,6 +539,7 @@ fn hub_hit(h: &SearchHit) -> HubHit {
 }
 
 pub mod upload;
+pub mod ymir_rollouts;
 pub mod ymir_uploads;
 
 #[cfg(test)]

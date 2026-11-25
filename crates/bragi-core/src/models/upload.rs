@@ -27,6 +27,7 @@ use weirdnet_backends::AdapterChange;
 use weirdnet_backends::models::{Upload, refusal, refusal_reason};
 use weirdnet_model::artifact::{Artifact, ArtifactFormat, ArtifactKind, Provenance, inspect as inspect_files};
 
+use super::ymir_rollouts;
 use super::ymir_uploads::{self, Register};
 use super::{ModelNode, ModelsEvent, ModelsManager, explain, human_bytes};
 
@@ -130,12 +131,24 @@ pub struct UploadSpec {
     pub license: Option<String>,
     /// Save it in the node's `node.toml` (the default) so it is served after a restart.
     pub persist: bool,
+    /// Add it to a rollout on an inference node once it is stored.
+    #[serde(default)]
+    pub rollout: Option<RolloutAsk>,
 }
 
 impl UploadSpec {
     pub fn new(path: impl Into<PathBuf>, peer: impl Into<String>) -> Self {
-        Self { path: path.into(), peer: peer.into(), name: None, adapter_for: None, license: None, persist: true }
+        Self { path: path.into(), peer: peer.into(), name: None, adapter_for: None, license: None, persist: true, rollout: None }
     }
+}
+
+/// A rollout to add an upload to: its next version, on `inference` (a peer id), at `weight`
+/// (0 to [`ymir_rollouts::MAX_WEIGHT`]: a canary; more needs an eval, from `ymirctl`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RolloutAsk {
+    pub inference: String,
+    pub name: String,
+    pub weight: u32,
 }
 
 /// A finished upload on one node.
@@ -155,9 +168,10 @@ pub struct UploadedView {
     pub register_error: Option<String>,
     /// For a llama.cpp adapter added to a running base: when it is used.
     pub adapter_note: Option<String>,
-    /// `ymirctl` commands, run on the inference node, that add it to a rollout: an upload with
-    /// `--rollout` (the node already has the files, so nothing is sent again) where the file is
-    /// there too, or `rollout add` for the stored id. Bragi does not set rollouts yet.
+    /// The rollout it was added to (`NAME@N` and what the inference node said), or why not.
+    #[serde(default)]
+    pub rollout: Option<Result<String, String>>,
+    /// `ymirctl` commands that add it to a rollout, when no rollout was asked for or adding failed.
     pub rollout_commands: Vec<String>,
 }
 
@@ -342,14 +356,26 @@ impl ModelsManager {
             Ok(r) => (Some(r.note.unwrap_or_else(|| format!("saved in {}'s node.toml", node.label))), None),
             Err(m) => (None, Some(m)),
         };
-        let rollout_commands = vec![
-            format!(
-                "ymirctl models upload {} --node {} --name {id} --rollout NAME",
-                shell_quote(&spec.path.display().to_string()),
-                shell_quote(&node.label)
-            ),
-            format!("ymirctl models rollout add NAME@N --model {id} --weight 0"),
-        ];
+        let rollout = match (&spec.rollout, &self.uploads) {
+            (None, _) => None,
+            (Some(_), None) => Some(Err("this Bragi can't reach rollouts".to_string())),
+            (Some(r), Some((dialer, cert))) => {
+                let label = self.label_of(&r.inference).unwrap_or_else(|| r.inference.clone());
+                Some(ymir_rollouts::add_version(&**dialer, cert.clone(), &label, r, &id, spec.persist).await)
+            }
+        };
+        let rollout_commands = if matches!(rollout, Some(Ok(_))) {
+            Vec::new()
+        } else {
+            vec![
+                format!(
+                    "ymirctl models upload {} --node {} --name {id} --rollout NAME",
+                    shell_quote(&spec.path.display().to_string()),
+                    shell_quote(&node.label)
+                ),
+                format!("ymirctl models rollout add NAME@N --model {id} --weight 0 --inference NODE"),
+            ]
+        };
         let view = UploadedView {
             id,
             revision,
@@ -359,6 +385,7 @@ impl ModelsManager {
             saved,
             register_error,
             adapter_note,
+            rollout,
             rollout_commands,
         };
         let _ = tx.send(ModelsEvent::Uploaded { node, result: Ok(view) });

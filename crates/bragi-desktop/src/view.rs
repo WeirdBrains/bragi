@@ -141,6 +141,7 @@ pub struct BragiView {
     /// The upload dialog's name and license fields.
     upload_name: Entity<TextInput>,
     upload_license: Entity<TextInput>,
+    upload_rollout: Entity<TextInput>,
     /// Unfinished uploads (Resume), as `bragi-core` keeps them.
     models_pending: Vec<bragi_core::PendingUpload>,
     /// Endpoints, links, folders and the target picker (see `endpoints`).
@@ -222,6 +223,7 @@ impl BragiView {
         .detach();
         let upload_name = cx.new(|cx| TextInput::new("my-model-q4_k_m", theme, cx));
         let upload_license = cx.new(|cx| TextInput::new("mit", theme, cx));
+        let upload_rollout = cx.new(|cx| TextInput::new("support", theme, cx));
         let theme_input = cx.new(|cx| TextInput::new("Name or path", theme, cx));
         cx.subscribe_in(&theme_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
             TextInputEvent::Submit { .. } => this.theme_ask_submit(cx),
@@ -287,6 +289,7 @@ impl BragiView {
             models_scroll: ScrollHandle::new(),
             upload_name,
             upload_license,
+            upload_rollout,
             models_pending: Vec::new(),
             prefs: endpoints::Prefs::default(),
             fields,

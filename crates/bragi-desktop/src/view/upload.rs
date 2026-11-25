@@ -24,6 +24,10 @@ pub(super) struct UploadDialog {
     pub base: Option<String>,
     /// Save it in the node's node.toml (on by default).
     pub persist: bool,
+    /// The inference node of the rollout to add it to (by peer); the name is in `upload_rollout`.
+    pub inference: Option<String>,
+    /// Its weight there (0 to `MAX_WEIGHT`: a canary).
+    pub weight: u32,
     pub run: Option<String>,
     /// Done, total, and the node's label.
     pub progress: Option<(u64, u64, String)>,
@@ -47,8 +51,39 @@ impl BragiView {
         self.models.upload = Some(UploadDialog { persist: true, peer, ..Default::default() });
         self.upload_name.update(cx, |i, cx| i.set_text("", cx));
         self.upload_license.update(cx, |i, cx| i.set_text("", cx));
+        self.upload_rollout.update(cx, |i, cx| i.set_text("", cx));
+        if let Some(d) = self.models.upload.as_mut() {
+            d.inference = self.state.catalog.nodes.first().map(|n| n.id.clone());
+        }
         self.models_pending = self.core.models_pending_uploads();
         cx.notify();
+    }
+
+    pub fn models_upload_pick_inference(&mut self, peer: &str, cx: &mut Context<Self>) {
+        if let Some(d) = self.models.upload.as_mut().filter(|d| !d.sending()) {
+            d.inference = Some(peer.to_string());
+        }
+        cx.notify();
+    }
+
+    pub fn models_upload_pick_weight(&mut self, w: u32, cx: &mut Context<Self>) {
+        if let Some(d) = self.models.upload.as_mut().filter(|d| !d.sending()) {
+            d.weight = w.min(bragi_core::models::ymir_rollouts::MAX_WEIGHT);
+        }
+        cx.notify();
+    }
+
+    /// The inference nodes (by peer) and their names, for the rollout section.
+    pub(super) fn upload_inference_nodes(&self) -> Vec<(String, String)> {
+        self.state
+            .catalog
+            .nodes
+            .iter()
+            .map(|n| {
+                let label = self.models.nodes.iter().flatten().find(|m| m.node.peer == n.id).map(|m| m.node.label.clone());
+                (n.id.clone(), label.unwrap_or_else(|| n.id.chars().take(12).collect()))
+            })
+            .collect()
     }
 
     pub fn models_close_upload(&mut self, cx: &mut Context<Self>) {
@@ -138,6 +173,7 @@ impl BragiView {
 
     pub fn models_upload_start(&mut self, cx: &mut Context<Self>) {
         let (name, license) = (self.upload_name.read(cx).text().trim().to_string(), self.upload_license.read(cx).text().trim().to_string());
+        let rollout = self.upload_rollout.read(cx).text().trim().to_string();
         let Some(d) = self.models.upload.as_mut() else { return };
         if d.sending() {
             return;
@@ -162,6 +198,14 @@ impl BragiView {
         spec.license = (!license.is_empty()).then_some(license);
         spec.adapter_for = d.base.clone().filter(|_| preview.is_adapter());
         spec.persist = d.persist;
+        if !rollout.is_empty() {
+            let Some(inference) = d.inference.clone() else {
+                d.problem = Some("Pick the inference node of the rollout.".into());
+                cx.notify();
+                return;
+            };
+            spec.rollout = Some(bragi_core::RolloutAsk { inference, name: rollout, weight: d.weight });
+        }
         self.models_upload_send(spec, cx);
     }
 
@@ -242,8 +286,11 @@ impl BragiView {
             peer: Some(p.spec.peer.clone()),
             base: p.spec.adapter_for.clone(),
             persist: p.spec.persist,
+            inference: p.spec.rollout.as_ref().map(|r| r.inference.clone()),
+            weight: p.spec.rollout.as_ref().map_or(0, |r| r.weight),
             ..Default::default()
         });
+        self.upload_rollout.update(cx, |i, cx| i.set_text(p.spec.rollout.as_ref().map_or("", |r| r.name.as_str()), cx));
         self.upload_name.update(cx, |i, cx| i.set_text(p.spec.name.as_deref().unwrap_or(""), cx));
         self.upload_license.update(cx, |i, cx| i.set_text(p.spec.license.as_deref().unwrap_or(""), cx));
         self.models_upload_send(p.spec, cx);
@@ -424,6 +471,30 @@ impl BragiView {
                 .child(div().text_size(px(13.)).child("Keep it after the node restarts (saved in its node.toml)"))
                 .on_click(cx.listener(|v, _, _, cx| v.models_upload_toggle_persist(cx))),
         );
+        // A rollout to add it to (optional): an inference node, the name, a canary weight.
+        card = card.child(field("Add to a rollout (optional): its name, such as support", self.upload_rollout.clone()));
+        let infs = self.upload_inference_nodes();
+        let mut row = div().flex().flex_row().flex_wrap().items_center().gap(px(6.)).child(div().text_size(px(12.)).child("On"));
+        if infs.is_empty() {
+            row = row.child(small("no inference node answers right now".into()));
+        }
+        for (peer, label) in infs {
+            let on = d.inference.as_deref() == Some(peer.as_str());
+            row = row.child(
+                self.upload_chip(SharedString::from(format!("upload-inf-{peer}")), label, on)
+                    .on_click(cx.listener(move |v, _, _, cx| v.models_upload_pick_inference(&peer, cx))),
+            );
+        }
+        row = row.child(div().text_size(px(12.)).child("Weight"));
+        for w in [0u32, 1, 5, 10] {
+            row = row.child(
+                self.upload_chip(SharedString::from(format!("upload-weight-{w}")), w.to_string(), d.weight == w)
+                    .on_click(cx.listener(move |v, _, _, cx| v.models_upload_pick_weight(w, cx))),
+            );
+        }
+        card = card.child(row).child(small(
+            "A new version starts as a canary (up to 10% of new conversations); raise it with `ymirctl models rollout weight --eval`.".into(),
+        ));
         // Progress and the outcome.
         if let Some((done, total, label)) = &d.progress {
             let frac = if *total == 0 { 0.0 } else { (*done as f32 / *total as f32).clamp(0.0, 1.0) };
@@ -457,7 +528,22 @@ impl BragiView {
                 if let Some(n) = &u.adapter_note {
                     ok = ok.child(div().id("upload-adapter-note").text_size(px(12.)).text_color(rgb(t.warning)).child(n.clone()));
                 }
-                ok = ok.child(small("To add it to a rollout, run on the inference node:".into()));
+                match &u.rollout {
+                    Some(Ok(said)) => ok = ok.child(div().id("upload-rollout").text_size(px(13.)).child(said.clone())),
+                    Some(Err(e)) => {
+                        ok = ok.child(
+                            div()
+                                .id("upload-rollout-error")
+                                .text_size(px(12.))
+                                .text_color(rgb(t.warning))
+                                .child(format!("Not added to the rollout: {e}")),
+                        )
+                    }
+                    None => {}
+                }
+                if !u.rollout_commands.is_empty() {
+                    ok = ok.child(small("To add it to a rollout with ymirctl:".into()));
+                }
                 for c in &u.rollout_commands {
                     ok = ok.child(div().px(px(8.)).py(px(4.)).rounded(px(6.)).bg(rgb(t.background)).text_size(px(12.)).child(c.clone()));
                 }
@@ -524,6 +610,7 @@ mod tests {
             saved: Some("saved in gpu's node.toml".into()),
             register_error: None,
             adapter_note: None,
+            rollout: None,
             rollout_commands: vec![],
         }
     }

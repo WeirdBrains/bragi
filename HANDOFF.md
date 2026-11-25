@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 03:14 EST: add an upload to a rollout (branch `feature/upload-rollout`)
+
+The follow-up to the upload dialog, on Ymir's new `/ymir/rollouts/1` (Ymir 0.13.0). The rollout decisions were made by llm dev from Michael's upload answers (any linked device, narrowed by the node's `rollout_callers`; above 10% needs scored eval rows or force, so Bragi offers 0-10% only; changes kept in `node.toml` by default). Michael can override them.
+
+**Changed:**
+- bragi-core [`models/ymir_rollouts.rs`](crates/bragi-core/src/models/ymir_rollouts.rs): a small, temporary copy of Ymir's rollouts wire types (list and add only), `add_version` (lists the rollout, adds the next version with the weight capped at 10) and the demo/test stand-in. `UploadSpec.rollout` (`RolloutAsk`: inference node, rollout name, weight) and `UploadedView.rollout`; the `ymirctl` rollout commands now show only when the rollout was not added, with `--inference`.
+- The demo nodes answer rollouts in memory.
+- Desktop [`view/upload.rs`](crates/bragi-desktop/src/view/upload.rs): the dialog's rollout section (name, inference node, weight 0/1/5/10, the canary note) and the result line or the refusal.
+
+**Checks:** `cargo fmt`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace` 309 passed, 0 failed, 4 ignored (new: `an_upload_joins_a_rollout_as_its_next_version`). The desktop scenario passed under Xvfb with the demo profile, with new shots 53-54 (the rollout section and the added version). No Dart changed, so Flutter was not run.
+
+**Not tested:** against a real Ymir inference node over the network (Ymir's own testkit covers `/ymir/rollouts/1` between three daemons).
+
+**Next:** release; the Flutter dialog; drop the temporary wire copies when Weirdnet has the hooks.
+
 ## 2026-11-25 02:48 EST: v0.7.0 released
 
 `release: v0.7.0` (`420b783`, tag `v0.7.0`): the desktop upload dialog (Ymir's model-upload U4, `feature/model-upload-dialog`, merged in `6cb6742`). Before the cut, `fix/handoff-agents-link` (`1fdaf57`) made the Pages link check pass again. The Release workflow's `check` job first failed on a `bragi-serve` port race in `no_binary_is_reported`; a rerun of that job passed, and `fix/serve-test-port-race` (`17c58b9`) has the test try a fresh port. Every platform built ([run 45566365976](https://github.com/WeirdBrains/bragi/actions/runs/45566365976)). Artifacts scanned (archives and packages unpacked): only the RPM packager field (the public maintainer address) matched; no paths or host names. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.7.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching). `bragi-bin` 0.7.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.7.0.
