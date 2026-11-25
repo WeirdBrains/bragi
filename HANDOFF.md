@@ -2,9 +2,9 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
-## 2026-11-25 04:55 EST: v0.9.0 release in progress
+## 2026-11-25 05:26 EST: v0.9.0 released
 
-`release: v0.9.0` (`1db8f04`, tag `v0.9.0`), cut on main `77c7a43` after Pages was green: an upload can be copied on to other model nodes (needs Ymir 0.14.0, released alongside). Left: the Release workflow, scan, `github`/`assets`, signing the Arch packages, packaging (this branch) and `taur`.
+`release: v0.9.0` (`1db8f04`, tag `v0.9.0`), cut on main `77c7a43` after Pages was green: an upload can be copied on to other model nodes (`feature/upload-copies`; needs Ymir 0.14.0, released alongside). The cut's checks passed. Every platform built in the Release workflow ([run 45590082203](https://github.com/WeirdBrains/bragi/actions/runs/45590082203)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.9.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.9.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.9.0 (this branch).
 
 ## 2026-11-25 04:48 EST: copy an upload on to other nodes (branch `feature/upload-copies`)
 
