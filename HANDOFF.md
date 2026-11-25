@@ -2,6 +2,10 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 04:55 EST: v0.9.0 release in progress
+
+`release: v0.9.0` (`1db8f04`, tag `v0.9.0`), cut on main `77c7a43` after Pages was green: an upload can be copied on to other model nodes (needs Ymir 0.14.0, released alongside). Left: the Release workflow, scan, `github`/`assets`, signing the Arch packages, packaging (this branch) and `taur`.
+
 ## 2026-11-25 04:48 EST: copy an upload on to other nodes (branch `feature/upload-copies`)
 
 Ymir's model-upload U6 (pools) on the desktop: the file goes once to the picked node and the others copy it from there, on Weirdnet's `ModelsClient::replicate` (weirdnet-backends 0.4.4); needs Ymir 0.14.0 on the nodes.
