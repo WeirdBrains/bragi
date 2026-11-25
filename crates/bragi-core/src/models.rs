@@ -539,3 +539,5 @@ pub mod ymir_uploads;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod upload_tests;
