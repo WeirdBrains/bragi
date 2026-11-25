@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-25
+
 ### Added
 
 - The model picker (desktop and terminal) tags a model you uploaded or trained with where it came from and its license (`upload, MIT`, `train`), straight from the pool catalog, without asking each node (Ymir's model-upload U8; needs Ymir 0.15.3 on the inference node, which fills catalog/1's `origin` and `license`). Hub models carry no tag, as on the Models screen. `ModelInfo.origin`, `license` and `origin_tag()` in `bragi-core`.
