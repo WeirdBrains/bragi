@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 04:45 EST: weirdnet-sync 0.8.4 (branch `chore/weirdnet-sync-0.8.4`)
+
+Ymir 0.18.0 gives inference nodes linked cert-only a key for `ymir.context` alone (weirdnet-sync 0.8.3/0.8.4): full devices seal conversations under that type-scoped key while such a server is granted the type, and under the epoch key otherwise. Devices on weirdnet-sync 0.8.3 or older can't open type-scoped records, so every Bragi that shares conversations with one needs this.
+
+**What changed:** weirdnet-sync 0.7.1 → 0.8.4, weirdnet-net =0.8.2 → =0.8.3, weirdnet-agent 0.5.4 → 0.5.6, weirdnet-backends 0.4.5 → 0.4.7 (`cargo tree`: one copy of each). `SyncState` gains `voter: None`. New `Identity::reseal_context` ([crates/bragi-core/src/identity.rs](crates/bragi-core/src/identity.rs)), `reseal_stale("ymir.context")` on a full device, run at the end of every sync pass whose context pulls reached every other device (so the re-sealed copy is the latest): conversations from before the server link move to the scoped key, and back to the epoch key once no such server is left. The site's getting-started page says so; CHANGELOG under Unreleased.
+
+**Checks:** `cargo fmt --all --check`; clippy `--locked --workspace --all-targets -D warnings`; `cargo test -q --locked --workspace` all passed (new `conversations_from_before_a_server_link_are_resealed_for_it`: written before the link unreadable on the service device, readable after `reseal_context`, written after the link readable at once, revocation moves both back); `flutter analyze` (only the existing infos); `flutter test --dart-define=BRAGI_DEMO=true` with the bridge library, 10 passed. Platforms and Pages on the branch.
+
+**Not done:** no check against a real Ymir 0.18.0 inference node (B7's real-node check). Ymir's `docs/DESIGN.md` Bragi status waits until Ymir main is free.
+
 ## 2026-11-26 00:55 EST: v0.13.0 released
 
 **Release:** [v0.13.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.13.0) (`release: v0.13.0`, `2b7e317`, cut on main `f6a002c`; the cut's fmt, clippy and workspace tests passed): the Training view on the Models screen in both shells (needs Ymir 0.16.0 on the model nodes). Release run 45760743281 is green after re-running two failed jobs once: `check` (`tests/pools.rs:177`, `rename_remove_and_cancel_a_new_pool`, "Directory not empty" when removing the pool folder) and `macos` (`hdiutil create` ran out of space on the runner); neither touches the training view, and both passed on the re-run. 42 files and `assets` ok; the leak scan of dist found nothing (41 files, 0 hits). The six Arch packages are gpg-signed ("Good signature" each, sums matching) and their signatures uploaded: 48 files. This branch (`release/0.13.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` to 0.13.0 (`taur-check` ready, check_links ok).
