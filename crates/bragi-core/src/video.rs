@@ -771,7 +771,7 @@ pub fn parse_probe(json: &[u8]) -> Result<Probe> {
         (b > 0.0 && a > 0.0).then_some(a / b)
     });
     let has_audio = streams.iter().any(|s| s.get("codec_type").and_then(|t| t.as_str()) == Some("audio"));
-    Ok(Probe { duration_ms: (secs * 1000.0).max(0.0) as u64, width, height, fps, has_audio })
+    Ok(Probe { duration_ms: (secs * 1000.0).round().max(0.0) as u64, width, height, fps, has_audio })
 }
 
 /// Scene hits from ffmpeg's `metadata=print:file=-` output (`pts_time:` then `lavfi.scene_score=`).
@@ -780,7 +780,7 @@ pub fn parse_scenes(text: &str) -> Vec<(u64, f32)> {
     let mut at: Option<u64> = None;
     for line in text.lines() {
         if let Some(t) = line.split_whitespace().find_map(|w| w.strip_prefix("pts_time:")).and_then(|t| t.parse::<f64>().ok()) {
-            at = Some((t * 1000.0).max(0.0) as u64);
+            at = Some((t * 1000.0).round().max(0.0) as u64);
         } else if let (Some(t), Some(score)) = (at, line.trim().strip_prefix("lavfi.scene_score=").and_then(|s| s.parse::<f32>().ok())) {
             out.push((t, score));
             at = None;
