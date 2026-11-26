@@ -20,11 +20,15 @@
 //!   terminal app shows), and `POST /v1/code/apply`: the text with only the accepted hunks
 //!   ([`FileDiff::apply`]). Editors use these to accept or reject a rewrite hunk by hunk.
 //! - `POST /v1/code/chat`: a chat turn with editor context, kept in history, streamed as
-//!   server-sent [`ChatEvent`]s.
+//!   server-sent [`ChatEvent`]s. With `video`, a clip on disk is sampled into the turn (see
+//!   [`video`]).
+//! - `POST /v1/video/limits`, `/v1/video/limits/set`: a model's video limits and this device's
+//!   override.
 //! - `POST /v1/cancel`: stops a streaming request.
 
 pub mod cli;
 pub mod ensure;
+pub mod video;
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -39,7 +43,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bragi_core::code::{self, EditorContext, FileDiff, Hunk, PromptMessage, PromptRole, Scope};
-use bragi_core::{ChatEvent, ChatHandle, Core, CoreError, ErrorKind, PairState, Target};
+use bragi_core::{ChatEvent, ChatHandle, Core, CoreError, ErrorKind, Media, PairState, Target};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -180,11 +184,18 @@ struct App {
     core: Core,
     token: Arc<str>,
     port: u16,
+    open_clip: video::OpenClip,
 }
 
 /// The API's routes, guarded. `port` is the one the listener has (for the `Host` check).
 pub fn router(core: Core, token: String, port: u16) -> Router {
-    let app = App { core, token: token.into(), port };
+    let open = video::ffmpeg(core.clone());
+    router_with_clips(core, token, port, open)
+}
+
+/// [`router`] with clips read by `open_clip` (ffmpeg in [`router`]; a fake source in tests).
+pub fn router_with_clips(core: Core, token: String, port: u16, open_clip: video::OpenClip) -> Router {
+    let app = App { core, token: token.into(), port, open_clip };
     let guarded = Router::new()
         .route("/v1/state", get(state))
         .route("/v1/targets", get(targets))
@@ -196,6 +207,8 @@ pub fn router(core: Core, token: String, port: u16) -> Router {
         .route("/v1/code/apply", post(apply_hunks))
         .route("/v1/code/chat", post(code_chat))
         .route("/v1/cancel", post(cancel))
+        .route("/v1/video/limits", post(video::limits))
+        .route("/v1/video/limits/set", post(video::set_limits))
         .merge(manage::routes())
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
     Router::new()
@@ -505,6 +518,9 @@ struct CodeChatBody {
     /// Where it goes: the pool or an endpoint and model; Bragi's default target when absent.
     #[serde(default)]
     target: Option<Target>,
+    /// A clip on this machine, sampled into the turn for the model.
+    #[serde(default)]
+    video: Option<video::VideoBody>,
 }
 
 fn sse_response(events: impl futures::Stream<Item = String> + Send + 'static) -> Response {
@@ -541,14 +557,40 @@ fn guarded_events(core: Core, h: ChatHandle) -> impl futures::Stream<Item = Chat
 }
 
 async fn code_chat(State(app): State<App>, Json(b): Json<CodeChatBody>) -> Response {
-    let attachments = b.context.as_ref().map(code::chat_attachments).unwrap_or_default();
+    let mut attachments = b.context.as_ref().map(code::chat_attachments).unwrap_or_default();
+    let mut clip = None;
+    if let Some(v) = &b.video {
+        // Sized for the model that answers, leaving room for what the turn already carries.
+        let model = match video::model_for(&app.core, b.model.as_deref(), b.target.as_ref()) {
+            Ok(m) => m,
+            Err(e) => return core_error(e),
+        };
+        let earlier: Vec<String> = b
+            .conversation
+            .as_deref()
+            .and_then(|c| app.core.conversation(c).ok())
+            .map(|c| c.messages.into_iter().map(|m| m.text).collect())
+            .unwrap_or_default();
+        let mut history: Vec<&str> = vec![b.prompt.as_str()];
+        history.extend(attachments.iter().map(|a| a.text.as_str()));
+        history.extend(earlier.iter().map(String::as_str));
+        match video::attach(&app.core, &app.open_clip, v, &model, b.target.as_ref(), &history).await {
+            Ok(a) => {
+                if let Some(Media::Video(s)) = &a.media {
+                    clip = Some(video::event(&a.name, s).to_string());
+                }
+                attachments.push(a);
+            }
+            Err(e) => return core_error(e),
+        }
+    }
     let h = match app.core.send_to(b.conversation.as_deref(), &b.prompt, b.model, attachments, b.target) {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };
     let first = json!({ "type": "conversation", "id": h.conversation_id, "request_id": h.request_id }).to_string();
     let rest = guarded_events(app.core.clone(), h).map(|ev| serde_json::to_string(&ev).unwrap_or_default());
-    sse_response(futures::stream::once(async move { first }).chain(rest))
+    sse_response(futures::stream::iter(std::iter::once(first).chain(clip)).chain(rest))
 }
 
 #[derive(Deserialize)]
