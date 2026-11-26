@@ -10,6 +10,8 @@ All notable changes to Bragi are listed here. The format follows
 
 - Video attachments, phase 1 (LF-43): `/attach clip.mp4` in the terminal app and the desktop's attach box sample the clip with ffmpeg into timestamped frames (and the soundtrack, when the model takes audio and reports its limits) sized from the model's reported limits. There is no default frame count: when the pool doesn't report the limits, the attach refuses and names what is missing, and a per-model override (`video-limits.json`) can set them. Needs `ffmpeg` and `ffprobe` (`BRAGI_FFMPEG`, beside the executable, or `PATH`). No player yet: the chat shows the first frame.
 
+## [0.15.1] - 2026-11-26
+
 ### Changed
 
 - Device sync pulls the roster, conversations and wake cards from each device in one session (weirdnet-sync 0.8.5 `pull_types_shared`: one hello and roster catch-up instead of one per type). A type a device refuses fails alone; works with devices on 0.7.1 to 0.8.4. weirdnet-sync 0.8.4 → 0.8.5.
