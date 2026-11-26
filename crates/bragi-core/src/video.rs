@@ -627,14 +627,10 @@ pub fn sample(
     audio_ok: bool,
 ) -> Result<Sampled> {
     let probe = source.probe()?;
-    let (start, end) = clip_range(name, &probe, prefs.range)?;
-    let clip = Clip { len_ms: end - start, width: probe.width, height: probe.height, has_audio: probe.has_audio };
-    let budget = Budget::from_limits(model, limits, prefs, clip, reserved, audio_ok).map_err(Refusal::into_error)?;
-    let scenes = match prefs.mode {
-        Mode::Uniform => Vec::new(),
-        Mode::Scene | Mode::Hybrid => source.scenes(prefs.scene_threshold)?,
-    };
-    let times = plan_frames(prefs.mode, (start, end), budget.frames, &scenes);
+    let (start, end, budget, times) = planned(name, &probe, model, limits, prefs, reserved, audio_ok, || match prefs.mode {
+        Mode::Uniform => Ok(Vec::new()),
+        Mode::Scene | Mode::Hybrid => source.scenes(prefs.scene_threshold),
+    })?;
     let (w, h) = (budget.width, budget.height);
     let mut frames = Vec::with_capacity(times.len());
     for t in times {
@@ -684,6 +680,76 @@ pub fn sample(
         if n == 1 { "" } else { "s" }
     );
     Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None })
+}
+
+/// The range, budget and frame times [`sample`] works from.
+#[allow(clippy::too_many_arguments)]
+fn planned(
+    name: &str,
+    probe: &Probe,
+    model: &str,
+    limits: &ModelLimits,
+    prefs: &VideoPrefs,
+    reserved: u32,
+    audio_ok: bool,
+    scenes: impl FnOnce() -> Result<Vec<(u64, f32)>>,
+) -> Result<(u64, u64, Budget, Vec<u64>)> {
+    let (start, end) = clip_range(name, probe, prefs.range)?;
+    let clip = Clip { len_ms: end - start, width: probe.width, height: probe.height, has_audio: probe.has_audio };
+    let budget = Budget::from_limits(model, limits, prefs, clip, reserved, audio_ok).map_err(Refusal::into_error)?;
+    let scenes = scenes()?;
+    let times = plan_frames(prefs.mode, (start, end), budget.frames, &scenes);
+    Ok((start, end, budget, times))
+}
+
+/// What a platform decoder (Android's `MediaMetadataRetriever`, iOS's `AVAssetImageGenerator`) is
+/// asked for: the frame times and size [`sample`] reads for this clip and model. The phone decodes
+/// those frames itself and hands them back in a [`ProvidedSource`], so the plan is the core's on
+/// every platform. Phones have no scene detector, so scene and hybrid plans are uniform there.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FramePlan {
+    pub times_ms: Vec<u64>,
+    pub width: u32,
+    pub height: u32,
+    /// What one frame costs, in tokens.
+    pub frame_tokens: u32,
+}
+
+/// The [`FramePlan`] for the clip `name` with `probe`, for `model` (refusals as in [`sample`]).
+pub fn plan(name: &str, probe: &Probe, model: &str, limits: &ModelLimits, prefs: &VideoPrefs, reserved: u32) -> Result<FramePlan> {
+    let (_, _, budget, times_ms) = planned(name, probe, model, limits, prefs, reserved, false, || Ok(Vec::new()))?;
+    Ok(FramePlan { times_ms, width: budget.width, height: budget.height, frame_tokens: budget.frame_tokens })
+}
+
+/// Frames a platform decoder already made for a [`FramePlan`] (phones), as a [`FrameSource`]:
+/// `frame_at` answers with the frame nearest the time asked, at whatever size it was decoded (the
+/// decoder was asked for the plan's). No scene changes and no soundtrack.
+#[derive(Debug, Clone)]
+pub struct ProvidedSource {
+    pub probe: Probe,
+    pub frames: Vec<(u64, Frame)>,
+}
+
+impl FrameSource for ProvidedSource {
+    fn probe(&self) -> Result<Probe> {
+        Ok(self.probe)
+    }
+
+    fn frame_at(&self, at_ms: u64, _width: u32, _height: u32) -> Result<Frame> {
+        self.frames
+            .iter()
+            .min_by_key(|(t, _)| t.abs_diff(at_ms))
+            .map(|(_, f)| f.clone())
+            .ok_or_else(|| bad("the phone's decoder gave no frames for this clip"))
+    }
+
+    fn scenes(&self, _threshold: f32) -> Result<Vec<(u64, f32)>> {
+        Ok(Vec::new())
+    }
+
+    fn audio(&self, _start_ms: u64, _len_ms: u64) -> Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
 }
 
 /// The part of the clip to read: the whole of it, or `range` clamped to it. Refuses clips with no
@@ -1178,6 +1244,32 @@ mod tests {
 
         let quiet = FakeSource::new(42_000, false);
         assert!(sample("q.mp4", &quiet, "m", &l, &VideoPrefs::default(), 0, true).unwrap().summary.ends_with("no sound."));
+    }
+
+    #[test]
+    fn a_phone_decodes_the_cores_plan_and_sampling_uses_its_frames() {
+        let src = FakeSource::new(42_000, true);
+        let l = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_tokens(256).with_max_images(6).with_image_edge(768));
+        // The plan is what `sample` would read: the same times and size.
+        let p = plan("clip.mp4", &src.probe, "m", &l, &VideoPrefs::default(), 1024).unwrap();
+        assert_eq!(p.times_ms, [3_500, 10_500, 17_500, 24_500, 31_500, 38_500]);
+        assert_eq!((p.width, p.height, p.frame_tokens), (768, 432, 256));
+        // Scene plans are uniform on phones (no detector).
+        let scene = VideoPrefs { mode: Mode::Scene, ..VideoPrefs::default() };
+        assert_eq!(plan("clip.mp4", &src.probe, "m", &l, &scene, 1024).unwrap().times_ms, p.times_ms);
+        // Refusals are the same as sampling's.
+        assert!(plan("c.mp4", &src.probe, "m", &ModelLimits::default(), &VideoPrefs::default(), 0).unwrap_err().message.contains("aren't reported"));
+
+        // The phone's frames, a few ms off the plan (decoders snap to a nearby frame).
+        let frames = p.times_ms.iter().map(|t| (t + 3, Frame { mime: "image/jpeg".into(), bytes: format!("phone {t}").into_bytes() })).collect();
+        let phone = ProvidedSource { probe: src.probe, frames };
+        let s = sample("clip.mp4", &phone, "m", &l, &VideoPrefs::default(), 1024, false).unwrap();
+        assert_eq!(s.frames.len(), 6);
+        assert_eq!(s.frames.iter().map(|f| f.at_ms).collect::<Vec<_>>(), p.times_ms, "labelled with the planned times");
+        assert_eq!(STANDARD.decode(&s.frames[1].data).unwrap(), b"phone 10500");
+        assert!(s.audio.is_none() && s.summary.ends_with("sound not included."), "{}", s.summary);
+        let empty = ProvidedSource { probe: src.probe, frames: Vec::new() };
+        assert!(sample("clip.mp4", &empty, "m", &l, &VideoPrefs::default(), 1024, false).is_err());
     }
 
     #[test]

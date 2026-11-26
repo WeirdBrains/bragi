@@ -51,11 +51,11 @@ pub(crate) fn register(h: ChatHandle) -> ChatStarted {
     started(h)
 }
 
-fn core() -> Result<Core, String> {
+pub(crate) fn core() -> Result<Core, String> {
     slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref().map(|r| r.core.clone()).ok_or_else(|| "Bragi has not started".to_string())
 }
 
-fn err(e: bragi_core::CoreError) -> String {
+pub(crate) fn err(e: bragi_core::CoreError) -> String {
     e.message
 }
 
@@ -489,7 +489,7 @@ fn file_view(f: &bragi_core::ChatFile) -> FileView {
     }
 }
 
-fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView {
+pub(crate) fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView {
     let (kind, mime, data) = match &a.media {
         None => ("text", String::new(), String::new()),
         Some(Media::Image { mime, data }) => ("image", mime.clone(), data.clone()),
@@ -1010,7 +1010,7 @@ fn form(f: EndpointForm) -> Result<(bragi_core::EndpointInput, bragi_core::KeyCh
     Ok((input, key, f.api_key))
 }
 
-fn target_of(t: &TargetView) -> Result<bragi_core::Target, String> {
+pub(crate) fn target_of(t: &TargetView) -> Result<bragi_core::Target, String> {
     match t.kind.as_str() {
         "pool" => Ok(bragi_core::Target::Pool),
         "endpoint" => Ok(bragi_core::Target::Endpoint {
