@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-25
+
 ### Added
 
 - The Flutter app uploads a model from this device to one of your model nodes, like the desktop dialog (Models, then Upload a model): the file is read and hashed first, then sent with its name, license, the base for an adapter, whether the node keeps it after a restart (`node.toml`), copies to other nodes and an optional rollout on an inference node with its share of new conversations in percent (presets or typed, 0 to 100). Progress with Cancel; sending it again resumes, and the Models screen lists unfinished uploads with Resume and Forget. A phone often can't hold a multi-GB model, so the dialog also shows the same upload as a `ymirctl models upload` command for a computer that has the file (it warns above 4 GB on a phone). Bridge: `models_inspect_upload`, `models_upload`, `upload_command`, `models_pending_uploads`, `models_forget_upload`, `models_inference_nodes`, `upload_percent_presets` and the `uploaded` event; `UploadSpec::ymirctl_command` in `bragi-core`.
