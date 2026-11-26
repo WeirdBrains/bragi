@@ -238,6 +238,7 @@ impl Identity {
             keys,
             auto_first_rotation: true,
             records: Default::default(),
+            voter: None,
         };
         st.configure(CONTEXT_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("context records: {e}"))?;
         load_log(dir, &mut st);
@@ -454,6 +455,31 @@ impl Identity {
         b.to_bytes().map_err(|e| anyhow!("the sync bundle: {e}"))
     }
 
+    /// Moves conversation records to the key the devices that share them now can open
+    /// (`weirdnet_sync` 0.8.4 `reseal_stale`): once a server is linked cert-only with
+    /// [`CONTEXT_TYPE`] in its grant, records written before the link move from the epoch key
+    /// to the type-scoped key it holds; once no such server is left they move back, so
+    /// devices on older Bragi releases read them again. Run it after a sync pass (the new
+    /// entry is a later write of the same value). A service device, or one with no key chain
+    /// yet, has nothing to do. Returns how many records moved; saves when any did.
+    pub fn reseal_context(&self) -> Result<usize> {
+        let n = {
+            let mut st = self.lock();
+            if st.is_service() {
+                return Ok(0);
+            }
+            match st.reseal_stale(now_ms() as u64, CONTEXT_TYPE) {
+                Ok(ids) => ids.len(),
+                Err(weirdnet_sync::SyncError::Refused(m)) if m == "no-epoch-key" => 0,
+                Err(e) => bail!("{e}"),
+            }
+        };
+        if n > 0 {
+            self.save()?;
+        }
+        Ok(n)
+    }
+
     /// Whether `peer`'s signed grant makes it a service device (a server linked without the seed).
     pub fn is_service(&self, peer: &str) -> bool {
         self.lock().roster.is_service(peer)
@@ -488,6 +514,7 @@ impl Identity {
         let me = node.peer_id().to_string();
         let peers: Vec<NodeCert> = self.lock().roster.active().filter(|c| c.peer_id != me).cloned().collect();
         let mut reached = 0;
+        let mut context_ok = true;
         for cert in peers {
             let Ok(peer) = PeerId::from_str(&cert.peer_id) else { continue };
             let a = addrs(&cert);
@@ -501,8 +528,19 @@ impl Identity {
             if out.error.is_none() {
                 let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, CONTEXT_TYPE);
                 if let Some(e) = &out.error {
+                    context_ok = false;
                     tracing::debug!(peer = %cert.peer_id, applied = out.applied, "context pass: {e}");
                 }
+            } else {
+                context_ok = false;
+            }
+        }
+        // Only after a pass that reached every device, so the re-sealed copy is the latest.
+        if context_ok {
+            match self.reseal_context() {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("re-sealed {n} conversation records for the devices that share them now"),
+                Err(e) => tracing::warn!("re-sealing conversations: {e}"),
             }
         }
         if let Err(e) = self.save() {
@@ -515,6 +553,7 @@ impl Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use weirdnet_sync::CallerCheck;
 
     #[test]
@@ -573,5 +612,49 @@ mod tests {
         let reopened = Identity::open(&a_dir).unwrap().unwrap();
         assert_eq!(reopened.roster().check_caller(&WEIRDNET, &reopened.user_key(), &b_peer, None), CallerCheck::Revoked);
         assert!(reopened.revoke(&a_peer).is_err());
+    }
+
+    /// A conversation written before an inference server was linked cert-only stays on the
+    /// epoch key, which the server never holds, until `reseal_context` moves it; one written
+    /// after the link is readable there at once. Revoking the server moves them back.
+    #[test]
+    fn conversations_from_before_a_server_link_are_resealed_for_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = Identity::create(&tmp.path().join("a"), "box-a").unwrap();
+        a.write_record(CONTEXT_TYPE, "c1/meta", b"before the link").unwrap();
+        assert_eq!(a.reseal_context().unwrap(), 0, "nothing to move without a server");
+
+        let s_key = Keypair::generate_ed25519();
+        let s_peer = s_key.public().to_peer_id().to_string();
+        let user = user_from_seed(&a.seed().unwrap().0).unwrap();
+        let s_cert = Roster::self_certify(&WEIRDNET, &user, &s_peer, "ymir", now_ms()).unwrap();
+        let types = vec!["ymir.pool".to_string(), CONTEXT_TYPE.to_string()];
+        let bundle = a.service_bundle(&s_peer, &["ymir.inference".to_string()], &types).unwrap();
+        a.approve(s_cert.clone()).unwrap();
+        let bundle = weirdnet_sync::LinkBundle::from_bytes(&bundle).unwrap();
+        let mut svc = SyncState::new_service(a.user_key(), s_cert, &s_key, vec![CONTEXT_TYPE.to_string()], &bundle).unwrap();
+        svc.configure(CONTEXT_TYPE, RecordOptions { sealed: true, ..Default::default() }).unwrap();
+        a.write_record(CONTEXT_TYPE, "c2/meta", b"after the link").unwrap();
+
+        let opens = |svc: &mut SyncState, rid: &str| {
+            svc.log = a.lock().log.clone();
+            let e = svc.latest_entries(CONTEXT_TYPE).into_iter().find(|e| e.record_id == rid).cloned().unwrap();
+            matches!(svc.read(&e), Ok(RecordValue::Ready(_)))
+        };
+        assert!(opens(&mut svc, "c2/meta"), "written after the link: readable on the server");
+        assert!(!opens(&mut svc, "c1/meta"), "written before the link: still on the epoch key");
+
+        assert_eq!(a.reseal_context().unwrap(), 1);
+        assert!(opens(&mut svc, "c1/meta"), "re-sealed for the server");
+        assert_eq!(a.reseal_context().unwrap(), 0, "nothing left to move");
+        let recs: BTreeMap<String, Vec<u8>> = a.records(CONTEXT_TYPE).into_iter().collect();
+        assert_eq!(recs["c1/meta"], b"before the link");
+        assert_eq!(recs["c2/meta"], b"after the link");
+
+        // With the server revoked, both move back to the epoch key for older devices.
+        a.revoke(&s_peer).unwrap();
+        assert_eq!(a.reseal_context().unwrap(), 2);
+        let recs: BTreeMap<String, Vec<u8>> = a.records(CONTEXT_TYPE).into_iter().collect();
+        assert_eq!(recs.len(), 2);
     }
 }
