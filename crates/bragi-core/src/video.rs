@@ -24,7 +24,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 
-use weirdnet_agent::MediaLimits;
+pub use weirdnet_agent::MediaLimits;
 
 use crate::error::{CoreError, ErrorKind, Result};
 
@@ -1140,7 +1140,7 @@ mod tests {
         let (probe, frames) = extract("clip.mp4", &src, &req).unwrap();
         assert_eq!(probe.duration_ms, 60_000);
         assert_eq!(frames.len(), 4);
-        assert_eq!(frames[0].at_ms, 0, "the first frame is always in");
+        assert_eq!(frames.iter().map(|f| f.at_ms).collect::<Vec<_>>(), [7_500, 22_500, 37_500, 52_500], "evenly spread, like sample");
         assert!(frames.windows(2).all(|w| w[0].at_ms < w[1].at_ms));
         let first = STANDARD.decode(&frames[0].data).unwrap();
         assert!(String::from_utf8_lossy(&first).ends_with("@640x360"), "scaled to the edge, aspect kept");
