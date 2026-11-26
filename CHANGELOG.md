@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Device sync pulls the roster, conversations and wake cards from each device in one session (weirdnet-sync 0.8.5 `pull_types_shared`: one hello and roster catch-up instead of one per type). A type a device refuses fails alone; works with devices on 0.7.1 to 0.8.4. weirdnet-sync 0.8.4 → 0.8.5.
+
 ## [0.15.0] - 2026-11-26
 
 ### Added

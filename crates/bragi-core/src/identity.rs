@@ -10,7 +10,7 @@
 //! context store in B4), so a pass carries the roster and the key chain only.
 //!
 //! Generic: this is the same identity store Ymir keeps (`ymir-core::membership`). The pull itself
-//! (snapshot, pull, merge back) is `weirdnet_sync::pull_from_shared`; the store around it still
+//! (snapshot, pull every type in one session, merge back) is `weirdnet_sync::pull_types_shared`; the store around it still
 //! belongs in `weirdnet-sync`, noted for the Weirdnet lead.
 
 use std::io::Write;
@@ -537,33 +537,39 @@ impl Identity {
         for cert in peers {
             let Ok(peer) = PeerId::from_str(&cert.peer_id) else { continue };
             let a = addrs(&cert);
-            // Pulls into a snapshot and merges it back, so our handler can answer a peer pulling
-            // from us at the same moment.
-            let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, SYNC_TYPE);
-            match &out.error {
-                None => reached += 1,
-                Some(e) => tracing::debug!(peer = %cert.peer_id, applied = out.applied, "sync pass: {e}"),
+            // One session for every type (weirdnet-sync 0.8.5 `pull_types_shared`: one Hello and
+            // roster catch-up), pulled into a snapshot and merged back, so our handler can answer a
+            // peer pulling from us at the same moment. Wake cards only between the user's full
+            // devices (no server is granted them).
+            let wake = !self.is_service(&cert.peer_id) && self.wake_pull_due(&cert.peer_id);
+            let mut types = vec![SYNC_TYPE, CONTEXT_TYPE];
+            if wake {
+                types.push(crate::wake::WAKE_TYPE);
             }
-            if out.error.is_none() {
-                let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, CONTEXT_TYPE);
-                if let Some(e) = &out.error {
+            let outs = weirdnet_sync::pull_types_shared(&self.state, node, peer, &a, &types);
+            let error = |t: &str| outs.types.iter().find(|(n, _)| n == t).and_then(|(_, o)| o.error.as_ref());
+            let applied = |t: &str| outs.types.iter().find(|(n, _)| n == t).map_or(0, |(_, o)| o.applied);
+            match error(SYNC_TYPE) {
+                None => reached += 1,
+                Some(e) => {
                     context_ok = false;
-                    tracing::debug!(peer = %cert.peer_id, applied = out.applied, "context pass: {e}");
+                    tracing::debug!(peer = %cert.peer_id, applied = applied(SYNC_TYPE), "sync pass: {e}");
+                    continue;
                 }
-                // Wake cards only between the user's full devices (no server is granted them).
-                if !self.is_service(&cert.peer_id) && self.wake_pull_due(&cert.peer_id) {
-                    let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, crate::wake::WAKE_TYPE);
-                    match &out.error {
-                        None => {
-                            if let Ok(mut m) = self.wake_pulled.lock() {
-                                m.insert(cert.peer_id.clone(), std::time::Instant::now());
-                            }
-                        }
-                        Some(e) => tracing::debug!(peer = %cert.peer_id, applied = out.applied, "wake pass: {e}"),
-                    }
-                }
-            } else {
+            }
+            if let Some(e) = error(CONTEXT_TYPE) {
                 context_ok = false;
+                tracing::debug!(peer = %cert.peer_id, applied = applied(CONTEXT_TYPE), "context pass: {e}");
+            }
+            if wake {
+                match error(crate::wake::WAKE_TYPE) {
+                    None => {
+                        if let Ok(mut m) = self.wake_pulled.lock() {
+                            m.insert(cert.peer_id.clone(), std::time::Instant::now());
+                        }
+                    }
+                    Some(e) => tracing::debug!(peer = %cert.peer_id, applied = applied(crate::wake::WAKE_TYPE), "wake pass: {e}"),
+                }
             }
         }
         // Only after a pass that reached every device, so the re-sealed copy is the latest.

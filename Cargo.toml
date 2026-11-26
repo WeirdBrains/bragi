@@ -23,7 +23,7 @@ weirdnet-backends = { version = "0.4.7", features = ["node"] }
 weirdnet-model = { version = "0.5.3", default-features = false }
 weirdnet-device-link = "0.4.2"
 weirdnet-net = "=0.8.3"
-weirdnet-sync = "0.8.4"
+weirdnet-sync = "0.8.5"
 weirdnet-text = "0.1"
 # Push wake-ups (B4): wake handles, sealed 96-byte wakes, the replay guard and the relay wake path.
 weirdnet-push = { version = "0.1.1", default-features = false, features = ["relay-wake"] }

@@ -2,6 +2,14 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 10:15 EST: one sync session per device (weirdnet-sync 0.8.5, on main)
+
+**What:** `Identity::tick` pulls `SYNC_TYPE`, `CONTEXT_TYPE` and (when due, full devices only) the wake cards with `weirdnet_sync::pull_types_shared` in one session per device, instead of three `pull_from_shared` calls (three Hellos and roster swaps). A refused type fails alone; a failed roster pull still marks the pass incomplete, so conversations are not re-sealed. The wire is unchanged (0.7.1 to 0.8.4 peers answer it). weirdnet-sync 0.8.4 → 0.8.5 (Weirdnet Lead's release for this).
+
+**Checks:** fmt, clippy `-D warnings`, `cargo test --workspace` (42 suites ok) on the box. Committed straight to main (Michael: no PRs). No release cut; it goes out with the next one. No live nodes touched.
+
+**Next:** none for this; the next Bragi release carries it.
+
 ## 2026-11-26 08:10 EST: v0.15.0 released
 
 **Release:** [v0.15.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.15.0) (`release: v0.15.0`, `f804600`, cut on main `1cea2e8`; app version `0.15.0+18`): B4 wake-ups (weirdnet-push 0.1.1) and the F-Droid recipe. Release run 45820146922: every build green on the first attempt; the `check` job failed once on the delete test's disk race (fixed in `fix/delete-test-disk-race`) and passed on a re-run of that job, no new tag. The leak scan of dist found nothing (41 files, 0 hits), `assets` ok; the six Arch packages are gpg-signed and their signatures uploaded (48 files). This branch (`release/0.15.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` to 0.15.0 (`taur-check` ready). F-Droid: the recipe's v0.15.0 builds are versionCode 1018/2018/4018 (`VercodeOperation` on build 18), matching the tag.
