@@ -1,6 +1,8 @@
 # Video: attaching, understanding and playing clips in Bragi
 
-Status: design, post-v1, 2026-11-22 (LF-38). Nothing here is built, and none of it blocks v1. Ymir's side (the
+Status: design, post-v1, 2026-11-22 (LF-38). V1 started 2026-11-26 (LF-43, branch `feature/video-upload`): `bragi-core::video`
+(limits, budget, planner, `FfmpegCli`, `FakeSource`, the per-model override), `Media::Video`, `Core::attach_video`, and attach in the
+terminal app and the desktop. Not yet: `bragi-mcp` video tools, players (V2, V3), transcription, packaging ffmpeg. None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
 

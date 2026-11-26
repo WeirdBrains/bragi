@@ -403,6 +403,32 @@ impl App {
         }
     }
 
+    /// Samples a video for the model the next message goes to (LF-43). The frames are sized from
+    /// the limits the pool reports (or this device's override for that model); when they aren't
+    /// known the refusal says what to set. Runs in place: sampling a short clip takes seconds.
+    fn attach_video(&mut self, path: &std::path::Path) {
+        if self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) {
+            return self.fail("One video per message: /detach first.");
+        }
+        let Some(model) = self.model.clone().or_else(|| self.state.catalog.default_model().map(str::to_string)) else {
+            return self.fail("Pick a model first: a video is sampled for the model it goes to.");
+        };
+        let history = self.current.as_ref().map(|c| c.messages.iter().map(|m| m.text.as_str()).collect::<Vec<_>>()).unwrap_or_default();
+        let reserved = bragi_core::video::history_tokens(history);
+        match self.core.attach_video(path, &model, &bragi_core::video::VideoPrefs::default(), reserved) {
+            Ok(a) => {
+                let summary = match &a.media {
+                    Some(bragi_core::Media::Video(v)) => v.summary.clone(),
+                    _ => a.name.clone(),
+                };
+                self.say(format!("Attached to the next message: {summary}"));
+                self.attachments.push(a);
+                self.input.take();
+            }
+            Err(e) => self.fail(e.message),
+        }
+    }
+
     /// The model chats go to: the picked one, else the catalog's default.
     pub fn model_label(&self) -> String {
         if let Some(Target::Endpoint { model, .. }) = self.effective_target() {
@@ -1677,7 +1703,11 @@ impl App {
             return self.set_mode(m);
         }
         if let Some(path) = text.strip_prefix("/attach ") {
-            match Attachment::from_path(&crate::code::expand(path.trim())) {
+            let path = crate::code::expand(path.trim());
+            if bragi_core::video::is_video_path(&path) {
+                return self.attach_video(&path);
+            }
+            match Attachment::from_path(&path) {
                 Ok(a) => {
                     self.say(format!("Attached {} to the next message.", a.name));
                     self.attachments.push(a);

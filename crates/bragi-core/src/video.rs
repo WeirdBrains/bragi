@@ -308,6 +308,20 @@ fn text_tokens(text: &str) -> u64 {
     (text.len() as u64).div_ceil(4)
 }
 
+/// Video file extensions the attach paths hand to [`sample`] (the content is still probed; the
+/// extension only picks the path).
+pub const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "avi"];
+
+/// Whether `path` names a video by its extension.
+pub fn is_video_path(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(e)))
+}
+
+/// Tokens the prompt and `history` take, roughly, for `reserved` in [`sample`].
+pub fn history_tokens<'a>(history: impl IntoIterator<Item = &'a str>) -> u32 {
+    history.into_iter().map(text_tokens).sum::<u64>().min(u64::from(u32::MAX)) as u32
+}
+
 /// A frame's timestamp label, `[00:07.5]`.
 pub fn label(ms: u64) -> String {
     let s = ms / 1000;
@@ -316,7 +330,8 @@ pub fn label(ms: u64) -> String {
 
 impl Budget {
     /// The budget for a clip of `len_ms` (the chosen range) for `model`, given its limits, the user's
-    /// preferences, and `reserved` tokens kept for the prompt, history and the reply. `audio_ok` says
+    /// preferences, and `reserved` tokens kept for the prompt and history (a quarter of the context
+    /// is kept for the reply on top). `audio_ok` says
     /// the model takes audio parts. Refuses when the limits that planning needs are missing.
     pub fn from_limits(
         model: &str,
@@ -332,7 +347,9 @@ impl Budget {
             return Err(Refusal::MissingLimits { model: model.to_string(), missing });
         };
         let image_tokens = u64::from(image_tokens.max(1));
-        let mut room = u64::from(context).saturating_sub(u64::from(reserved));
+        // A quarter of the window stays free for the answer (a share of what the model reports,
+        // not a frame count), and `reserved` for the prompt and the history.
+        let mut room = u64::from(context).saturating_sub(u64::from(context) / 4).saturating_sub(u64::from(reserved));
         // The leading line about the clip.
         room = room.saturating_sub(text_tokens("Video \"a-long-file-name.mp4\", 00:00, 000 frames sampled, with sound."));
         // Sound as audio only when the model takes it and says how much (and what it costs).
@@ -925,6 +942,13 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn video_paths_by_extension() {
+        assert!(is_video_path(Path::new("/x/clip.MP4")) && is_video_path(Path::new("a.webm")));
+        assert!(!is_video_path(Path::new("a.png")) && !is_video_path(Path::new("mp4")));
+        assert_eq!(history_tokens(["abcd", "abcde"]), 3);
     }
 
     #[test]

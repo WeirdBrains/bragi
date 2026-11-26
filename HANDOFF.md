@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 11:45 EST: video V1, sampling clips into frames (branch `feature/video-upload`, LF-43)
+
+Michael (11-26): "Let's do the video uploads". Phase 1 of [docs/design/video.md](docs/design/video.md), core first.
+
+- New [video.rs](crates/bragi-core/src/video.rs): `ModelLimits` (every field optional, absent when unknown), `with_override` (fills gaps, may only lower), `LimitOverrides` (`video-limits.json` in the device folder), `Budget::from_limits` (frames = min(max_images, prefs, fps, (context - a quarter for the reply - history - audio) / image cost); refuses with `Refusal::MissingLimits` naming what is missing, or `NoRoom` under 2 frames for a clip over 2 s), `plan_frames` (uniform, scene, hybrid; sorted, unique, inside the range), `fit`, labels `[00:07.5]`, `sample` (probe, budget, plan, extract, request-size trim: drop frames evenly, then the sound), `FrameSource` with `FfmpegCli` (`-protocol_whitelist file,pipe`, `file:` input, no stdin, time limit and kill, refused containers: concat, hls, image2 and similar, cover-art-only files) and `FakeSource`. Marked for `weirdnet-media`.
+- [attach.rs](crates/bragi-core/src/attach.rs): `Media::Video(Sampled)`; parts are the summary, then label + image per frame, then the WAV; `needs` is VISION (+AUDIO when sound goes); one video per message; `from_video`; `from_media` kind `video` takes the JSON. [files.rs](crates/bragi-core/src/files.rs) lists a video by its first frame. Bridge `AttachmentView` kind `video` carries the JSON.
+- [video_core.rs](crates/bragi-core/src/video_core.rs): `Core::reported_video_limits` (context from the catalog; Ymir branch `feature/video-upload` publishes it), `video_override`/`set_video_override`, `video_limits`, `video_unavailable`, `attach_video`.
+- Shells: `/attach clip.mp4` in the TUI and the desktop attach box route video extensions to `attach_video` (runs in place; off-thread with progress is V2).
+
+**Checks:** `cargo fmt --all --check` only. **Not compiled or tested:** `/mnt/ext1/scratch/heavy-build.lock` is held by three leftover `git-daemon` processes from 2026-11-25 15:23 (PIDs 4004288, 4004289, 4004314; their parent 3990290 is gone), so clippy, `cargo test` (18 new unit tests plus one `#[ignore]` ffmpeg test with hostile files) and Flutter weren't run; nothing merged.
+
+**Not done:** settings sheet and chip, `bragi-mcp` `video` input with `video_probe`/`video_frames`, GPUI inline player with system-player fallback (V2), TUI frame list and open-externally, VS Code attach and `<video>`, Flutter phone decoders and player (V3), transcription, bundled LGPL ffmpeg. Until Ymir reports image cost (Weirdnet wish list), every pool model needs the per-model override for video; there is no UI to set it yet besides `Core::set_video_override`.
+
+**Next:** when the lock is free: clippy, tests, `flutter analyze`/`flutter test`, merge `--no-ff`. Then the override UI in each shell and the MCP tools.
+
 ## 2026-11-26 10:15 EST: one sync session per device (weirdnet-sync 0.8.5, on main)
 
 **What:** `Identity::tick` pulls `SYNC_TYPE`, `CONTEXT_TYPE` and (when due, full devices only) the wake cards with `weirdnet_sync::pull_types_shared` in one session per device, instead of three `pull_from_shared` calls (three Hellos and roster swaps). A refused type fails alone; a failed roster pull still marks the pass incomplete, so conversations are not re-sealed. The wire is unchanged (0.7.1 to 0.8.4 peers answer it). weirdnet-sync 0.8.4 → 0.8.5 (Weirdnet Lead's release for this).
