@@ -2,6 +2,12 @@
 
 ## 0.2.0 (unreleased)
 
+- Video in the chat (LF-43, V2): attach a clip with **Video…**, **Bragi: Attach Video to Chat…**, the
+  Explorer's context menu or a drop on the panel; Bragi samples it for the model (the extension runs
+  no ffmpeg). A chip shows the model's video limits and **Limits…** / **Bragi: Set Video Limits for
+  the Model…** sets this device's override. The chat plays the clip in the panel with the frames the
+  model saw beneath it, or says why it can't and offers **Open in system player**. The webview reads
+  only the folders of clips it plays. Bragi target only; the direct target refuses a clip.
 - The extension can set Bragi up, not just use it (LF-40). New commands and a **Connections** view in
   the Bragi activity bar: link to an inference node (enter a link code, compare the short code,
   confirm) or add one by address; add, edit, test and remove OpenAI-compatible connections (keys go
