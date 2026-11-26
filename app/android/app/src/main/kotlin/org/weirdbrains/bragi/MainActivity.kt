@@ -16,5 +16,7 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        // The phone's video decoder for the core's sampling plan (lib/src/video.dart).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "org.weirdbrains.bragi/video").setMethodCallHandler(VideoDecoder)
     }
 }
