@@ -68,6 +68,7 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
     ("/move FOLDER · /move -", "put the open chat in a folder · take it out"),
     ("/rename NAME · /nest F", "rename · move the selected folder"),
     ("/attach PATH · /detach", "attach a text, image, audio or video file · drop them"),
+    ("/frames · /play", "the frames the model saw of the chat's video · open it in the system player"),
     ("/video-limits [k=v… | clear]", "the model's video limits · set yours (fill gaps, only tighten) · clear them"),
     ("/train · /train off", "mark the open chat for training on your Ymir nodes · withdraw it"),
 ];
@@ -960,7 +961,10 @@ fn draw_transcript(f: &mut Frame, app: &mut App, hits: &mut HitMap, main: Rect, 
                 let gw = line_width(std::slice::from_ref(&gutter)) as u16;
                 let body_w = w.saturating_sub(2);
                 for a in &m.attachments {
-                    lines.push(Line::from(vec![gutter.clone(), Span::styled(format!("{} attached {}", t.icons.attach, a.label()), t.muted())]));
+                    lines.push(Line::from(vec![
+                        gutter.clone(),
+                        Span::styled(format!("{} attached {}", t.icons.attach, attachment_line(a)), t.muted()),
+                    ]));
                 }
                 let text = live.map(|s| s.text.clone()).unwrap_or_else(|| m.text.clone());
                 let before = lines.len();
@@ -1070,13 +1074,22 @@ fn draw_transcript(f: &mut Frame, app: &mut App, hits: &mut HitMap, main: Rect, 
     bottom(f, hits, lines, &marks, inner, &mut app.scroll);
 }
 
+/// An attachment in a message: its label, or for a clip the video line and how to see it
+/// (`/frames` lists the frames the model saw, `/play` opens the clip in the system player).
+fn attachment_line(a: &bragi_core::Attachment) -> String {
+    match &a.media {
+        Some(bragi_core::Media::Video(v)) => format!("{} · /frames · /play", bragi_core::video_play::bubble(&a.name, v)),
+        _ => a.label(),
+    }
+}
+
 /// The user's message: a bubble on the right with the label above it.
 fn user_bubble(lines: &mut Vec<Line<'static>>, m: &bragi_core::ChatMessage, when: Span<'static>, w: usize) {
     let t = th();
     let max = (w * 4 / 5).max(12).min(w);
     let mut body: Vec<(String, Style)> = Vec::new();
     for a in &m.attachments {
-        body.push((format!("{} attached {}", t.icons.attach, a.label()), t.muted()));
+        body.push((format!("{} attached {}", t.icons.attach, attachment_line(a)), t.muted()));
     }
     let wrapped = wrap(&m.text, max.saturating_sub(4));
     // Long items (a shell run's output) fold to their end; copy gets all of it.

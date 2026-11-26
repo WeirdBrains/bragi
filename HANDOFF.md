@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 17:40 EST: video V2 slice 2, the inline player and the terminal app's frames and play (merged `feature/video-v2-player`, LF-43)
+
+The rest of V2 in [docs/design/video.md](docs/design/video.md), on top of slice 1 (merge 54d6a27, entry below).
+
+- New [video_play.rs](crates/bragi-core/src/video_play.rs): `Fallback` (`NotHere`, `NoDecoder`, `CantDecode`, `TooSlow`, each with what to tell the user), `playable_clip`, `open_externally`/`system_open_command` (`xdg-open`, `open`, `cmd /c start`; video files only), `JpegSplitter`, `FrameQueue` (follows the clock, drops late frames, `too_slow` measured over a 3 s grace at 1.5 s behind), `decode_shape`/`decode_args` (at most 15 fps and 960 px, MJPEG over `image2pipe`, the same hardened input flags as sampling), `Decoder` (ffmpeg child killed on drop, 24 frames ahead), `soundtrack`, `silence`, `bubble`, `frame_list`, `last_video`.
+- `Sampled.clip` (optional, skipped when empty): the original clip's path on the device that attached it, set when `keep_original` is on (the default). It is not copied into the attachment store, so another device says the clip isn't here and plays nothing.
+- Desktop ([video.rs](crates/bragi-desktop/src/video.rs), [view.rs](crates/bragi-desktop/src/view.rs)): `VideoPlayback` uses the audio `Player` as the master clock (a silent clock when the clip has no sound), with the picture following it. Each video attachment gets a card showing the bubble line, the picture, Play/Pause, a seek bar, elapsed / total, Mute (it reopens at the same place), **Open in system player**, and the frames the model saw (a click plays from there). When the clip can't play inline, the card says why. Video and audio share the `Deck`, so only one plays at a time, and changing chats stops it. The duplicate file card is hidden for clips.
+- Terminal app: the attachment line shows the bubble plus `· /frames · /play`. `/frames` lists the times and labels sent; `/play` opens the clip in the system player.
+
+**Checks:** on alien-blue: `cargo fmt --all --check` was clean at d3086c5. `cargo clippy --workspace --all-targets -- -D warnings` was clean at 32bd1f8, and later commits touched only docs and HANDOFF. `cargo test --workspace --no-fail-fast` at d3086c5 gave 356 passed, 0 failed, 5 ignored in 43 suites. That includes 9 new tests, 5 in `video_play` and 4 desktop `VideoPlayback` tests over a scripted decoder: clock-following and seek-restart, decoder failure, too slow after the grace period, and mute keeping its place. `flutter analyze` showed only the 6 existing `curly_braces` infos. `flutter test --dart-define=BRAGI_DEMO=true` was run file by file against the bridge built from this branch: code 3/3, models 3/3, scenario 2/2, theme 1/1 and wake 3/3 passed. settings failed 0/1, at line 228 on one run and line 389 on the next, in the endpoint flows. It is the same test that fails on origin/main (V1 entry), and this branch changes nothing in `app/` or `bragi-bridge`. Slice 1 checks are in the entry below (54d6a27: fmt, clippy, 347/0/5 in 43 suites). No GUI was opened, so the player was tested by unit tests only and never watched on screen.
+
+**Not done:** the VS Code attach and webview player, the Flutter phone player and decoders (V3), copying the original clip into the attachment store so other devices can play it, fullscreen, a bundled LGPL ffmpeg, wiring transcription once Ymir milestone 2 lands, the Bragi status in Ymir `docs/DESIGN.md`, and the Weirdnet asks (`McpSource` passing image and audio blocks to the model, image-block annotations, `weirdnet-media`). weirdnet-model 0.5.4 is published and not adopted yet.
+
+**Next:** look at the player on a real screen, then VS Code or V3.
+
 ## 2026-11-26 17:15 EST: video V2 slice 1, MCP video tools, override UI and endpoint limits (merged `feature/video-v2-mcp-override`, LF-43)
 
 Michael approved rolling straight into V2 of [docs/design/video.md](docs/design/video.md). weirdnet-mcp requirement 0.6 → 0.6.2 (image and audio content blocks, `StdioTransport::spawn_limited`).

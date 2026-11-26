@@ -1138,6 +1138,7 @@ dependencies = [
 name = "bragi-desktop"
 version = "0.15.1"
 dependencies = [
+ "base64 0.21.7",
  "bragi-core",
  "bragi-mcp",
  "bragi-serve",

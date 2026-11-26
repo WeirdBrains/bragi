@@ -20,6 +20,7 @@ default = ["gui"]
 gui = ["dep:cpal", "dep:gpui", "dep:gpui_platform", "dep:qrcode", "dep:weirdnet-text", "dep:unicode-segmentation", "dep:tempfile", "dep:tokio", "dep:weirdnet-themes"]
 
 [dependencies]
+base64.workspace = true
 bragi-core = { workspace = true, features = ["decode"] }
 bragi-mcp.workspace = true
 bragi-serve.workspace = true

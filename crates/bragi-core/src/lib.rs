@@ -46,6 +46,7 @@ mod targets;
 pub mod think;
 pub mod video;
 mod video_core;
+pub mod video_play;
 pub mod wake;
 mod wake_core;
 pub use video_core::VideoPlan;

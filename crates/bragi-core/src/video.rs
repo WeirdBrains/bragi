@@ -596,6 +596,10 @@ pub struct Sampled {
     /// The soundtrack as WAV (base64), when it goes as audio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub audio: Option<String>,
+    /// The original clip on the device it was attached on (`keep_original`), for the player.
+    /// Never sent to a model; on another device it is usually not there, and the player says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clip: Option<PathBuf>,
 }
 
 impl Sampled {
@@ -679,7 +683,7 @@ pub fn sample(
         clock(end - start),
         if n == 1 { "" } else { "s" }
     );
-    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio })
+    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None })
 }
 
 /// The part of the clip to read: the whole of it, or `range` clamped to it. Refuses clips with no

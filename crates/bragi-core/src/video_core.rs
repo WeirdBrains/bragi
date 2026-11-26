@@ -100,7 +100,9 @@ impl Core {
     ) -> Result<Attachment> {
         let source = self.video_source(path)?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        self.attach_video_source(&name, &source, model, &VideoPlan { limits: *limits, audio_ok }, prefs, reserved)
+        let mut a = self.attach_video_source(&name, &source, model, &VideoPlan { limits: *limits, audio_ok }, prefs, reserved)?;
+        keep_clip(&mut a, prefs, &source.path);
+        Ok(a)
     }
 
     /// [`attach_video_with`](Self::attach_video_with) from any [`FrameSource`] (a platform
@@ -145,4 +147,13 @@ impl Core {
 pub struct VideoPlan {
     pub limits: ModelLimits,
     pub audio_ok: bool,
+}
+
+/// Notes where the original clip is, for the player, when the user keeps originals.
+pub(crate) fn keep_clip(a: &mut Attachment, prefs: &VideoPrefs, path: &Path) {
+    if prefs.keep_original
+        && let Some(crate::attach::Media::Video(v)) = &mut a.media
+    {
+        v.clip = Some(path.to_path_buf());
+    }
 }
