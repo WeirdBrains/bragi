@@ -5,7 +5,6 @@
 //! can't play here (not on this device, no ffmpeg, a codec ffmpeg can't read, or decoding that
 //! falls behind) [`VideoPlayback::fallback`] says why and the view offers the system player.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Instant;
@@ -19,6 +18,7 @@ use crate::audio::Player;
 /// Decoded frames coming in: from ffmpeg (killed when this is dropped), or scripted in tests.
 pub enum Feed {
     Ffmpeg(Decoder),
+    #[cfg(test)]
     Scripted(Receiver<Decoded>),
 }
 
@@ -26,6 +26,7 @@ impl Feed {
     fn rx(&self) -> &Receiver<Decoded> {
         match self {
             Feed::Ffmpeg(d) => &d.frames,
+            #[cfg(test)]
             Feed::Scripted(r) => r,
         }
     }
@@ -41,7 +42,6 @@ pub struct VideoPlayback {
     pub conversation: String,
     /// `<message id>#a<n>`, the attachment's file id.
     pub key: String,
-    pub clip: PathBuf,
     pub duration_ms: u64,
     /// The clip has sound to play.
     pub has_sound: bool,
@@ -61,12 +61,11 @@ pub struct VideoPlayback {
 impl VideoPlayback {
     /// Starts playing from the top: `pcm` is the soundtrack (or silence when `has_sound` is
     /// false), `start` begins decoding at a position.
-    pub fn open(conversation: &str, key: &str, clip: PathBuf, pcm: Pcm, has_sound: bool, device: bool, start: StartDecode) -> Self {
+    pub fn open(conversation: &str, key: &str, pcm: Pcm, has_sound: bool, device: bool, start: StartDecode) -> Self {
         let clock = Player::open_on(conversation, key, pcm.clone(), device && has_sound);
         let mut p = Self {
             conversation: conversation.to_string(),
             key: key.to_string(),
-            clip,
             duration_ms: clock.duration_ms,
             has_sound,
             muted: false,
@@ -200,7 +199,9 @@ mod tests {
     }
 
     /// A playback over a scripted decoder: each start hands back a fresh channel, kept here.
-    fn scripted(len_ms: u64) -> (VideoPlayback, Arc<std::sync::Mutex<Vec<(u64, mpsc::Sender<Decoded>)>>>) {
+    type Started = Arc<std::sync::Mutex<Vec<(u64, mpsc::Sender<Decoded>)>>>;
+
+    fn scripted(len_ms: u64) -> (VideoPlayback, Started) {
         let senders = Arc::new(std::sync::Mutex::new(Vec::new()));
         let keep = senders.clone();
         let start: StartDecode = Box::new(move |at| {
@@ -208,7 +209,7 @@ mod tests {
             keep.lock().unwrap().push((at, tx));
             Ok(Feed::Scripted(rx))
         });
-        let p = VideoPlayback::open("c1", "m1#a0", PathBuf::from("/clip.mp4"), bragi_core::video_play::silence(len_ms), false, false, start);
+        let p = VideoPlayback::open("c1", "m1#a0", bragi_core::video_play::silence(len_ms), false, false, start);
         (p, senders)
     }
 

@@ -705,7 +705,7 @@ impl BragiView {
                         let has_sound = sound.is_some();
                         let pcm = sound.unwrap_or_else(|| bragi_core::video_play::silence(probe.duration_ms));
                         let device = !std::env::var("BRAGI_AUDIO").is_ok_and(|x| x == "null");
-                        let mut p = crate::video::VideoPlayback::open(&conv, &key, clip, pcm, has_sound, device, start);
+                        let mut p = crate::video::VideoPlayback::open(&conv, &key, pcm, has_sound, device, start);
                         if let Some(ms) = then_seek {
                             p.seek(ms);
                         }
@@ -2892,6 +2892,14 @@ pub fn run(launch: Launch) -> std::process::ExitCode {
     std::process::ExitCode::from(EXIT.load(Ordering::SeqCst))
 }
 
+/// Whether file card `id` of message `m` is a clip (drawn by its video card instead).
+fn is_video_file(m: &ChatMessage, id: &str) -> bool {
+    id.strip_prefix(&format!("{}#a", m.id))
+        .and_then(|n| n.parse::<usize>().ok())
+        .and_then(|n| m.attachments.get(n))
+        .is_some_and(|a| matches!(a.media, Some(bragi_core::Media::Video(_))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::splice;
@@ -2904,12 +2912,4 @@ mod tests {
         splice(&mut t, 20, "!");
         assert_eq!(t, "héllo there!");
     }
-}
-
-/// Whether file card `id` of message `m` is a clip (drawn by its video card instead).
-fn is_video_file(m: &ChatMessage, id: &str) -> bool {
-    id.strip_prefix(&format!("{}#a", m.id))
-        .and_then(|n| n.parse::<usize>().ok())
-        .and_then(|n| m.attachments.get(n))
-        .is_some_and(|a| matches!(a.media, Some(bragi_core::Media::Video(_))))
 }
