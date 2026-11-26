@@ -70,7 +70,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.13.0';
 
   @override
-  int get rustContentHash => -291525779;
+  int get rustContentHash => -1097124063;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -537,6 +537,8 @@ abstract class RustLibApi extends BaseApi {
     required BigInt elapsedMs,
     required bool done,
   });
+
+  Future<TrainingOverviewView> crateApiBragiTrainingOverview();
 
   Future<void> crateApiBragiUndoDelete({required String undo});
 
@@ -4627,6 +4629,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<TrainingOverviewView> crateApiBragiTrainingOverview() {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 139,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_training_overview_view,
+          decodeErrorData: sse_decode_String,
+        ),
+        constMeta: kCrateApiBragiTrainingOverviewConstMeta,
+        argValues: [],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiBragiTrainingOverviewConstMeta =>
+      const TaskConstMeta(debugName: "training_overview", argNames: []);
+
+  @override
   Future<void> crateApiBragiUndoDelete({required String undo}) {
     return handler.executeNormal(
       NormalTask(
@@ -4636,7 +4665,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 139,
+            funcId: 140,
             port: port_,
           );
         },
@@ -4670,7 +4699,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 140,
+            funcId: 141,
             port: port_,
           );
         },
@@ -4699,7 +4728,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 141,
+            funcId: 142,
           )!;
         },
         codec: SseCodec(
@@ -4728,7 +4757,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 142,
+              funcId: 143,
               port: port_,
             );
           },
@@ -5354,6 +5383,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<NodeTrainingView> dco_decode_list_node_training_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_node_training_view).toList();
+  }
+
+  @protected
   List<NotificationView> dco_decode_list_notification_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_notification_view).toList();
@@ -5414,6 +5449,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RolloutVersionView> dco_decode_list_rollout_version_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rollout_version_view).toList();
+  }
+
+  @protected
+  List<RolloutView> dco_decode_list_rollout_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_rollout_view).toList();
+  }
+
+  @protected
   List<RootView> dco_decode_list_root_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_root_view).toList();
@@ -5447,6 +5494,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   List<ThemeRowView> dco_decode_list_theme_row_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return (raw as List<dynamic>).map(dco_decode_theme_row_view).toList();
+  }
+
+  @protected
+  List<TrainingJobView> dco_decode_list_training_job_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_training_job_view).toList();
+  }
+
+  @protected
+  List<TrainingRunView> dco_decode_list_training_run_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_training_run_view).toList();
   }
 
   @protected
@@ -5566,6 +5625,22 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       status: dco_decode_String(arr[1]),
       detail: dco_decode_opt_String(arr[2]),
       models: dco_decode_list_stored_model_view(arr[3]),
+    );
+  }
+
+  @protected
+  NodeTrainingView dco_decode_node_training_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return NodeTrainingView(
+      node: dco_decode_model_node_view(arr[0]),
+      status: dco_decode_String(arr[1]),
+      detail: dco_decode_opt_String(arr[2]),
+      remote: dco_decode_bool(arr[3]),
+      runs: dco_decode_list_training_run_view(arr[4]),
+      jobs: dco_decode_list_training_job_view(arr[5]),
     );
   }
 
@@ -5829,6 +5904,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RolloutVersionView dco_decode_rollout_version_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    return RolloutVersionView(
+      version: dco_decode_u_32(arr[0]),
+      model: dco_decode_String(arr[1]),
+      percent: dco_decode_f_64(arr[2]),
+      stage: dco_decode_String(arr[3]),
+      trainedOn: dco_decode_opt_String(arr[4]),
+      trainedRun: dco_decode_opt_String(arr[5]),
+    );
+  }
+
+  @protected
+  RolloutView dco_decode_rollout_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 3)
+      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    return RolloutView(
+      node: dco_decode_model_node_view(arr[0]),
+      name: dco_decode_String(arr[1]),
+      versions: dco_decode_list_rollout_version_view(arr[2]),
+    );
+  }
+
+  @protected
   RootView dco_decode_root_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
@@ -5971,6 +6075,56 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       builtin: dco_decode_bool(arr[2]),
       userFile: dco_decode_bool(arr[3]),
       error: dco_decode_opt_String(arr[4]),
+    );
+  }
+
+  @protected
+  TrainingJobView dco_decode_training_job_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
+    return TrainingJobView(
+      id: dco_decode_String(arr[0]),
+      state: dco_decode_String(arr[1]),
+      base: dco_decode_String(arr[2]),
+      adapter: dco_decode_String(arr[3]),
+      holder: dco_decode_opt_String(arr[4]),
+      attempts: dco_decode_u_32(arr[5]),
+      checkpointEpoch: dco_decode_opt_box_autoadd_u_64(arr[6]),
+    );
+  }
+
+  @protected
+  TrainingOverviewView dco_decode_training_overview_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 2)
+      throw Exception('unexpected arr length: expect 2 but see ${arr.length}');
+    return TrainingOverviewView(
+      nodes: dco_decode_list_node_training_view(arr[0]),
+      rollouts: dco_decode_list_rollout_view(arr[1]),
+    );
+  }
+
+  @protected
+  TrainingRunView dco_decode_training_run_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 11)
+      throw Exception('unexpected arr length: expect 11 but see ${arr.length}');
+    return TrainingRunView(
+      id: dco_decode_String(arr[0]),
+      status: dco_decode_String(arr[1]),
+      base: dco_decode_String(arr[2]),
+      adapter: dco_decode_opt_String(arr[3]),
+      dataset: dco_decode_String(arr[4]),
+      datasetLicense: dco_decode_String(arr[5]),
+      rowsUsed: dco_decode_u_64(arr[6]),
+      epochs: dco_decode_u_32(arr[7]),
+      finalLoss: dco_decode_opt_box_autoadd_f_64(arr[8]),
+      startedMs: dco_decode_i_64(arr[9]),
+      error: dco_decode_opt_String(arr[10]),
     );
   }
 
@@ -6832,6 +6986,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<NodeTrainingView> sse_decode_list_node_training_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <NodeTrainingView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_node_training_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<NotificationView> sse_decode_list_notification_view(
     SseDeserializer deserializer,
   ) {
@@ -6947,6 +7115,32 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  List<RolloutVersionView> sse_decode_list_rollout_version_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RolloutVersionView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rollout_version_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<RolloutView> sse_decode_list_rollout_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <RolloutView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_rollout_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
   List<RootView> sse_decode_list_root_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
@@ -7018,6 +7212,34 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var ans_ = <ThemeRowView>[];
     for (var idx_ = 0; idx_ < len_; ++idx_) {
       ans_.add(sse_decode_theme_row_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<TrainingJobView> sse_decode_list_training_job_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TrainingJobView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_training_job_view(deserializer));
+    }
+    return ans_;
+  }
+
+  @protected
+  List<TrainingRunView> sse_decode_list_training_run_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <TrainingRunView>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_training_run_view(deserializer));
     }
     return ans_;
   }
@@ -7182,6 +7404,25 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       status: var_status,
       detail: var_detail,
       models: var_models,
+    );
+  }
+
+  @protected
+  NodeTrainingView sse_decode_node_training_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_node = sse_decode_model_node_view(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    var var_detail = sse_decode_opt_String(deserializer);
+    var var_remote = sse_decode_bool(deserializer);
+    var var_runs = sse_decode_list_training_run_view(deserializer);
+    var var_jobs = sse_decode_list_training_job_view(deserializer);
+    return NodeTrainingView(
+      node: var_node,
+      status: var_status,
+      detail: var_detail,
+      remote: var_remote,
+      runs: var_runs,
+      jobs: var_jobs,
     );
   }
 
@@ -7528,6 +7769,36 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  RolloutVersionView sse_decode_rollout_version_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_version = sse_decode_u_32(deserializer);
+    var var_model = sse_decode_String(deserializer);
+    var var_percent = sse_decode_f_64(deserializer);
+    var var_stage = sse_decode_String(deserializer);
+    var var_trainedOn = sse_decode_opt_String(deserializer);
+    var var_trainedRun = sse_decode_opt_String(deserializer);
+    return RolloutVersionView(
+      version: var_version,
+      model: var_model,
+      percent: var_percent,
+      stage: var_stage,
+      trainedOn: var_trainedOn,
+      trainedRun: var_trainedRun,
+    );
+  }
+
+  @protected
+  RolloutView sse_decode_rollout_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_node = sse_decode_model_node_view(deserializer);
+    var var_name = sse_decode_String(deserializer);
+    var var_versions = sse_decode_list_rollout_version_view(deserializer);
+    return RolloutView(node: var_node, name: var_name, versions: var_versions);
+  }
+
+  @protected
   RootView sse_decode_root_view(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_name = sse_decode_String(deserializer);
@@ -7675,6 +7946,66 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       displayName: var_displayName,
       builtin: var_builtin,
       userFile: var_userFile,
+      error: var_error,
+    );
+  }
+
+  @protected
+  TrainingJobView sse_decode_training_job_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_state = sse_decode_String(deserializer);
+    var var_base = sse_decode_String(deserializer);
+    var var_adapter = sse_decode_String(deserializer);
+    var var_holder = sse_decode_opt_String(deserializer);
+    var var_attempts = sse_decode_u_32(deserializer);
+    var var_checkpointEpoch = sse_decode_opt_box_autoadd_u_64(deserializer);
+    return TrainingJobView(
+      id: var_id,
+      state: var_state,
+      base: var_base,
+      adapter: var_adapter,
+      holder: var_holder,
+      attempts: var_attempts,
+      checkpointEpoch: var_checkpointEpoch,
+    );
+  }
+
+  @protected
+  TrainingOverviewView sse_decode_training_overview_view(
+    SseDeserializer deserializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_nodes = sse_decode_list_node_training_view(deserializer);
+    var var_rollouts = sse_decode_list_rollout_view(deserializer);
+    return TrainingOverviewView(nodes: var_nodes, rollouts: var_rollouts);
+  }
+
+  @protected
+  TrainingRunView sse_decode_training_run_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_id = sse_decode_String(deserializer);
+    var var_status = sse_decode_String(deserializer);
+    var var_base = sse_decode_String(deserializer);
+    var var_adapter = sse_decode_opt_String(deserializer);
+    var var_dataset = sse_decode_String(deserializer);
+    var var_datasetLicense = sse_decode_String(deserializer);
+    var var_rowsUsed = sse_decode_u_64(deserializer);
+    var var_epochs = sse_decode_u_32(deserializer);
+    var var_finalLoss = sse_decode_opt_box_autoadd_f_64(deserializer);
+    var var_startedMs = sse_decode_i_64(deserializer);
+    var var_error = sse_decode_opt_String(deserializer);
+    return TrainingRunView(
+      id: var_id,
+      status: var_status,
+      base: var_base,
+      adapter: var_adapter,
+      dataset: var_dataset,
+      datasetLicense: var_datasetLicense,
+      rowsUsed: var_rowsUsed,
+      epochs: var_epochs,
+      finalLoss: var_finalLoss,
+      startedMs: var_startedMs,
       error: var_error,
     );
   }
@@ -8480,6 +8811,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_node_training_view(
+    List<NodeTrainingView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_node_training_view(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_notification_view(
     List<NotificationView> self,
     SseSerializer serializer,
@@ -8596,6 +8939,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_list_rollout_version_view(
+    List<RolloutVersionView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rollout_version_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_rollout_view(
+    List<RolloutView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_rollout_view(item, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_list_root_view(
     List<RootView> self,
     SseSerializer serializer,
@@ -8664,6 +9031,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_i_32(self.length, serializer);
     for (final item in self) {
       sse_encode_theme_row_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_training_job_view(
+    List<TrainingJobView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_training_job_view(item, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_list_training_run_view(
+    List<TrainingRunView> self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_training_run_view(item, serializer);
     }
   }
 
@@ -8770,6 +9161,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.status, serializer);
     sse_encode_opt_String(self.detail, serializer);
     sse_encode_list_stored_model_view(self.models, serializer);
+  }
+
+  @protected
+  void sse_encode_node_training_view(
+    NodeTrainingView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_model_node_view(self.node, serializer);
+    sse_encode_String(self.status, serializer);
+    sse_encode_opt_String(self.detail, serializer);
+    sse_encode_bool(self.remote, serializer);
+    sse_encode_list_training_run_view(self.runs, serializer);
+    sse_encode_list_training_job_view(self.jobs, serializer);
   }
 
   @protected
@@ -9064,6 +9469,28 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_rollout_version_view(
+    RolloutVersionView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.version, serializer);
+    sse_encode_String(self.model, serializer);
+    sse_encode_f_64(self.percent, serializer);
+    sse_encode_String(self.stage, serializer);
+    sse_encode_opt_String(self.trainedOn, serializer);
+    sse_encode_opt_String(self.trainedRun, serializer);
+  }
+
+  @protected
+  void sse_encode_rollout_view(RolloutView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_model_node_view(self.node, serializer);
+    sse_encode_String(self.name, serializer);
+    sse_encode_list_rollout_version_view(self.versions, serializer);
+  }
+
+  @protected
   void sse_encode_root_view(RootView self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_String(self.name, serializer);
@@ -9168,6 +9595,50 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_String(self.displayName, serializer);
     sse_encode_bool(self.builtin, serializer);
     sse_encode_bool(self.userFile, serializer);
+    sse_encode_opt_String(self.error, serializer);
+  }
+
+  @protected
+  void sse_encode_training_job_view(
+    TrainingJobView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.state, serializer);
+    sse_encode_String(self.base, serializer);
+    sse_encode_String(self.adapter, serializer);
+    sse_encode_opt_String(self.holder, serializer);
+    sse_encode_u_32(self.attempts, serializer);
+    sse_encode_opt_box_autoadd_u_64(self.checkpointEpoch, serializer);
+  }
+
+  @protected
+  void sse_encode_training_overview_view(
+    TrainingOverviewView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_list_node_training_view(self.nodes, serializer);
+    sse_encode_list_rollout_view(self.rollouts, serializer);
+  }
+
+  @protected
+  void sse_encode_training_run_view(
+    TrainingRunView self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_String(self.id, serializer);
+    sse_encode_String(self.status, serializer);
+    sse_encode_String(self.base, serializer);
+    sse_encode_opt_String(self.adapter, serializer);
+    sse_encode_String(self.dataset, serializer);
+    sse_encode_String(self.datasetLicense, serializer);
+    sse_encode_u_64(self.rowsUsed, serializer);
+    sse_encode_u_32(self.epochs, serializer);
+    sse_encode_opt_box_autoadd_f_64(self.finalLoss, serializer);
+    sse_encode_i_64(self.startedMs, serializer);
     sse_encode_opt_String(self.error, serializer);
   }
 

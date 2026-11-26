@@ -229,6 +229,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NodeModelsView> dco_decode_list_node_models_view(dynamic raw);
 
   @protected
+  List<NodeTrainingView> dco_decode_list_node_training_view(dynamic raw);
+
+  @protected
   List<NotificationView> dco_decode_list_notification_view(dynamic raw);
 
   @protected
@@ -259,6 +262,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<RoleInfoView> dco_decode_list_role_info_view(dynamic raw);
 
   @protected
+  List<RolloutVersionView> dco_decode_list_rollout_version_view(dynamic raw);
+
+  @protected
+  List<RolloutView> dco_decode_list_rollout_view(dynamic raw);
+
+  @protected
   List<RootView> dco_decode_list_root_view(dynamic raw);
 
   @protected
@@ -275,6 +284,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ThemeRowView> dco_decode_list_theme_row_view(dynamic raw);
+
+  @protected
+  List<TrainingJobView> dco_decode_list_training_job_view(dynamic raw);
+
+  @protected
+  List<TrainingRunView> dco_decode_list_training_run_view(dynamic raw);
 
   @protected
   List<UploadCopyView> dco_decode_list_upload_copy_view(dynamic raw);
@@ -296,6 +311,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NodeModelsView dco_decode_node_models_view(dynamic raw);
+
+  @protected
+  NodeTrainingView dco_decode_node_training_view(dynamic raw);
 
   @protected
   NotificationView dco_decode_notification_view(dynamic raw);
@@ -381,6 +399,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoleInfoView dco_decode_role_info_view(dynamic raw);
 
   @protected
+  RolloutVersionView dco_decode_rollout_version_view(dynamic raw);
+
+  @protected
+  RolloutView dco_decode_rollout_view(dynamic raw);
+
+  @protected
   RootView dco_decode_root_view(dynamic raw);
 
   @protected
@@ -409,6 +433,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ThemeRowView dco_decode_theme_row_view(dynamic raw);
+
+  @protected
+  TrainingJobView dco_decode_training_job_view(dynamic raw);
+
+  @protected
+  TrainingOverviewView dco_decode_training_overview_view(dynamic raw);
+
+  @protected
+  TrainingRunView dco_decode_training_run_view(dynamic raw);
 
   @protected
   int dco_decode_u_32(dynamic raw);
@@ -665,6 +698,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<NodeTrainingView> sse_decode_list_node_training_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<NotificationView> sse_decode_list_notification_view(
     SseDeserializer deserializer,
   );
@@ -705,6 +743,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<RolloutVersionView> sse_decode_list_rollout_version_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<RolloutView> sse_decode_list_rollout_view(SseDeserializer deserializer);
+
+  @protected
   List<RootView> sse_decode_list_root_view(SseDeserializer deserializer);
 
   @protected
@@ -723,6 +769,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ThemeRowView> sse_decode_list_theme_row_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<TrainingJobView> sse_decode_list_training_job_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<TrainingRunView> sse_decode_list_training_run_view(
     SseDeserializer deserializer,
   );
 
@@ -748,6 +804,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NodeModelsView sse_decode_node_models_view(SseDeserializer deserializer);
+
+  @protected
+  NodeTrainingView sse_decode_node_training_view(SseDeserializer deserializer);
 
   @protected
   NotificationView sse_decode_notification_view(SseDeserializer deserializer);
@@ -847,6 +906,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RoleInfoView sse_decode_role_info_view(SseDeserializer deserializer);
 
   @protected
+  RolloutVersionView sse_decode_rollout_version_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  RolloutView sse_decode_rollout_view(SseDeserializer deserializer);
+
+  @protected
   RootView sse_decode_root_view(SseDeserializer deserializer);
 
   @protected
@@ -875,6 +942,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ThemeRowView sse_decode_theme_row_view(SseDeserializer deserializer);
+
+  @protected
+  TrainingJobView sse_decode_training_job_view(SseDeserializer deserializer);
+
+  @protected
+  TrainingOverviewView sse_decode_training_overview_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  TrainingRunView sse_decode_training_run_view(SseDeserializer deserializer);
 
   @protected
   int sse_decode_u_32(SseDeserializer deserializer);
@@ -1202,6 +1280,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_node_training_view(
+    List<NodeTrainingView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_notification_view(
     List<NotificationView> self,
     SseSerializer serializer,
@@ -1253,6 +1337,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_rollout_version_view(
+    List<RolloutVersionView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_rollout_view(
+    List<RolloutView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_root_view(List<RootView> self, SseSerializer serializer);
 
   @protected
@@ -1286,6 +1382,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_training_job_view(
+    List<TrainingJobView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_training_run_view(
+    List<TrainingRunView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_upload_copy_view(
     List<UploadCopyView> self,
     SseSerializer serializer,
@@ -1312,6 +1420,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_node_models_view(
     NodeModelsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_node_training_view(
+    NodeTrainingView self,
     SseSerializer serializer,
   );
 
@@ -1430,6 +1544,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_role_info_view(RoleInfoView self, SseSerializer serializer);
 
   @protected
+  void sse_encode_rollout_version_view(
+    RolloutVersionView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_rollout_view(RolloutView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_root_view(RootView self, SseSerializer serializer);
 
   @protected
@@ -1467,6 +1590,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_theme_row_view(ThemeRowView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_training_job_view(
+    TrainingJobView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_training_overview_view(
+    TrainingOverviewView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_training_run_view(
+    TrainingRunView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_u_32(int self, SseSerializer serializer);

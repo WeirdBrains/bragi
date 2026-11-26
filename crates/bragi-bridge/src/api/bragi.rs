@@ -1820,3 +1820,142 @@ pub fn theme_import_text(text: String, as_name: Option<String>) -> Result<String
 pub fn theme_warnings(name: String, dark: bool) -> Result<Vec<String>, String> {
     core()?.appearance().warnings(&name, variant_of(dark)).map_err(err)
 }
+
+// ---- training view (Ymir's training status and rollouts, read only) ----
+
+#[derive(Debug, Clone)]
+pub struct TrainingRunView {
+    pub id: String,
+    pub status: String,
+    pub base: String,
+    pub adapter: Option<String>,
+    pub dataset: String,
+    pub dataset_license: String,
+    pub rows_used: u64,
+    pub epochs: u32,
+    pub final_loss: Option<f64>,
+    pub started_ms: i64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrainingJobView {
+    pub id: String,
+    pub state: String,
+    pub base: String,
+    pub adapter: String,
+    pub holder: Option<String>,
+    pub attempts: u32,
+    pub checkpoint_epoch: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeTrainingView {
+    pub node: ModelNodeView,
+    pub status: String,
+    pub detail: Option<String>,
+    pub remote: bool,
+    pub runs: Vec<TrainingRunView>,
+    pub jobs: Vec<TrainingJobView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RolloutVersionView {
+    pub version: u32,
+    pub model: String,
+    pub percent: f64,
+    /// `live`, `canary` or `standby`.
+    pub stage: String,
+    pub trained_on: Option<String>,
+    pub trained_run: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RolloutView {
+    pub node: ModelNodeView,
+    pub name: String,
+    pub versions: Vec<RolloutVersionView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrainingOverviewView {
+    pub nodes: Vec<NodeTrainingView>,
+    pub rollouts: Vec<RolloutView>,
+}
+
+/// The training view: every other device's runs and jobs (Ymir 0.16.0) and the inference nodes'
+/// rollouts with each version's share and stage. A read.
+pub async fn training_overview() -> Result<TrainingOverviewView, String> {
+    use bragi_core::models::training::Stage;
+    let o = core()?.training_overview().await.map_err(err)?;
+    Ok(TrainingOverviewView {
+        nodes: o
+            .nodes
+            .iter()
+            .map(|n| {
+                let (status, detail) = status_parts(&n.status);
+                NodeTrainingView {
+                    node: node_view(&n.node),
+                    status,
+                    detail,
+                    remote: n.remote,
+                    runs: n
+                        .runs
+                        .iter()
+                        .map(|r| TrainingRunView {
+                            id: r.id.clone(),
+                            status: r.status.clone(),
+                            base: r.base.clone(),
+                            adapter: r.adapter.clone(),
+                            dataset: r.dataset.clone(),
+                            dataset_license: r.dataset_license.clone(),
+                            rows_used: r.rows_used as u64,
+                            epochs: r.epochs,
+                            final_loss: r.final_loss,
+                            started_ms: r.started_ms,
+                            error: r.error.clone(),
+                        })
+                        .collect(),
+                    jobs: n
+                        .jobs
+                        .iter()
+                        .map(|j| TrainingJobView {
+                            id: j.id.clone(),
+                            state: j.state.clone(),
+                            base: j.base.clone(),
+                            adapter: j.adapter.clone(),
+                            holder: j.holder.clone(),
+                            attempts: j.attempts,
+                            checkpoint_epoch: j.checkpoint_epoch,
+                        })
+                        .collect(),
+                }
+            })
+            .collect(),
+        rollouts: o
+            .rollouts
+            .iter()
+            .map(|r| RolloutView {
+                node: node_view(&r.node),
+                name: r.name.clone(),
+                versions: r
+                    .versions
+                    .iter()
+                    .map(|v| RolloutVersionView {
+                        version: v.version,
+                        model: v.model.clone(),
+                        percent: v.percent,
+                        stage: match v.stage {
+                            Stage::Live => "live",
+                            Stage::Canary => "canary",
+                            Stage::Standby => "standby",
+                        }
+                        .into(),
+                        trained_on: v.trained_by.as_ref().map(|t| t.0.clone()),
+                        trained_run: v.trained_by.as_ref().map(|t| t.1.clone()),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    })
+}

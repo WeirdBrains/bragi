@@ -598,8 +598,9 @@ impl DemoNode {
                 });
             }
         });
-        let (spec_memory, spec_keep_free, auth_models, auth_uploads, auth_rollouts) =
-            (spec.memory, spec.keep_free, auth.clone(), auth.clone(), auth.clone());
+        let (spec_memory, spec_keep_free, auth_models, auth_uploads, auth_rollouts, auth_train) =
+            (spec.memory, spec.keep_free, auth.clone(), auth.clone(), auth.clone(), auth.clone());
+        let train_label = spec.label.clone();
         let host: Arc<dyn InferHost> = Arc::new(FakeHost { auth, delay, spec, faults: faults.clone() });
         let server = Server::start(&node, Serving { infer: Some((host, Admission::with_queue(2, 8))), catalog: Some(feed.clone()), announce: true })
             .map_err(other)?;
@@ -631,6 +632,18 @@ impl DemoNode {
                 tokio::spawn(async move { crate::models::ymir_rollouts::serve_stand_in(channel(stream), &state).await });
             }
         });
+        // Ymir's `/ymir/train-status/1`, as a stand-in (see `models::ymir_train`): one finished run.
+        let mut train_in = node.accept_streams(crate::models::ymir_train::TRAIN_STATUS_PROTOCOL, stream_limits()).map_err(other)?;
+        let train = tokio::spawn(async move {
+            let status = demo_training(&train_label);
+            while let Some(stream) = train_in.next().await {
+                if auth_train.authorize(&Caller::new(stream.peer().to_string())).is_err() {
+                    continue;
+                }
+                let status = status.clone();
+                tokio::spawn(async move { crate::models::ymir_train::serve_stand_in(channel(stream), &status).await });
+            }
+        });
         Ok(Self {
             identity,
             node,
@@ -638,7 +651,7 @@ impl DemoNode {
             faults,
             server: Mutex::new(Some(server)),
             tasks: Mutex::new(Some(tasks)),
-            uploads: Mutex::new(vec![uploads, rollouts]),
+            uploads: Mutex::new(vec![uploads, rollouts, train]),
             siblings: Mutex::default(),
             models: Mutex::new(Some(models)),
         })
@@ -865,4 +878,33 @@ pub fn hub_url() -> String {
 /// The demo Hub's URL when a demo node started it, else `None` (a real Hub is used).
 pub fn hub_override() -> Option<String> {
     HUB.get().cloned()
+}
+
+/// What a demo node says it has trained: one finished run of an adapter for its warm model.
+fn demo_training(label: &str) -> crate::models::ymir_train::TrainStatus {
+    use crate::models::ymir_train::{RunSummary, TrainStatus};
+    TrainStatus {
+        node: label.to_string(),
+        remote: true,
+        runs: vec![RunSummary {
+            id: "20261125-120000-0a1b".into(),
+            status: "done".into(),
+            base: WARM_MODEL.into(),
+            adapter: Some(format!("{WARM_MODEL}+demo")),
+            adapter_revision: Some("sha256:0011223344556677".into()),
+            dataset: "demo.dataset.jsonl".into(),
+            dataset_license: "CC0-1.0".into(),
+            teacher: None,
+            rows_used: 4,
+            epochs: 2,
+            steps: 8,
+            final_loss: Some(0.42),
+            started_ms: 1_764_072_000_000,
+            ended_ms: Some(1_764_072_060_000),
+            error: None,
+            checkpoints: 2,
+            resumed: false,
+        }],
+        jobs: Vec::new(),
+    }
 }

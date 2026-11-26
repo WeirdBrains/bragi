@@ -8,6 +8,12 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Next:** Ymir 0.16.0 (model-upload U9) once its CI is green.
 
+## 2026-11-25 22:18 EST: the training view (branch `feature/training-view`)
+
+Ymir's training plan, after Bragi v1: a Training toggle on the desktop Models screen. [crates/bragi-core/src/models/ymir_train.rs](crates/bragi-core/src/models/ymir_train.rs) (TEMPORARY mirror of Ymir's `/ymir/train-status/1`, Ymir 0.16.0: `TrainStatus`, `RunSummary`, `JobSummary`) and [crates/bragi-core/src/models/training.rs](crates/bragi-core/src/models/training.rs): `overview` reads every roster device's training status and rollouts (`ymir_rollouts::read`, new), gives each version its share and `Stage` (live, canary: the newest version with a share beside an older live one, standby) and the node and run whose adapter it serves. `Core::training_overview`. The demo nodes serve a stand-in with one finished run. Desktop: [crates/bragi-desktop/src/view/training.rs](crates/bragi-desktop/src/view/training.rs), Models / Training / Refresh buttons at the top of the Models screen. Flutter: `training_overview` and its views in [crates/bragi-bridge/src/api/bragi.rs](crates/bragi-bridge/src/api/bragi.rs) (`flutter_rust_bridge_codegen generate` re-run), [app/lib/src/training_view_ui.dart](app/lib/src/training_view_ui.dart) behind a Training button on the Models screen; the desktop scenario's step 60 opens the toggle. Main (the Flutter upload) merged in. CHANGELOG; ROADMAP, roadmap.toml and the site roadmap text.
+
+**Checks:** `cargo fmt --check`; clippy `-p bragi-core -p bragi-desktop -p bragi-bridge --all-targets -D warnings`; `flutter analyze` (only the existing `curly_braces` infos); `flutter test --dart-define=BRAGI_DEMO=true` all 10 passed, the models test now opening the Training view (the demo runs, and the upload's rollout); `cargo test -p bragi-core -p bragi-desktop --locked` all passed, with new `the_newest_version_with_a_share_beside_a_live_one_is_the_canary`, `the_overview_joins_runs_to_rollout_versions`, `tests/training.rs` (a linked device over the in-memory Weirdnet stack, an unlinked one refused) and `dates_are_utc`. Not run: the Xvfb desktop scenario (step 60 is written, not played) and a check against a real Ymir 0.16.0 node.
+
 ## 2026-11-25 21:56 EST: the upload dialog in the Flutter app (branch `feature/flutter-upload`)
 
 Michael asked at 9:33 PM ET for the Flutter upload dialog on par with the desktop one (rollout and canary share, license, keep in `node.toml`), as far as a phone can sensibly upload, showing the `ymirctl` command where it can't hold the file.
@@ -22,7 +28,6 @@ Michael asked at 9:33 PM ET for the Flutter upload dialog on par with the deskto
 **Not tested:** on a real phone (the file picker copies a picked file into the app's cache on Android and iOS, which is why large files point to the command); against a real Ymir node.
 
 **Next:** merge after CI; release 0.12.0.
-
 ## 2026-11-25 17:25 EST: v0.11.0 released
 
 `release: v0.11.0` (`9030973`, tag `v0.11.0`), cut on main `5a6805a` after Pages and Platforms (macOS and Windows desktop) were green: the model picker tags uploaded and trained models with their origin and license from the pool catalog (Ymir's U8; needs Ymir 0.15.3), weirdnet-agent 0.5.4 and weirdnet-backends 0.4.5, and the Windows sync-test race fix. The cut's checks passed. Every platform built in the Release workflow ([run 45703741360](https://github.com/WeirdBrains/bragi/actions/runs/45703741360)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.11.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.11.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.11.0 (branch `release/0.11.0-packaging`).

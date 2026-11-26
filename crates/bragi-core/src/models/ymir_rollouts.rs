@@ -94,6 +94,11 @@ async fn request(dialer: &dyn Dialer, peer: &str, label: &str, req: &Request) ->
     }
 }
 
+/// The rollouts on the inference node `peer` (`label`), read only.
+pub async fn read(dialer: &dyn Dialer, peer: &str, label: &str, cert: Option<Vec<u8>>) -> Result<Vec<Rollout>, String> {
+    request(dialer, peer, label, &Request { cert, change: None, persist: false }).await.map(|r| r.rollouts)
+}
+
 /// Adds `model` to the rollout `ask` names on its inference node (`label`) as the next version,
 /// at weight 0, then gives it `ask.percent` percent of new conversations (at most
 /// [`MAX_PERCENT`]); returns what the node said.

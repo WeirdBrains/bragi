@@ -31,6 +31,7 @@ mod models_scenario;
 mod react;
 mod settings_scenario;
 mod themes;
+mod training;
 mod upload;
 mod upload_scenario;
 
@@ -138,6 +139,8 @@ pub struct BragiView {
     models: models::Models,
     models_query: Entity<TextInput>,
     models_scroll: ScrollHandle,
+    /// The Training toggle on the Models screen (see `training`).
+    training: training::Training,
     /// The upload dialog's name and license fields.
     upload_name: Entity<TextInput>,
     upload_license: Entity<TextInput>,
@@ -290,6 +293,7 @@ impl BragiView {
             models: models::Models { serve: true, ..Default::default() },
             models_query,
             models_scroll: ScrollHandle::new(),
+            training: training::Training::default(),
             upload_name,
             upload_license,
             upload_rollout,
