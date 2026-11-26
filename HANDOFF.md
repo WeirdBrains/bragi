@@ -2,6 +2,12 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 22:55 EST: v0.12.0 released
+
+**Release:** [v0.12.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.12.0) (Release run 45749409093, green): the model upload dialog in the Flutter app. 42 files; the assets check passes; the leak scan of dist found nothing (41 files, 0 hits). The six Arch packages are gpg-signed and their signatures uploaded. TAUR has bragi-bin 0.12.0-1. This branch (`release/0.12.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` to 0.12.0 (`taur-check` ready, check_links ok).
+
+**Next:** Ymir 0.16.0 (model-upload U9) once its CI is green.
+
 ## 2026-11-25 21:56 EST: the upload dialog in the Flutter app (branch `feature/flutter-upload`)
 
 Michael asked at 9:33 PM ET for the Flutter upload dialog on par with the desktop one (rollout and canary share, license, keep in `node.toml`), as far as a phone can sensibly upload, showing the `ymirctl` command where it can't hold the file.
