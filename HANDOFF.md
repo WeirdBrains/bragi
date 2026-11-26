@@ -10,7 +10,7 @@ Ymir 0.18.0 gives inference nodes linked cert-only a key for `ymir.context` alon
 
 **Checks:** `cargo fmt --all --check`; clippy `--locked --workspace --all-targets -D warnings`; `cargo test -q --locked --workspace` all passed (new `conversations_from_before_a_server_link_are_resealed_for_it`: written before the link unreadable on the service device, readable after `reseal_context`, written after the link readable at once, revocation moves both back); `flutter analyze` (only the existing infos); `flutter test --dart-define=BRAGI_DEMO=true` with the bridge library, 10 passed. Platforms and Pages on the branch.
 
-**Not done:** no check against a real Ymir 0.18.0 inference node (B7's real-node check). Ymir's `docs/DESIGN.md` Bragi status waits until Ymir main is free.
+**Not done:** no check against a real Ymir 0.18.0 inference node (B7's real-node check). Ymir's [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) Bragi status waits until Ymir main is free.
 
 ## 2026-11-26 00:55 EST: v0.13.0 released
 
