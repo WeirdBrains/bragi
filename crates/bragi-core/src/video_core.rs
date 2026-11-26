@@ -19,12 +19,21 @@ impl Core {
         self.inner.cfg.dir.join(OVERRIDES_FILE)
     }
 
-    /// What `model` reports for video, from the catalog. Today the pool reports the context
-    /// window; image cost, image count and size, audio length and the request size need fields
-    /// in `weirdnet-agent`'s catalog (Weirdnet wish list) and stay absent until then.
+    /// What `model` reports for video, from the pool's catalog: the context window and the media
+    /// and request limits (catalog/1 `context` and `limits`, the strictest across its nodes).
+    /// Whatever no node reports stays absent.
     pub fn reported_video_limits(&self, model: &str) -> ModelLimits {
         let state = self.state();
-        ModelLimits { context_tokens: state.catalog.context_for(model), ..ModelLimits::default() }
+        ModelLimits::new(state.catalog.context_for(model), state.catalog.limits_for(model))
+    }
+
+    /// What `model` on OpenAI-compatible endpoint `endpoint` reports (`/v1/models`
+    /// `weirdnet.context`, `weirdnet.limits`, `weirdnet.max_request_bytes`: a Ymir bridge says;
+    /// other servers say nothing), with this device's override for that model.
+    pub async fn endpoint_video_limits(&self, endpoint: &str, model: &str) -> Result<ModelLimits> {
+        let target = self.inner.endpoints.target(endpoint)?;
+        let reported = crate::openai::model_limits(&target, model).await?;
+        Ok(reported.with_override(&self.video_override(model)?))
     }
 
     /// The user's own limits for `model` (the "set limits for this model" override); empty when
@@ -58,12 +67,26 @@ impl Core {
     /// them with [`set_video_override`](Self::set_video_override)). Blocking: shells call it off
     /// their UI thread.
     pub fn attach_video(&self, path: &Path, model: &str, prefs: &VideoPrefs, reserved: u32) -> Result<Attachment> {
-        let bin = Ffmpeg::locate().ok_or_else(|| crate::error::CoreError::new(crate::error::ErrorKind::Unavailable, Ffmpeg::missing_message()))?;
         let limits = self.video_limits(model)?;
         let audio_ok = self.state().catalog.model(model).is_some_and(|m| m.takes(Modalities::AUDIO));
+        self.attach_video_with(path, model, &limits, audio_ok, prefs, reserved)
+    }
+
+    /// [`attach_video`](Self::attach_video) with limits the caller already has (an endpoint's,
+    /// from [`endpoint_video_limits`](Self::endpoint_video_limits)). `audio_ok`: the model takes audio.
+    pub fn attach_video_with(
+        &self,
+        path: &Path,
+        model: &str,
+        limits: &ModelLimits,
+        audio_ok: bool,
+        prefs: &VideoPrefs,
+        reserved: u32,
+    ) -> Result<Attachment> {
+        let bin = Ffmpeg::locate().ok_or_else(|| crate::error::CoreError::new(crate::error::ErrorKind::Unavailable, Ffmpeg::missing_message()))?;
         let source = FfmpegCli::open(bin, path)?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let sampled = crate::video::sample(&name, &source, model, &limits, prefs, reserved, audio_ok)?;
+        let sampled = crate::video::sample(&name, &source, model, limits, prefs, reserved, audio_ok)?;
         Ok(Attachment::from_video(&name, sampled))
     }
 }

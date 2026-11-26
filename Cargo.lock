@@ -9986,9 +9986,9 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weirdnet-agent"
-version = "0.5.6"
+version = "0.5.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a108ae31f33807735568b01fcdb4fc10ec57dcc1f63e9838fefec163badefd22"
+checksum = "5369631584d4d6b9fe3d4003a8aff5b9ebe956a691c40295d4a62b52733d7967"
 dependencies = [
  "async-trait",
  "cbor4ii",
@@ -10004,9 +10004,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-backends"
-version = "0.4.7"
+version = "0.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96eba4e0084c1ce480069d4038622bbdf4a002aad9345b176fc4e4c5072889e1"
+checksum = "110a836bfc668aeb769eb4e0e6507bea5bcbbd44b2def216fdd7bb3f402c1f78"
 dependencies = [
  "async-trait",
  "axum",

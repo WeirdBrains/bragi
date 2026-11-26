@@ -129,6 +129,37 @@ pub async fn list_models(t: &Target) -> Result<Vec<String>> {
     Ok(ids)
 }
 
+/// What `model` reports in a `/v1/models` listing (`json`): `weirdnet.context` and
+/// `weirdnet.limits`, with `weirdnet.max_request_bytes` (a Ymir bridge on weirdnet-openai 0.2.4
+/// says them). Absent fields, other servers and unknown models give unknown limits, never a guess.
+pub fn parse_model_limits(json: &serde_json::Value, model: &str) -> crate::video::ModelLimits {
+    let Some(w) = json
+        .get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|d| d.iter().find(|m| m.get("id").and_then(|i| i.as_str()) == Some(model)))
+        .and_then(|m| m.get("weirdnet"))
+    else {
+        return crate::video::ModelLimits::default();
+    };
+    let context = w.get("context").and_then(|c| c.as_u64()).and_then(|c| u32::try_from(c).ok());
+    let mut media: weirdnet_agent::MediaLimits = w.get("limits").and_then(|l| serde_json::from_value(l.clone()).ok()).unwrap_or_default();
+    if let Some(b) = w.get("max_request_bytes").and_then(|b| b.as_u64()) {
+        media.max_request_bytes = Some(media.max_request_bytes.map_or(b, |m| m.min(b)));
+    }
+    crate::video::ModelLimits::new(context, media)
+}
+
+/// `GET {base}/models` and [`parse_model_limits`] for `model`.
+pub async fn model_limits(t: &Target, model: &str) -> Result<crate::video::ModelLimits> {
+    let resp = authed(client(Some(LIST_TIMEOUT))?.get(format!("{}/models", t.base_url)), t).send().await.map_err(transport)?;
+    if !resp.status().is_success() {
+        return Err(status_error(resp).await);
+    }
+    let v: serde_json::Value =
+        resp.json().await.map_err(|_| CoreError::new(ErrorKind::BadRequest, "that address answered, but not like an OpenAI-compatible API"))?;
+    Ok(parse_model_limits(&v, model))
+}
+
 /// Lists the models and says how long it took; never an error, the report carries it.
 pub async fn test(t: &Target) -> TestReport {
     let start = Instant::now();
@@ -374,6 +405,21 @@ impl weirdnet_agent::ModelBackend for EndpointBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_limits_come_from_a_ymir_bridge_listing_and_nothing_else() {
+        let v = serde_json::json!({"object": "list", "data": [
+            {"id": "gemma", "weirdnet": {"context": 32768, "max_request_bytes": 33554432,
+                "limits": {"max_images": 8, "image_tokens": 256, "image_edge": 896, "max_request_bytes": 1048576}}},
+            {"id": "plain", "object": "model"}
+        ]});
+        let g = parse_model_limits(&v, "gemma");
+        assert_eq!(g.context_tokens, Some(32_768));
+        assert_eq!((g.media.max_images, g.media.image_tokens, g.media.image_edge), (Some(8), Some(256), Some(896)));
+        assert_eq!(g.media.max_request_bytes, Some(1_048_576), "the smaller of the model's and the bridge's");
+        assert!(parse_model_limits(&v, "plain").is_unknown(), "a server that says nothing gets nothing invented");
+        assert!(parse_model_limits(&v, "missing").is_unknown());
+    }
 
     #[test]
     fn urls() {

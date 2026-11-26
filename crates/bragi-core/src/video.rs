@@ -24,6 +24,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 
+use weirdnet_agent::MediaLimits;
+
 use crate::error::{CoreError, ErrorKind, Result};
 
 /// Largest clip read from disk. A limit on what is *read*; what travels is bounded by the plan.
@@ -43,31 +45,17 @@ fn unavailable(msg: impl Into<String>) -> CoreError {
     CoreError::new(ErrorKind::Unavailable, msg)
 }
 
-/// What a model can take, as reported (by Ymir's catalog) or set by the user for that model. Every
-/// field is optional and **absent when unknown**; nothing here is ever filled with a guess.
+/// What a model can take for video: its context window (catalog/1 `context`) and its media and
+/// request limits (`weirdnet-agent` [`MediaLimits`], catalog/1 `limits`), as reported or as the
+/// user set them for that model. Every field is **absent when unknown**; nothing is ever filled
+/// with a guess. Stored per model in `video-limits.json` with the `MediaLimits` field names.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelLimits {
     /// The context window a request must fit, in tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_tokens: Option<u32>,
-    /// What one image costs, in tokens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub image_tokens: Option<u32>,
-    /// Most images in one request.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_images: Option<u32>,
-    /// The model's preferred or largest image edge, in pixels.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_edge: Option<u32>,
-    /// Longest soundtrack the model takes as audio, in seconds.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub audio_max_secs: Option<u32>,
-    /// What one second of audio costs, in tokens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub audio_tokens_per_sec: Option<u32>,
-    /// Largest request the pool's bridge accepts, in bytes.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_request_bytes: Option<u64>,
+    #[serde(flatten)]
+    pub media: MediaLimits,
 }
 
 fn lower(a: Option<u32>, b: Option<u32>) -> Option<u32> {
@@ -78,34 +66,26 @@ fn lower(a: Option<u32>, b: Option<u32>) -> Option<u32> {
 }
 
 impl ModelLimits {
-    /// The reported limits with the user's override: the override fills what wasn't reported and may
-    /// lower what was, never raise it.
+    pub fn new(context_tokens: Option<u32>, media: MediaLimits) -> Self {
+        Self { context_tokens, media }
+    }
+
+    /// The reported limits with the user's override: the override fills what wasn't reported and
+    /// may tighten what was, never loosen it ([`MediaLimits::tightest`]: fewer images, a smaller
+    /// edge, higher token costs, fewer bytes).
     pub fn with_override(self, user: &ModelLimits) -> ModelLimits {
-        ModelLimits {
-            context_tokens: lower(self.context_tokens, user.context_tokens),
-            image_tokens: match (self.image_tokens, user.image_tokens) {
-                // A cost the model reports is what it costs; the user can't make images cheaper.
-                (Some(r), Some(u)) => Some(r.max(u)),
-                (r, u) => r.or(u),
-            },
-            max_images: lower(self.max_images, user.max_images),
-            max_edge: lower(self.max_edge, user.max_edge),
-            audio_max_secs: lower(self.audio_max_secs, user.audio_max_secs),
-            audio_tokens_per_sec: match (self.audio_tokens_per_sec, user.audio_tokens_per_sec) {
-                (Some(r), Some(u)) => Some(r.max(u)),
-                (r, u) => r.or(u),
-            },
-            max_request_bytes: match (self.max_request_bytes, user.max_request_bytes) {
-                (Some(r), Some(u)) => Some(r.min(u)),
-                (r, u) => r.or(u),
-            },
-        }
+        ModelLimits { context_tokens: lower(self.context_tokens, user.context_tokens), media: self.media.tightest(user.media) }
+    }
+
+    /// Nothing known at all.
+    pub fn is_unknown(&self) -> bool {
+        self.context_tokens.is_none() && self.media.is_unknown()
     }
 
     /// What planning frames needs and is not known, in words for the user.
     pub fn missing(&self) -> Vec<&'static str> {
         let mut out = Vec::new();
-        if self.image_tokens.is_none() {
+        if self.media.image_tokens.is_none() && self.media.image_patch.is_none() {
             out.push("image cost");
         }
         if self.context_tokens.is_none() {
@@ -180,7 +160,7 @@ impl LimitOverrides {
 
     /// Sets (or with all fields empty, clears) the override for `model`.
     pub fn set(&mut self, model: &str, limits: ModelLimits) {
-        if limits == ModelLimits::default() {
+        if limits.is_unknown() {
             self.0.remove(model);
         } else {
             self.0.insert(model.to_string(), limits);
@@ -297,10 +277,23 @@ pub trait FrameSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Budget {
     pub frames: u32,
-    /// Largest edge of a frame, in pixels; `None` keeps the clip's size.
-    pub max_edge: Option<u32>,
+    /// The size frames are scaled to (aspect kept, even sizes).
+    pub width: u32,
+    pub height: u32,
+    /// What one frame costs, in tokens.
+    pub frame_tokens: u32,
     /// Milliseconds of soundtrack to send as audio; `None` sends none.
     pub audio_ms: Option<u64>,
+}
+
+/// What the budget needs to know about the clip.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Clip {
+    /// The length of the chosen range.
+    pub len_ms: u64,
+    pub width: u32,
+    pub height: u32,
+    pub has_audio: bool,
 }
 
 /// Rough token count of `text`, for the budget.
@@ -329,58 +322,58 @@ pub fn label(ms: u64) -> String {
 }
 
 impl Budget {
-    /// The budget for a clip of `len_ms` (the chosen range) for `model`, given its limits, the user's
+    /// The budget for `clip` (the chosen range) for `model`, given its limits, the user's
     /// preferences, and `reserved` tokens kept for the prompt and history (a quarter of the context
-    /// is kept for the reply on top). `audio_ok` says
-    /// the model takes audio parts. Refuses when the limits that planning needs are missing.
+    /// is kept for the reply on top). `audio_ok` says the model takes audio parts. Refuses when the
+    /// limits that planning needs are missing.
     pub fn from_limits(
         model: &str,
         limits: &ModelLimits,
         prefs: &VideoPrefs,
-        len_ms: u64,
+        clip: Clip,
         reserved: u32,
         audio_ok: bool,
-        has_audio: bool,
     ) -> std::result::Result<Budget, Refusal> {
-        let missing = limits.missing();
-        let (Some(context), Some(image_tokens)) = (limits.context_tokens, limits.image_tokens) else {
-            return Err(Refusal::MissingLimits { model: model.to_string(), missing });
+        let media = &limits.media;
+        // Frames at the model's own edge (or the user's smaller one), else the clip's size.
+        let (width, height) = fit(clip.width, clip.height, lower(media.image_edge, prefs.max_edge));
+        let (Some(context), Some(frame_tokens)) = (limits.context_tokens, media.image_cost(width, height)) else {
+            return Err(Refusal::MissingLimits { model: model.to_string(), missing: limits.missing() });
         };
-        let image_tokens = u64::from(image_tokens.max(1));
         // A quarter of the window stays free for the answer (a share of what the model reports,
         // not a frame count), and `reserved` for the prompt and the history.
         let mut room = u64::from(context).saturating_sub(u64::from(context) / 4).saturating_sub(u64::from(reserved));
         // The leading line about the clip.
         room = room.saturating_sub(text_tokens("Video \"a-long-file-name.mp4\", 00:00, 000 frames sampled, with sound."));
-        // Sound as audio only when the model takes it and says how much (and what it costs).
-        let audio_ms = match (prefs.audio, audio_ok && has_audio, limits.audio_max_secs, limits.audio_tokens_per_sec) {
-            (AudioPref::Auto, true, Some(max_s), Some(per_s)) => {
-                let ms = len_ms.min(u64::from(max_s) * 1000);
+        // Sound as audio only when the model takes it and says how long and what it costs.
+        let audio_ms = match (prefs.audio, audio_ok && clip.has_audio, media.audio_max_seconds, media.audio_tokens_per_minute) {
+            (AudioPref::Auto, true, Some(max_s), Some(per_min)) => {
+                let ms = clip.len_ms.min(u64::from(max_s) * 1000);
                 // Leave at least half the room for frames: shorten the sound first.
-                let ms = ms.min(room / 2 * 1000 / u64::from(per_s.max(1)));
+                let ms = ms.min(room / 2 * 60_000 / u64::from(per_min.max(1)));
                 (ms > 0).then_some(ms)
             }
             _ => None,
         };
-        if let (Some(ms), Some(per_s)) = (audio_ms, limits.audio_tokens_per_sec) {
-            room = room.saturating_sub((ms * u64::from(per_s)).div_ceil(1000));
+        if let Some(cost) = audio_ms.and_then(|ms| media.audio_cost(ms)) {
+            room = room.saturating_sub(cost);
         }
-        let per_frame = image_tokens + text_tokens(&label(0));
+        let per_frame = u64::from(frame_tokens.max(1)) + text_tokens(&label(0));
         let mut frames = room / per_frame;
-        if let Some(m) = limits.max_images {
+        if let Some(m) = media.max_images {
             frames = frames.min(u64::from(m));
         }
         if let Some(m) = prefs.max_frames {
             frames = frames.min(u64::from(m));
         }
         if let Some(fps) = prefs.fps.filter(|f| *f > 0.0) {
-            frames = frames.min(((len_ms as f64 / 1000.0) * f64::from(fps)).floor().max(1.0) as u64);
+            frames = frames.min(((clip.len_ms as f64 / 1000.0) * f64::from(fps)).floor().max(1.0) as u64);
         }
         let frames = frames.min(u64::from(u32::MAX)) as u32;
-        if frames == 0 || (frames < 2 && len_ms > 2_000) {
+        if frames == 0 || (frames < 2 && clip.len_ms > 2_000) {
             return Err(Refusal::NoRoom { model: model.to_string(), frames });
         }
-        Ok(Budget { frames, max_edge: lower(limits.max_edge, prefs.max_edge), audio_ms })
+        Ok(Budget { frames, width, height, frame_tokens, audio_ms })
     }
 }
 
@@ -533,13 +526,14 @@ pub fn sample(
     if end <= start {
         return Err(bad("the clip's range is empty"));
     }
-    let budget = Budget::from_limits(model, limits, prefs, end - start, reserved, audio_ok, probe.has_audio).map_err(Refusal::into_error)?;
+    let clip = Clip { len_ms: end - start, width: probe.width, height: probe.height, has_audio: probe.has_audio };
+    let budget = Budget::from_limits(model, limits, prefs, clip, reserved, audio_ok).map_err(Refusal::into_error)?;
     let scenes = match prefs.mode {
         Mode::Uniform => Vec::new(),
         Mode::Scene | Mode::Hybrid => source.scenes(prefs.scene_threshold)?,
     };
     let times = plan_frames(prefs.mode, (start, end), budget.frames, &scenes);
-    let (w, h) = fit(probe.width, probe.height, budget.max_edge);
+    let (w, h) = (budget.width, budget.height);
     let mut frames = Vec::with_capacity(times.len());
     for t in times {
         let f = source.frame_at(t, w, h)?;
@@ -556,7 +550,7 @@ pub fn sample(
         None => None,
     };
     // The request limit: drop frames evenly, then the sound, until it fits.
-    if let Some(max) = limits.max_request_bytes {
+    if let Some(max) = limits.media.max_request_bytes {
         let size =
             |f: &[VideoFrame], a: &Option<String>| f.iter().map(|x| x.data.len() as u64).sum::<u64>() + a.as_ref().map_or(0, |a| a.len() as u64);
         while size(&frames, &audio) > max && frames.len() > 1 {
@@ -838,61 +832,88 @@ mod tests {
     use super::*;
 
     fn limits(context: u32, image: u32) -> ModelLimits {
-        ModelLimits { context_tokens: Some(context), image_tokens: Some(image), ..ModelLimits::default() }
+        ModelLimits::new(Some(context), MediaLimits::new().with_image_tokens(image))
+    }
+
+    fn clip(len_ms: u64, has_audio: bool) -> Clip {
+        Clip { len_ms, width: 1920, height: 1080, has_audio }
     }
 
     #[test]
     fn missing_limits_refuse_and_name_what_is_missing() {
-        let e = Budget::from_limits("m", &ModelLimits::default(), &VideoPrefs::default(), 42_000, 0, false, false).unwrap_err();
+        let e = Budget::from_limits("m", &ModelLimits::default(), &VideoPrefs::default(), clip(42_000, false), 0, false).unwrap_err();
         assert_eq!(e, Refusal::MissingLimits { model: "m".into(), missing: vec!["image cost", "context size"] });
         let msg = e.message();
         assert!(msg.contains("image cost and context size aren't reported") && msg.contains("Images alone still work"), "{msg}");
-        let only_ctx = ModelLimits { image_tokens: Some(256), ..ModelLimits::default() };
-        let e = Budget::from_limits("m", &only_ctx, &VideoPrefs::default(), 42_000, 0, false, false).unwrap_err();
+        let only_cost = ModelLimits::new(None, MediaLimits::new().with_image_tokens(256));
+        let e = Budget::from_limits("m", &only_cost, &VideoPrefs::default(), clip(42_000, false), 0, false).unwrap_err();
         assert!(e.message().contains("context size isn't reported"), "{}", e.message());
+        let patches_only = ModelLimits::new(Some(8192), MediaLimits::new().with_image_patch(16).with_image_edge(512));
+        assert!(patches_only.missing().is_empty(), "a patch size is an image cost too");
     }
 
     #[test]
-    fn the_override_fills_gaps_and_only_lowers() {
-        let reported = ModelLimits { context_tokens: Some(8192), max_images: Some(16), ..ModelLimits::default() };
-        let user = ModelLimits { context_tokens: Some(32_768), image_tokens: Some(256), max_images: Some(4), ..ModelLimits::default() };
+    fn the_override_fills_gaps_and_only_tightens() {
+        let reported = ModelLimits::new(Some(8192), MediaLimits::new().with_max_images(16).with_image_tokens(256));
+        let user = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_tokens(128).with_max_images(4).with_image_edge(768));
         let m = reported.with_override(&user);
-        assert_eq!((m.context_tokens, m.image_tokens, m.max_images), (Some(8192), Some(256), Some(4)));
+        assert_eq!(m.context_tokens, Some(8192), "the user can't raise the context");
+        assert_eq!(
+            (m.media.image_tokens, m.media.max_images, m.media.image_edge),
+            (Some(256), Some(4), Some(768)),
+            "costs only go up, counts only down"
+        );
     }
 
     #[test]
     fn the_budget_comes_from_the_limits() {
-        let b = Budget::from_limits("m", &limits(8192, 256), &VideoPrefs::default(), 60_000, 2048, false, false).unwrap();
+        let b = Budget::from_limits("m", &limits(8192, 256), &VideoPrefs::default(), clip(60_000, false), 2048, false).unwrap();
         assert!(b.frames > 2 && u64::from(b.frames) * 256 <= 8192 - 2048, "{b:?}");
-        let capped = ModelLimits { max_images: Some(5), ..limits(8192, 256) };
-        assert_eq!(Budget::from_limits("m", &capped, &VideoPrefs::default(), 60_000, 0, false, false).unwrap().frames, 5);
+        assert_eq!((b.width, b.height, b.frame_tokens), (1920, 1080, 256), "no edge reported: the clip's size");
+        let capped = ModelLimits::new(Some(8192), MediaLimits::new().with_image_tokens(256).with_max_images(5));
+        assert_eq!(Budget::from_limits("m", &capped, &VideoPrefs::default(), clip(60_000, false), 0, false).unwrap().frames, 5);
         let prefs = VideoPrefs { max_frames: Some(3), ..VideoPrefs::default() };
-        assert_eq!(Budget::from_limits("m", &limits(8192, 256), &prefs, 60_000, 0, false, false).unwrap().frames, 3);
+        assert_eq!(Budget::from_limits("m", &limits(8192, 256), &prefs, clip(60_000, false), 0, false).unwrap().frames, 3);
         let prefs = VideoPrefs { fps: Some(0.1), ..VideoPrefs::default() };
-        assert_eq!(Budget::from_limits("m", &limits(100_000, 256), &prefs, 60_000, 0, false, false).unwrap().frames, 6);
+        assert_eq!(Budget::from_limits("m", &limits(100_000, 256), &prefs, clip(60_000, false), 0, false).unwrap().frames, 6);
+    }
+
+    #[test]
+    fn patch_costs_follow_the_frame_size() {
+        // 16 px patches at a 512 px edge: a 1920x1080 frame becomes 512x288, 32 x 18 = 576 tokens.
+        let l = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_patch(16).with_image_edge(512));
+        let b = Budget::from_limits("m", &l, &VideoPrefs::default(), clip(60_000, false), 0, false).unwrap();
+        assert_eq!((b.width, b.height, b.frame_tokens), (512, 288, 576));
+        // A smaller edge from the user makes frames cheaper, so more fit.
+        let prefs = VideoPrefs { max_edge: Some(256), ..VideoPrefs::default() };
+        let small = Budget::from_limits("m", &l, &prefs, clip(60_000, false), 0, false).unwrap();
+        assert!(small.frame_tokens < b.frame_tokens && small.frames > b.frames, "{small:?} vs {b:?}");
     }
 
     #[test]
     fn too_little_room_refuses_instead_of_sending_one_poor_frame() {
-        let e = Budget::from_limits("tiny", &limits(400, 256), &VideoPrefs::default(), 30_000, 0, false, false).unwrap_err();
+        let e = Budget::from_limits("tiny", &limits(400, 256), &VideoPrefs::default(), clip(30_000, false), 0, false).unwrap_err();
         assert!(matches!(e, Refusal::NoRoom { frames: 1, .. }), "{e:?}");
         assert!(e.message().contains("room for only 1 frame"), "{}", e.message());
         // A clip of two seconds or less may go as one frame.
-        assert_eq!(Budget::from_limits("tiny", &limits(400, 256), &VideoPrefs::default(), 1_500, 0, false, false).unwrap().frames, 1);
+        assert_eq!(Budget::from_limits("tiny", &limits(400, 256), &VideoPrefs::default(), clip(1_500, false), 0, false).unwrap().frames, 1);
     }
 
     #[test]
     fn sound_goes_as_audio_only_with_reported_audio_limits() {
         let mut l = limits(32_768, 256);
-        let b = Budget::from_limits("m", &l, &VideoPrefs::default(), 60_000, 0, true, true).unwrap();
+        let b = Budget::from_limits("m", &l, &VideoPrefs::default(), clip(60_000, true), 0, true).unwrap();
         assert_eq!(b.audio_ms, None, "no audio limits reported");
-        l.audio_max_secs = Some(30);
-        l.audio_tokens_per_sec = Some(25);
-        let b = Budget::from_limits("m", &l, &VideoPrefs::default(), 60_000, 0, true, true).unwrap();
+        l.media = l.media.with_audio_max_seconds(30).with_audio_tokens_per_minute(1500);
+        let b = Budget::from_limits("m", &l, &VideoPrefs::default(), clip(60_000, true), 0, true).unwrap();
         assert_eq!(b.audio_ms, Some(30_000));
         let off = VideoPrefs { audio: AudioPref::Off, ..VideoPrefs::default() };
-        assert_eq!(Budget::from_limits("m", &l, &off, 60_000, 0, true, true).unwrap().audio_ms, None);
-        assert_eq!(Budget::from_limits("m", &l, &VideoPrefs::default(), 60_000, 0, false, true).unwrap().audio_ms, None, "model takes no audio");
+        assert_eq!(Budget::from_limits("m", &l, &off, clip(60_000, true), 0, true).unwrap().audio_ms, None);
+        assert_eq!(
+            Budget::from_limits("m", &l, &VideoPrefs::default(), clip(60_000, true), 0, false).unwrap().audio_ms,
+            None,
+            "model takes no audio"
+        );
     }
 
     fn check_times(t: &[u64], range: (u64, u64), n: u32) {
@@ -964,7 +985,7 @@ mod tests {
     #[test]
     fn sampling_labels_frames_and_counts_the_sound() {
         let src = FakeSource::new(42_000, true);
-        let l = ModelLimits { max_images: Some(6), max_edge: Some(768), ..limits(32_768, 256) };
+        let l = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_tokens(256).with_max_images(6).with_image_edge(768));
         let s = sample("dir/clip.mp4", &src, "m", &l, &VideoPrefs::default(), 1024, false).unwrap();
         assert_eq!(s.summary, "Video \"clip.mp4\", 00:42, 6 frames sampled, sound not included.");
         assert_eq!(s.frames.len(), 6);
@@ -973,7 +994,7 @@ mod tests {
         assert!(first.ends_with(b"3500@768x432"));
         assert!(s.audio.is_none());
 
-        let with_audio = ModelLimits { audio_max_secs: Some(30), audio_tokens_per_sec: Some(25), ..l };
+        let with_audio = ModelLimits::new(l.context_tokens, l.media.with_audio_max_seconds(30).with_audio_tokens_per_minute(1500));
         let s = sample("clip.mp4", &src, "m", &with_audio, &VideoPrefs::default(), 1024, true).unwrap();
         assert!(s.summary.ends_with("with sound.") && s.audio.is_some(), "{}", s.summary);
 
@@ -995,7 +1016,7 @@ mod tests {
     #[test]
     fn the_request_limit_drops_frames_evenly() {
         let src = FakeSource::new(60_000, false);
-        let l = ModelLimits { max_images: Some(10), max_request_bytes: Some(100), ..limits(32_768, 256) };
+        let l = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_tokens(256).with_max_images(10).with_max_request_bytes(100));
         let s = sample("c.mp4", &src, "m", &l, &VideoPrefs::default(), 0, false).unwrap();
         let size: usize = s.frames.iter().map(|f| f.data.len()).sum();
         assert!(size <= 100 && !s.frames.is_empty() && s.frames.len() < 10, "{} frames, {size} bytes", s.frames.len());
@@ -1005,7 +1026,7 @@ mod tests {
     fn a_range_spends_the_budget_on_that_part() {
         let src = FakeSource::new(60_000, false);
         let prefs = VideoPrefs { range: Some((10_000, 20_000)), ..VideoPrefs::default() };
-        let l = ModelLimits { max_images: Some(4), ..limits(32_768, 256) };
+        let l = ModelLimits::new(Some(32_768), MediaLimits::new().with_image_tokens(256).with_max_images(4));
         let s = sample("c.mp4", &src, "m", &l, &prefs, 0, false).unwrap();
         assert!(s.frames.iter().all(|f| (10_000..20_000).contains(&f.at_ms)));
         assert!(s.summary.contains("00:10,"), "{}", s.summary);
@@ -1020,6 +1041,8 @@ mod tests {
         o.set("m", limits(8192, 256));
         o.save(&path).unwrap();
         assert_eq!(LimitOverrides::load(&path).unwrap().get("m"), limits(8192, 256));
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("\"context_tokens\": 8192") && text.contains("\"image_tokens\": 256") && !text.contains("max_images"), "{text}");
         o.set("m", ModelLimits::default());
         assert!(o.0.is_empty());
     }
