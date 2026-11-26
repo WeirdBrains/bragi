@@ -6,6 +6,14 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A Ymir inference server linked cert-only (`--server inference`) can read your conversations again: they are sealed under a key for conversations alone while such a server is linked, and chats from before the link are re-sealed for it after a sync pass that reached every device (and moved back once no such server is left). Every Bragi device that shares conversations with one needs this release.
+
+### Changed
+
+- weirdnet-sync 0.8.4, weirdnet-net 0.8.3, weirdnet-agent 0.5.6 and weirdnet-backends 0.4.7.
+
 ## [0.13.0] - 2026-11-26
 
 ### Added

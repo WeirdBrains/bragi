@@ -47,6 +47,9 @@ digits, and confirm on both. Bragi reads Ymir's codes as well as its own.</p>
 --server inference</code> (or <code>--server model</code> for a node that only runs models). The server gets a certificate
 and a signed grant for that role; it serves and syncs as usual but cannot link or revoke devices, and revoking it later
 never means a new identity. It needs a Ymir with cert-only links; an older one fails the link and keeps nothing.</p>
+<p>An inference server linked this way reads your conversations with a key for them alone. Chats written before the link
+move to that key on the next sync pass with every device reached, and back again once no such server is left. Every
+device that shares chats with it needs Bragi 0.14.0 or newer (older ones can't open them).</p>
 <p>Paste a code from another device into the box (Ctrl+V or Ctrl+Shift+V).</p>
 
 <h2 id="chat">Chat</h2>
