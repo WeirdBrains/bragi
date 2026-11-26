@@ -13,7 +13,7 @@ use bragi_core::demo::{DemoNode, Faults};
 use bragi_core::files::{FileKind, FileOrigin};
 use bragi_core::{
     AppState, Attachment, ChatEvent, ChatFile, ChatMessage, Choice, Config, Conversation, ConversationSummary, Core, LinkCheck, MessageState,
-    ModelStatus, NodeSearch, PairState, Role, Transport,
+    ModelStatus, NodeSearch, PairState, Role, Target, Transport,
 };
 use gpui::{
     App, Bounds, Context, Entity, Focusable, Image, ImageFormat, KeyBinding, MouseButton, ObjectFit, ScrollHandle, SharedString, Task, WeakEntity,
@@ -88,6 +88,12 @@ pub struct BragiView {
     attachments: Vec<Attachment>,
     attach_input: Entity<TextInput>,
     attach_open: bool,
+    /// The video limits chip for the model the next message goes to, the editor for this
+    /// device's override (`context=8192 image_tokens=256`), and a clip being sampled (LF-43).
+    video_limits: Option<bragi_core::video::LimitsView>,
+    video_limits_open: bool,
+    video_limits_input: Entity<TextInput>,
+    video_busy: bool,
     agent: bool,
     card: Option<Card>,
     notice: Option<String>,
@@ -176,7 +182,14 @@ impl BragiView {
         let theme = Theme::from_palette(&core.appearance().palette());
         let prompt = cx.new(|cx| TextInput::new("Ask anything…", theme, cx));
         let link_input = cx.new(|cx| TextInput::new("Link code or node address", theme, cx));
-        let attach_input = cx.new(|cx| TextInput::new("Path of a text, image or audio file…", theme, cx));
+        let attach_input = cx.new(|cx| TextInput::new("Path of a text, image, audio or video file…", theme, cx));
+        let video_limits_input = cx.new(|cx| TextInput::new("context=8192 image_tokens=256 max_images=8", theme, cx));
+        cx.subscribe_in(&video_limits_input, window, |this, _, ev: &TextInputEvent, _, cx| {
+            if let TextInputEvent::Submit { .. } = ev {
+                this.save_video_limits(false, cx);
+            }
+        })
+        .detach();
         let confirm_input = cx.new(|cx| TextInput::new(delete::CLEAR_WORD, theme, cx));
         cx.subscribe_in(&confirm_input, window, |this, _, ev: &TextInputEvent, _, cx| match ev {
             TextInputEvent::Submit { .. } => this.confirm_delete(false, cx),
@@ -270,6 +283,10 @@ impl BragiView {
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
+            video_limits: None,
+            video_limits_open: false,
+            video_limits_input,
+            video_busy: false,
             agent: false,
             card: None,
             notice: None,
@@ -670,21 +687,12 @@ impl BragiView {
             Some(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)).unwrap_or_else(|| PathBuf::from(path)),
             None => PathBuf::from(path),
         };
-        // A video is sampled for the model the message goes to (LF-43, V1: the chat shows its
-        // first frame; the inline player is V2).
-        let attached = if bragi_core::video::is_video_path(&path) {
-            if self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) {
-                Err(bragi_core::CoreError::new(bragi_core::ErrorKind::BadRequest, "One video per message."))
-            } else if let Some(model) = self.model() {
-                let history: Vec<&str> = self.current.as_ref().map(|c| c.messages.iter().map(|m| m.text.as_str()).collect()).unwrap_or_default();
-                let reserved = bragi_core::video::history_tokens(history);
-                self.core.attach_video(&path, &model, &bragi_core::video::VideoPrefs::default(), reserved)
-            } else {
-                Err(bragi_core::CoreError::new(bragi_core::ErrorKind::BadRequest, "Pick a model first: a video is sampled for the model it goes to."))
-            }
-        } else {
-            Attachment::from_path(&path)
-        };
+        // A video is sampled off the UI thread for the model the message goes to, sized from the
+        // pool's or the endpoint's limits (LF-43).
+        if bragi_core::video::is_video_path(&path) {
+            return self.attach_video(path, cx);
+        }
+        let attached = Attachment::from_path(&path);
         match attached {
             Ok(a) => {
                 self.attachments.push(a);
@@ -694,6 +702,147 @@ impl BragiView {
             }
             Err(e) => self.notice = Some(e.message),
         }
+        cx.notify();
+    }
+
+    /// Where a clip for the next message goes and the model it is sized for: an endpoint's model
+    /// when the chat goes to an endpoint, else the picked model or the pool's default.
+    fn video_target(&self) -> Result<(Option<Target>, String), String> {
+        let target = match &self.current {
+            Some(c) => self.core.session_target(&c.id).target,
+            None => self.prefs.new_target.clone(),
+        };
+        if let Some(Target::Endpoint { model, .. }) = &target {
+            return if model.is_empty() {
+                Err("Pick the endpoint's model first: a video is sampled for the model it goes to.".into())
+            } else {
+                Ok((target.clone(), model.clone()))
+            };
+        }
+        self.model().map(|m| (target, m)).ok_or_else(|| "Pick a model first: a video is sampled for the model it goes to.".into())
+    }
+
+    fn attach_video(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        if self.video_busy || self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) {
+            self.notice = Some("One video per message.".into());
+            return cx.notify();
+        }
+        let (target, model) = match self.video_target() {
+            Ok(t) => t,
+            Err(e) => {
+                self.notice = Some(e);
+                return cx.notify();
+            }
+        };
+        let history: Vec<&str> = self.current.as_ref().map(|c| c.messages.iter().map(|m| m.text.as_str()).collect()).unwrap_or_default();
+        let reserved = bragi_core::video::history_tokens(history);
+        let core = self.core.clone();
+        let job = self.core.handle().spawn(async move {
+            let plan = core.video_plan(target.as_ref(), &model).await?;
+            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            let prefs = bragi_core::video::VideoPrefs::default();
+            let core2 = core.clone();
+            let model2 = model.clone();
+            let a = tokio::task::spawn_blocking(move || {
+                let source = core2.video_source(&path)?;
+                core2.attach_video_source(&name, &source, &model2, &plan, &prefs, reserved)
+            })
+            .await
+            .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))??;
+            let view = core.video_limits_view(target.as_ref(), &model).await.ok();
+            Ok::<_, bragi_core::CoreError>((a, view))
+        });
+        self.video_busy = true;
+        self.notice = Some("Reading frames…".into());
+        cx.notify();
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            let r = job.await.map_err(|e| e.to_string()).and_then(|r| r.map_err(|e| e.message));
+            let _ = this.update(cx, |v, cx| {
+                v.video_busy = false;
+                match r {
+                    Ok((a, view)) => {
+                        v.attachments.push(a);
+                        v.attach_input.update(cx, |i, cx| i.set_text("", cx));
+                        v.attach_open = false;
+                        v.notice = None;
+                        if view.is_some() {
+                            v.video_limits = view;
+                        }
+                    }
+                    Err(e) => {
+                        v.notice = Some(e);
+                        v.open_video_limits(cx);
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Opens the video limits editor for the model the next message goes to, with this device's
+    /// override in it and the chip above it.
+    pub fn open_video_limits(&mut self, cx: &mut Context<Self>) {
+        let (target, model) = match self.video_target() {
+            Ok(t) => t,
+            Err(e) => {
+                self.notice = Some(e);
+                return cx.notify();
+            }
+        };
+        let core = self.core.clone();
+        let job = self.core.handle().spawn(async move { core.video_limits_view(target.as_ref(), &model).await });
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            let r = job.await;
+            let _ = this.update(cx, |v, cx| {
+                match r {
+                    Ok(Ok(view)) => {
+                        let text = view.user.to_text();
+                        v.video_limits_input.update(cx, |i, cx| i.set_text(&text, cx));
+                        v.video_limits = Some(view);
+                        v.video_limits_open = true;
+                    }
+                    Ok(Err(e)) => v.notice = Some(e.message),
+                    Err(e) => v.notice = Some(e.to_string()),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Saves the editor's limits for the model (`clear`: removes them). Says which values are
+    /// ignored because the override only tightens what the model reports.
+    pub fn save_video_limits(&mut self, clear: bool, cx: &mut Context<Self>) {
+        let Some(view) = self.video_limits.clone() else { return };
+        let user = if clear {
+            bragi_core::video::ModelLimits::default()
+        } else {
+            match bragi_core::video::ModelLimits::parse(self.video_limits_input.read(cx).text()) {
+                Ok(l) => l,
+                Err(e) => {
+                    self.notice = Some(e.message);
+                    return cx.notify();
+                }
+            }
+        };
+        if let Err(e) = self.core.set_video_override(&view.model, user) {
+            self.notice = Some(e.message);
+            return cx.notify();
+        }
+        let ignored = view.ignored(&user);
+        let next = bragi_core::video::LimitsView::new(view.model.clone(), view.reported, user);
+        self.notice = Some(if clear {
+            format!("Cleared your video limits for {}.", view.model)
+        } else if ignored.is_empty() {
+            format!("Saved your video limits for {}.", view.model)
+        } else {
+            format!("Saved. {} can only tighten what {} reports, so it is ignored.", ignored.join(", "), view.model)
+        });
+        if clear {
+            self.video_limits_input.update(cx, |i, cx| i.set_text("", cx));
+        }
+        self.video_limits = Some(next);
         cx.notify();
     }
 
@@ -1605,6 +1754,61 @@ impl BragiView {
                 );
             }
             above = above.child(chips);
+        }
+        let has_video = self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_))));
+        if let Some(view) = self.video_limits.as_ref().filter(|_| has_video || self.video_limits_open) {
+            any = true;
+            let open = self.video_limits_open;
+            above = above.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .gap(px(8.))
+                    .items_center()
+                    .pt(px(8.))
+                    .child(
+                        div()
+                            .id("video-chip")
+                            .flex_1()
+                            .text_size(px(12.))
+                            .text_color(rgb(if view.ready() { t.text_secondary } else { t.error }))
+                            .child(view.chip()),
+                    )
+                    .child(self.button("video-limits", if open { "Close" } else { "Limits" }, false).on_click(cx.listener(move |v, _, _, cx| {
+                        if open {
+                            v.video_limits_open = false;
+                            cx.notify();
+                        } else {
+                            v.open_video_limits(cx);
+                        }
+                    }))),
+            );
+            if open {
+                above = above.child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(8.))
+                        .items_center()
+                        .child(
+                            div()
+                                .flex_1()
+                                .px(px(12.))
+                                .py(px(8.))
+                                .rounded(px(8.))
+                                .bg(rgb(t.surface))
+                                .text_size(px(13.))
+                                .child(self.video_limits_input.clone()),
+                        )
+                        .child(self.button("video-limits-save", "Save", true).on_click(cx.listener(|v, _, _, cx| v.save_video_limits(false, cx))))
+                        .child(self.button("video-limits-clear", "Clear", false).on_click(cx.listener(|v, _, _, cx| v.save_video_limits(true, cx)))),
+                );
+                above = above.child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child(format!(
+                    "Reported: {}. Yours fill what isn't reported and can only tighten what is. Keys: {}.",
+                    view.reported.describe(),
+                    bragi_core::video::OVERRIDE_KEYS.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ")
+                )));
+            }
         }
         if self.attach_open {
             any = true;
