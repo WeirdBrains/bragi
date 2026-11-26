@@ -463,6 +463,31 @@ impl App {
         });
     }
 
+    /// `/frames`: the frames the model saw of the newest clip in the open chat, with their times.
+    fn video_frames(&mut self) {
+        let Some(c) = &self.current else { return self.fail("Open a chat with a video first.") };
+        let line = match bragi_core::video_play::last_video(c) {
+            Some((name, v)) => format!("{}: {}", bragi_core::video_play::bubble(name, v), bragi_core::video_play::frame_list(v).join(" ")),
+            None => return self.fail("No video in this chat."),
+        };
+        self.say(line);
+    }
+
+    /// `/play`: the newest clip in the open chat in the system player (the terminal has no inline
+    /// player). Says why when the clip isn't on this device.
+    fn play_video(&mut self) {
+        let Some(c) = &self.current else { return self.fail("Open a chat with a video first.") };
+        let Some((name, v)) = bragi_core::video_play::last_video(c) else { return self.fail("No video in this chat.") };
+        let name = name.to_string();
+        match bragi_core::video_play::playable_clip(v) {
+            Ok(path) => match bragi_core::video_play::open_externally(&path) {
+                Ok(()) => self.say(format!("Opened {name} in the system player.")),
+                Err(e) => self.fail(e.message),
+            },
+            Err(why) => self.fail(why.message()),
+        }
+    }
+
     /// Reads the chip for the composer quietly (after a clip is attached).
     fn refresh_video_chip(&mut self) {
         let Ok((target, model)) = self.video_target() else { return };
@@ -1839,6 +1864,14 @@ impl App {
                 Err(e) => self.fail(e.message),
             }
             return;
+        }
+        if text == "/frames" {
+            self.input.take();
+            return self.video_frames();
+        }
+        if text == "/play" {
+            self.input.take();
+            return self.play_video();
         }
         if text == "/video-limits" || text.starts_with("/video-limits ") {
             self.input.take();
