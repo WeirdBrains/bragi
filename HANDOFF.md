@@ -8,6 +8,8 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Upgrade note:** every Bragi that shares conversations with a cert-only inference server needs 0.14.0; 0.13.0 and older can't open records sealed under the type-scoped key.
 
+TAUR has bragi-bin 0.14.0-1.
+
 **Next:** merge `feature/fdroid-prep` (B3), then the next Bragi batch.
 
 ## 2026-11-26 04:45 EST: weirdnet-sync 0.8.4 (branch `chore/weirdnet-sync-0.8.4`)
