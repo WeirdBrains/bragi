@@ -183,6 +183,7 @@ impl Core {
         self.inner.wake_gen.send_modify(|g| *g += 1);
         if let Ok(net) = self.net() {
             publish_card(&net.identity, &self.inner.wakes, self.wake_relay().as_deref());
+            net.identity.refresh_wake_cards();
         }
         self.inner.state.send_modify(|st| st.wake = status_of(&self.inner.wakes, &self.inner.wake_up));
         Ok(())
