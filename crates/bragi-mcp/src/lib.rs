@@ -21,6 +21,7 @@ pub mod code;
 mod collect;
 pub mod prompts;
 pub mod tools;
+pub mod video;
 
 use std::net::SocketAddr;
 use std::sync::Arc;

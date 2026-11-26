@@ -3,7 +3,10 @@
 Status: design, post-v1, 2026-11-22 (LF-38). V1 started 2026-11-26 (LF-43, branch `feature/video-upload`): `bragi-core::video`
 (limits from the pool catalog's `MediaLimits` (weirdnet-agent 0.5.7) or an endpoint's `/v1/models` `weirdnet.*`, budget, planner,
 `FfmpegCli`, `FakeSource`, the per-model override that fills gaps and only tightens), `Media::Video`, `Core::attach_video`, and attach in the
-terminal app and the desktop. Not yet: `bragi-mcp` video tools, players (V2, V3), transcription, packaging ffmpeg. None of it blocks v1. Ymir's side (the
+terminal app and the desktop. V2 slice 1 (branch `feature/video-v2-mcp-override`): sampling off the UI thread with the endpoint's limits when
+the chat goes to an endpoint, the limits chip and per-model override editor (`/video-limits` in the terminal app, Limits in the desktop composer),
+`bragi-mcp` `bragi_video_probe`, `bragi_video_frames` and `video` on `bragi_chat` (weirdnet-mcp 0.6.2). Not yet: players (V2 slice 2, V3),
+transcription, packaging ffmpeg. None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
 
@@ -211,7 +214,9 @@ Where ffmpeg is missing, video attach is hidden or disabled with one sentence of
 ### MCP exposure
 
 - `bragi mcp` (the server): `chat` already takes images and audio. It gains a `video` input (a path or base64, with the same sampling settings), expanded through the same code, so Cursor, VS Code and Claude Desktop get video understanding through Bragi. Path inputs are subject to the server's existing root and read restrictions (no reading arbitrary files; the MCP client must name a file the user allowed). A read-only tool `video_probe` (duration, size, streams) is cheap and safe. Frame extraction as a tool (`video_frames` returning images and timestamps) is useful on its own, and is read-only.
-- Bragi as an MCP *client* (see the MCP client design, `docs/design/mcp-client.md`, LF-37): a tool result that carries an image content block already needs to reach the model; a video result from an outside tool is a path or URL, handled as an attachment via the same sampling (never fetched silently: a URL is shown and needs approval).
+  - Built (V2 slice 1) as `bragi_video_probe` and `bragi_video_frames` (both read-only, files inside the project root or a base64 `data:` URL written to a private temp folder). `bragi_video_frames` takes a `count` (1 to 64, the caller's) or sizes frames for `model` from its reported limits (refusing with what to set, as attach does); `max_edge`, `mode`, `start_ms`, `end_ms`. weirdnet-mcp 0.6.2's image block has no annotations, so each image follows a text block with its time (`[00:07.5]`) and `structuredContent.frames[]` carries `at_ms`, `label` and the mime type. One call returns at most 32 MiB of frames.
+  - `bragi_chat` takes `video` plus `video_max_frames`, `video_max_edge`, `video_mode`, `video_start_ms`, `video_end_ms`; the clip counts as one of the five files.
+- Bragi as an MCP *client* (see the MCP client design, `docs/design/mcp-client.md`, LF-37): stdio servers are started with a 64 MiB line cap (`StdioTransport::spawn_limited`; weirdnet-mcp's default is 4 MiB), so a batch of frames arrives whole. A tool result that carries an image content block already needs to reach the model (weirdnet-mcp 0.6.2's `McpSource` still turns results into text: `call_tool`, not `call_tool_content`; a Weirdnet ask); a video result from an outside tool is a path or URL, handled as an attachment via the same sampling (never fetched silently: a URL is shown and needs approval).
 - Tool-call approvals treat anything that reads a file or fetches a URL for video as a file-read-tier action.
 
 ### Privacy and safety
@@ -259,5 +264,5 @@ Bragi does not create or modify `weirdnet-*` crates. For the Weirdnet Lead, in o
 3. **`weirdnet-openai`: `video_url` handling** in the OpenAI bridge: accept `video_url` (data URL) and map it to the video part when the model takes it, else expand it to frames and sound through `weirdnet-media` when the operator turns that on.
 4. **`weirdnet-model`: speech-to-text and video capability metadata.** A Whisper-class model in the catalog with a `transcribe` role, and per-model limit fields: context window, per-image token cost (by size), `max_images`, preferred image edge, audio maximum length and native video limits. These are what the frame budget is computed from; there is no fallback default, so a model without them gets the refuse-with-override path.
 5. **`weirdnet-backends`: a transcription call** (audio in, text with timestamps out) next to chat, embeddings and the rest, plus passing a video part to backends that take one.
-6. **`weirdnet-mcp`: image and audio content blocks in tool results** (if not there already) so `video_frames` can return frames as images.
+6. ~~**`weirdnet-mcp`: image and audio content blocks in tool results**~~ (0.6.2: `Content::from_json`, `decoded_bytes`, `Client::call_tool_content`). Still open: `McpSource` (feature `agent`) passing image and audio blocks to the model instead of text, and annotations (or `_meta`) on image blocks for the frame time.
 7. **Bundling help:** an LGPL ffmpeg build recipe or crate (`weirdnet-ffmpeg`?) that every WeirdBrains app can ship, with the notices and a reproducible build, so Mouser, Morph and Bragi do not each carry one.

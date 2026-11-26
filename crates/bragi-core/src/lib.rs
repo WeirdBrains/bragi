@@ -48,6 +48,7 @@ pub mod video;
 mod video_core;
 pub mod wake;
 mod wake_core;
+pub use video_core::VideoPlan;
 pub use wake_core::WakeableDevice;
 pub mod demo_wake;
 

@@ -10073,9 +10073,9 @@ dependencies = [
 
 [[package]]
 name = "weirdnet-mcp"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e76a01d11ec5feffa37cb305bfd45a3c1637df4cb8a04989fc257eb5da9b727"
+checksum = "54d31ef31c3cefcb09ed4a7bc00b39eccdd96d4208d77d20a0533fb94687f322"
 dependencies = [
  "async-trait",
  "axum",

@@ -24,7 +24,7 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 
-use weirdnet_agent::MediaLimits;
+pub use weirdnet_agent::MediaLimits;
 
 use crate::error::{CoreError, ErrorKind, Result};
 
@@ -92,6 +92,117 @@ impl ModelLimits {
             out.push("context size");
         }
         out
+    }
+}
+
+/// The fields a user can set for a model, as typed in the shells (`context=8192 image_tokens=256`),
+/// with what each one means.
+pub const OVERRIDE_KEYS: &[(&str, &str)] = &[
+    ("context", "context tokens a request must fit"),
+    ("image_tokens", "tokens one image costs (or at most, with image_patch)"),
+    ("image_patch", "pixels per side of one image token patch"),
+    ("image_edge", "longest image side the model reads, in pixels"),
+    ("max_images", "images one request may carry"),
+    ("audio_seconds", "longest sound one request may carry"),
+    ("audio_tokens_per_minute", "tokens one minute of sound costs"),
+    ("max_request_bytes", "largest request the server takes, in bytes"),
+];
+
+impl ModelLimits {
+    /// The known fields as `(key, value)`, keys from [`OVERRIDE_KEYS`].
+    pub fn fields(&self) -> Vec<(&'static str, u64)> {
+        let m = &self.media;
+        let all = [
+            ("context", self.context_tokens.map(u64::from)),
+            ("image_tokens", m.image_tokens.map(u64::from)),
+            ("image_patch", m.image_patch.map(u64::from)),
+            ("image_edge", m.image_edge.map(u64::from)),
+            ("max_images", m.max_images.map(u64::from)),
+            ("audio_seconds", m.audio_max_seconds.map(u64::from)),
+            ("audio_tokens_per_minute", m.audio_tokens_per_minute.map(u64::from)),
+            ("max_request_bytes", m.max_request_bytes),
+        ];
+        all.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))).collect()
+    }
+
+    /// As the shells' editor text: `context=8192 image_tokens=256`; empty when nothing is known.
+    pub fn to_text(&self) -> String {
+        self.fields().iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" ")
+    }
+
+    /// In words: `context 8192, image_tokens 256`, or `nothing`.
+    pub fn describe(&self) -> String {
+        let f = self.fields();
+        if f.is_empty() { "nothing".into() } else { f.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ") }
+    }
+
+    /// Parses the editor text: `key=value` pairs separated by spaces or commas, keys from
+    /// [`OVERRIDE_KEYS`], whole numbers above zero. Empty text is an empty override (clears it).
+    pub fn parse(text: &str) -> Result<ModelLimits> {
+        let mut out = ModelLimits::default();
+        for pair in text.split(|c: char| c.is_whitespace() || c == ',').filter(|p| !p.is_empty()) {
+            let (k, v) = pair.split_once('=').ok_or_else(|| bad(format!("`{pair}` isn't key=value (keys: {})", keys())))?;
+            let n: u64 = v.trim().parse().ok().filter(|n| *n > 0).ok_or_else(|| bad(format!("{k} must be a whole number above 0")))?;
+            let small = || u32::try_from(n).map_err(|_| bad(format!("{k} is too large")));
+            let m = &mut out.media;
+            match k.trim() {
+                "context" => out.context_tokens = Some(small()?),
+                "image_tokens" => m.image_tokens = Some(small()?),
+                "image_patch" => m.image_patch = Some(small()?),
+                "image_edge" => m.image_edge = Some(small()?),
+                "max_images" => m.max_images = Some(small()?),
+                "audio_seconds" => m.audio_max_seconds = Some(small()?),
+                "audio_tokens_per_minute" => m.audio_tokens_per_minute = Some(small()?),
+                "max_request_bytes" => m.max_request_bytes = Some(n),
+                other => return Err(bad(format!("no limit `{other}` (keys: {})", keys()))),
+            }
+        }
+        Ok(out)
+    }
+}
+
+fn keys() -> String {
+    OVERRIDE_KEYS.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ")
+}
+
+/// A model's video limits for the shells' chip and settings: what is reported (by the pool or
+/// the endpoint), what the user set, and what a clip is planned with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LimitsView {
+    pub model: String,
+    pub reported: ModelLimits,
+    pub user: ModelLimits,
+    pub effective: ModelLimits,
+}
+
+impl LimitsView {
+    pub fn new(model: impl Into<String>, reported: ModelLimits, user: ModelLimits) -> Self {
+        Self { model: model.into(), effective: reported.with_override(&user), reported, user }
+    }
+
+    /// Whether a clip can be planned for this model.
+    pub fn ready(&self) -> bool {
+        self.effective.missing().is_empty()
+    }
+
+    /// The one-line chip: `video ready (context 32768, image_tokens 256 · yours: image_tokens)`
+    /// or `video needs image cost: set limits for gemma`.
+    pub fn chip(&self) -> String {
+        let yours = self.user.fields();
+        let yours =
+            if yours.is_empty() { String::new() } else { format!(" · yours: {}", yours.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ")) };
+        if self.ready() {
+            format!("video ready ({}{yours})", self.effective.describe())
+        } else {
+            format!("video needs {}: set limits for {}{yours}", join_and(&self.effective.missing()), self.model)
+        }
+    }
+
+    /// Saving `user` would loosen nothing: a value above a reported one is ignored when planning
+    /// (the override only tightens), so the shells say which ones.
+    pub fn ignored(&self, user: &ModelLimits) -> Vec<&'static str> {
+        let after = self.reported.with_override(user).fields();
+        user.fields().into_iter().filter(|(k, v)| after.iter().any(|(a, av)| a == k && av != v)).map(|(k, _)| k).collect()
     }
 }
 
@@ -512,20 +623,7 @@ pub fn sample(
     audio_ok: bool,
 ) -> Result<Sampled> {
     let probe = source.probe()?;
-    if probe.duration_ms == 0 {
-        return Err(bad(format!("{name} has no length; it can't be read as a video")));
-    }
-    if probe.duration_ms > MAX_CLIP_MS {
-        return Err(bad(format!("{name} is {}; the longest clip is {} (trim it)", clock(probe.duration_ms), clock(MAX_CLIP_MS))));
-    }
-    let (start, end) = match prefs.range {
-        Some((s, e)) if s < e => (s.min(probe.duration_ms), e.min(probe.duration_ms)),
-        Some(_) => return Err(bad("the clip's range ends before it starts")),
-        None => (0, probe.duration_ms),
-    };
-    if end <= start {
-        return Err(bad("the clip's range is empty"));
-    }
+    let (start, end) = clip_range(name, &probe, prefs.range)?;
     let clip = Clip { len_ms: end - start, width: probe.width, height: probe.height, has_audio: probe.has_audio };
     let budget = Budget::from_limits(model, limits, prefs, clip, reserved, audio_ok).map_err(Refusal::into_error)?;
     let scenes = match prefs.mode {
@@ -582,6 +680,82 @@ pub fn sample(
         if n == 1 { "" } else { "s" }
     );
     Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio })
+}
+
+/// The part of the clip to read: the whole of it, or `range` clamped to it. Refuses clips with no
+/// length, longer than [`MAX_CLIP_MS`], and empty or backwards ranges.
+pub fn clip_range(name: &str, probe: &Probe, range: Option<(u64, u64)>) -> Result<(u64, u64)> {
+    if probe.duration_ms == 0 {
+        return Err(bad(format!("{name} has no length; it can't be read as a video")));
+    }
+    if probe.duration_ms > MAX_CLIP_MS {
+        return Err(bad(format!("{name} is {}; the longest clip is {} (trim it)", clock(probe.duration_ms), clock(MAX_CLIP_MS))));
+    }
+    let (start, end) = match range {
+        Some((s, e)) if s < e => (s.min(probe.duration_ms), e.min(probe.duration_ms)),
+        Some(_) => return Err(bad("the clip's range ends before it starts")),
+        None => (0, probe.duration_ms),
+    };
+    if end <= start {
+        return Err(bad("the clip's range is empty"));
+    }
+    Ok((start, end))
+}
+
+/// The most frames one [`extract`] call returns (`bragi_video_frames`).
+pub const MAX_TOOL_FRAMES: u32 = 64;
+/// The most frame bytes (base64) one [`extract`] call returns: under the 64 MiB line Bragi's own
+/// MCP client reads (`mcp_servers::MAX_STDIO_LINE`); clients on weirdnet-mcp's 4 MiB default ask
+/// for fewer or smaller frames.
+pub const MAX_TOOL_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Frames asked for by count rather than by a model's limits (`bragi_video_frames` without a
+/// model). The count is the caller's: Bragi never picks one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameRequest {
+    pub count: u32,
+    /// The longest side; `None` keeps the clip's size.
+    pub max_edge: Option<u32>,
+    pub mode: Mode,
+    pub scene_threshold: f32,
+    pub range: Option<(u64, u64)>,
+}
+
+impl FrameRequest {
+    pub fn new(count: u32) -> Self {
+        Self { count, max_edge: None, mode: Mode::Uniform, scene_threshold: scene_threshold(), range: None }
+    }
+}
+
+/// `req.count` frames of the clip `name` read by `source`, planned like [`sample`]'s (uniform,
+/// scene or hybrid, inside the range), each at most [`crate::attach::MAX_IMAGE_BYTES`] and all
+/// together at most [`MAX_TOOL_BYTES`]. Returns the probe with them.
+pub fn extract(name: &str, source: &dyn FrameSource, req: &FrameRequest) -> Result<(Probe, Vec<VideoFrame>)> {
+    if req.count == 0 || req.count > MAX_TOOL_FRAMES {
+        return Err(bad(format!("ask for 1 to {MAX_TOOL_FRAMES} frames")));
+    }
+    let probe = source.probe()?;
+    let (start, end) = clip_range(name, &probe, req.range)?;
+    let scenes = match req.mode {
+        Mode::Uniform => Vec::new(),
+        Mode::Scene | Mode::Hybrid => source.scenes(req.scene_threshold)?,
+    };
+    let (w, h) = fit(probe.width, probe.height, req.max_edge);
+    let mut frames = Vec::new();
+    let mut total = 0u64;
+    for t in plan_frames(req.mode, (start, end), req.count, &scenes) {
+        let f = source.frame_at(t, w, h)?;
+        if f.bytes.len() > crate::attach::MAX_IMAGE_BYTES {
+            return Err(bad(format!("a frame of {name} is over {} KiB; ask for a smaller max_edge", crate::attach::MAX_IMAGE_BYTES / 1024)));
+        }
+        let data = STANDARD.encode(&f.bytes);
+        total += data.len() as u64;
+        if total > MAX_TOOL_BYTES {
+            return Err(bad(format!("those frames come to over {} MiB; ask for fewer or a smaller max_edge", MAX_TOOL_BYTES >> 20)));
+        }
+        frames.push(VideoFrame { at_ms: t, mime: f.mime, data });
+    }
+    Ok((probe, frames))
 }
 
 /// A source with generated frames, for tests: no ffmpeg.
@@ -1067,6 +1241,49 @@ mod tests {
     fn scene_output_is_parsed() {
         let text = "frame:0    pts:1001  pts_time:1.001\nlavfi.scene_score=0.512\nframe:1 pts:9009 pts_time:9.009\nlavfi.scene_score=0.33\n";
         assert_eq!(parse_scenes(text), vec![(1_001, 0.512), (9_009, 0.33)]);
+    }
+
+    #[test]
+    fn extract_takes_the_callers_count_and_size_and_refuses_too_much() {
+        let src = FakeSource::new(60_000, false);
+        let mut req = FrameRequest::new(4);
+        req.max_edge = Some(640);
+        let (probe, frames) = extract("clip.mp4", &src, &req).unwrap();
+        assert_eq!(probe.duration_ms, 60_000);
+        assert_eq!(frames.len(), 4);
+        assert_eq!(frames.iter().map(|f| f.at_ms).collect::<Vec<_>>(), [7_500, 22_500, 37_500, 52_500], "evenly spread, like sample");
+        assert!(frames.windows(2).all(|w| w[0].at_ms < w[1].at_ms));
+        let first = STANDARD.decode(&frames[0].data).unwrap();
+        assert!(String::from_utf8_lossy(&first).ends_with("@640x360"), "scaled to the edge, aspect kept");
+        req.range = Some((30_000, 40_000));
+        let (_, frames) = extract("clip.mp4", &src, &req).unwrap();
+        assert!(frames.iter().all(|f| (30_000..40_000).contains(&f.at_ms)));
+        assert!(extract("clip.mp4", &src, &FrameRequest::new(0)).is_err());
+        assert!(extract("clip.mp4", &src, &FrameRequest::new(MAX_TOOL_FRAMES + 1)).is_err());
+        assert!(extract("long.mp4", &FakeSource::new(MAX_CLIP_MS + 1, false), &FrameRequest::new(2)).is_err());
+    }
+
+    #[test]
+    fn the_override_text_parses_round_trips_and_says_what_is_ignored() {
+        let user = ModelLimits::parse("context=8192, image_tokens=256 max_images=6").unwrap();
+        assert_eq!(user.context_tokens, Some(8192));
+        assert_eq!((user.media.image_tokens, user.media.max_images), (Some(256), Some(6)));
+        assert_eq!(ModelLimits::parse(&user.to_text()).unwrap(), user);
+        assert!(ModelLimits::parse("").unwrap().is_unknown(), "empty text clears");
+        assert!(ModelLimits::parse("frames=8").unwrap_err().message.contains("no limit `frames`"));
+        assert!(ModelLimits::parse("context=0").is_err());
+        assert!(ModelLimits::parse("context").is_err());
+
+        let reported = ModelLimits::new(Some(32_768), MediaLimits::new().with_max_images(4));
+        let view = LimitsView::new("gemma", reported, ModelLimits::default());
+        assert!(!view.ready());
+        assert_eq!(view.chip(), "video needs image cost: set limits for gemma");
+        let view = LimitsView::new("gemma", reported, user);
+        assert!(view.ready());
+        assert_eq!(view.effective.context_tokens, Some(8192), "tightened");
+        assert_eq!(view.effective.media.max_images, Some(4), "never loosened");
+        assert_eq!(view.ignored(&user), ["max_images"]);
+        assert!(view.chip().starts_with("video ready (context 8192, image_tokens 256, max_images 4 · yours: "), "{}", view.chip());
     }
 
     /// Real ffmpeg against a clip made at test time (no fixture checked in); run with `--ignored`
