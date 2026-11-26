@@ -494,6 +494,7 @@ fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView {
         None => ("text", String::new(), String::new()),
         Some(Media::Image { mime, data }) => ("image", mime.clone(), data.clone()),
         Some(Media::Audio { format, data }) => ("audio", format.clone(), data.clone()),
+        Some(Media::Video(v)) => ("video", String::new(), v.to_json()),
     };
     AttachmentView { name: a.name.clone(), text: a.text.clone(), kind: kind.into(), mime, data: if with_data { data } else { String::new() } }
 }
@@ -501,7 +502,7 @@ fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView {
 fn attachments(v: Vec<AttachmentView>) -> Result<Vec<Attachment>, String> {
     v.into_iter()
         .map(|a| match a.kind.as_str() {
-            "image" | "audio" => Attachment::from_media(&a.name, &a.kind, &a.mime, &a.data).map_err(err),
+            "image" | "audio" | "video" => Attachment::from_media(&a.name, &a.kind, &a.mime, &a.data).map_err(err),
             _ => Ok(Attachment { name: a.name, text: a.text, media: None }),
         })
         .collect()
