@@ -85,8 +85,11 @@ async fn a_deleted_message_is_gone_on_the_other_device_too() {
     let conv = chat(&a, None, "keep this one").await;
     chat(&a, Some(&conv), "forget the zebra password").await;
     chat(&a, Some(&conv), "and keep this too").await;
-    sync_until(&demo, &[&a, &b], "the conversation on B", || b.conversation(&conv).map(|c| c.messages.len() == 6).unwrap_or(false)).await;
-    assert!(on_disk(&db).iter().any(|v| v.contains("zebra")));
+    // B's log reaches its disk when its pass saves, which can be just after the history shows it.
+    sync_until(&demo, &[&a, &b], "the conversation on B and its disk", || {
+        b.conversation(&conv).map(|c| c.messages.len() == 6).unwrap_or(false) && on_disk(&db).iter().any(|v| v.contains("zebra"))
+    })
+    .await;
 
     // A deletes the question and its answer; B follows, and its own log drops them.
     let c = a.conversation(&conv).unwrap();
@@ -94,7 +97,11 @@ async fn a_deleted_message_is_gone_on_the_other_device_too() {
     let d = a.delete_message(&conv, &q, true).unwrap();
     assert_eq!(d.messages, 2);
     assert_eq!(a.conversation(&conv).unwrap().messages.len(), 4);
-    sync_until(&demo, &[&a, &b], "the delete on B", || b.conversation(&conv).map(|c| c.messages.len() == 4).unwrap_or(false)).await;
+    sync_until(&demo, &[&a, &b], "the delete on B and both disks", || {
+        b.conversation(&conv).map(|c| c.messages.len() == 4).unwrap_or(false)
+            && [&da, &db].iter().all(|d| on_disk(d).iter().all(|v| !v.contains("zebra")))
+    })
+    .await;
     for (who, dir) in [("A", &da), ("B", &db)] {
         let left = on_disk(dir);
         assert!(left.iter().all(|v| !v.contains("zebra")), "{who} still holds it: {left:?}");
@@ -115,8 +122,9 @@ async fn a_deleted_message_is_gone_on_the_other_device_too() {
 
     // Clearing everything on B clears A.
     assert_eq!(b.clear_history().unwrap(), 1);
-    sync_until(&demo, &[&a, &b], "the clear on A", || a.conversations(0, 10).map(|l| l.is_empty()).unwrap_or(false)).await;
-    for dir in [&da, &db] {
-        assert!(on_disk(dir).iter().all(|v| !v.contains("zebra") && !v.contains("keep this")));
-    }
+    sync_until(&demo, &[&a, &b], "the clear on A and both disks", || {
+        a.conversations(0, 10).map(|l| l.is_empty()).unwrap_or(false)
+            && [&da, &db].iter().all(|d| on_disk(d).iter().all(|v| !v.contains("zebra") && !v.contains("keep this")))
+    })
+    .await;
 }
