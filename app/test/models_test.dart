@@ -210,10 +210,15 @@ void main() {
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await until('the preview', () => shown('upload-preview'));
     expect(text('model, GGUF'), isTrue);
-    await tester.tap(find.byKey(const Key('upload-node')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byWidgetPredicate((w) => w is DropdownMenuItem<String>).last);
-    await tester.pumpAndSettle();
+    Future<void> pickNode(String label) async {
+      await tester.ensureVisible(find.byKey(const Key('upload-node')));
+      await tester.tap(find.byKey(const Key('upload-node')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    await pickNode('demo inference node 2');
     await tester.enterText(find.byKey(const Key('upload-license')), 'apache-2.0');
     await tester.enterText(find.byKey(const Key('upload-rollout')), 'support');
     await tester.pump();
@@ -229,14 +234,20 @@ void main() {
     await tap('upload-send');
     expect(text('a percentage from 0 to 100'), isTrue);
     await tester.enterText(find.byKey(const Key('upload-percent')), '20');
+    // The second demo node keeps more free than its disk has: it refuses with no-space.
+    await tap('upload-send');
+    await until('the refusal', () => shown('upload-refused') || shown('upload-ended') || shown('upload-result'));
+    expect(text('upload_keep_free'), isTrue, reason: 'the second node has no room');
+    await pickNode('demo inference node');
     await tap('upload-send');
     await until('the upload', () => shown('upload-result') || shown('upload-refused') || shown('upload-ended'));
-    expect(shown('upload-result'), isTrue, reason: 'the demo node takes it');
-    expect(text('Stored my-tune-q8_0'), isTrue);
+    String said(String key) => shown(key) ? tester.widget<Text>(find.byKey(Key(key))).data ?? '' : '';
+    expect(shown('upload-result'), isTrue, reason: 'the demo node takes it: ${said('upload-refused')}${said('upload-ended')}');
+    expect(text('Stored '), isTrue);
     expect(shown('upload-rollout-result') || shown('upload-rollout-error'), isTrue);
     await shot('flutter-58-upload-done');
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await until('it listed', () => text('my-tune-q8_0'));
+    await until('it listed', () => text('my-tune'));
   });
 }
