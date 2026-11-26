@@ -295,6 +295,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<UploadCopyView> dco_decode_list_upload_copy_view(dynamic raw);
 
   @protected
+  List<WakeableView> dco_decode_list_wakeable_view(dynamic raw);
+
+  @protected
   MessageView dco_decode_message_view(dynamic raw);
 
   @protected
@@ -466,6 +469,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UploadedResultView dco_decode_uploaded_result_view(dynamic raw);
+
+  @protected
+  WakeView dco_decode_wake_view(dynamic raw);
+
+  @protected
+  WakeableView dco_decode_wakeable_view(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -788,6 +797,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<WakeableView> sse_decode_list_wakeable_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   MessageView sse_decode_message_view(SseDeserializer deserializer);
 
   @protected
@@ -981,6 +995,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UploadedResultView sse_decode_uploaded_result_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  WakeView sse_decode_wake_view(SseDeserializer deserializer);
+
+  @protected
+  WakeableView sse_decode_wakeable_view(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -1400,6 +1420,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_wakeable_view(
+    List<WakeableView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_message_view(MessageView self, SseSerializer serializer);
 
   @protected
@@ -1644,6 +1670,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     UploadedResultView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_wake_view(WakeView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_wakeable_view(WakeableView self, SseSerializer serializer);
 }
 
 // Section: wire_class

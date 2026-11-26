@@ -10,6 +10,7 @@ import 'src/app.dart';
 import 'src/controller.dart';
 import 'src/rust/api/bragi.dart' as rust;
 import 'src/rust/frb_generated.dart';
+import 'src/wake_service.dart';
 
 const demo = bool.fromEnvironment('BRAGI_DEMO');
 
@@ -26,5 +27,8 @@ Future<void> main() async {
   }
   final controller = BragiController(const RustBragiApi());
   await controller.attach();
+  // Relay wake (B4, opt-in): keep the foreground service in step with the saved setting.
+  final wake = controller.api.wakeStatus();
+  await syncWakeService(wake.push && wake.relayWake);
   runApp(BragiApp(controller: controller));
 }

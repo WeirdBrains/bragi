@@ -19,6 +19,7 @@ flutter_rust_bridge.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 weirdnet-net.workspace = true
+weirdnet-push.workspace = true
 
 # The Android JNI init (ndk-context for hickory-resolver) comes from weirdnet-net; see src/android.rs.
 

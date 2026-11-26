@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `spec_of`, `spec_view`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `uploaded_view`, `variant_of`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `spec_of`, `spec_view`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `uploaded_view`, `variant_of`, `wake_view`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -567,6 +567,26 @@ Future<List<String>> themeWarnings({
 /// rollouts with each version's share and stage. A read.
 Future<TrainingOverviewView> trainingOverview() =>
     RustLib.instance.api.crateApiBragiTrainingOverview();
+
+WakeView wakeStatus() => RustLib.instance.api.crateApiBragiWakeStatus();
+
+/// Saves the wake settings. Push off withdraws this device's card and forgets its handle.
+WakeView setWakeSettings({required bool push, required bool relayWake}) =>
+    RustLib.instance.api.crateApiBragiSetWakeSettings(
+      push: push,
+      relayWake: relayWake,
+    );
+
+/// What the settings say before relay wake is turned on (the battery cost).
+String relayWakeCost() => RustLib.instance.api.crateApiBragiRelayWakeCost();
+
+List<WakeableView> wakeableDevices() =>
+    RustLib.instance.api.crateApiBragiWakeableDevices();
+
+/// Wakes another linked device through its relay so it syncs: `delivered`, `held`, `offline`
+/// or `too_many`.
+Future<String> wakeDevice({required String peerId}) =>
+    RustLib.instance.api.crateApiBragiWakeDevice(peerId: peerId);
 
 /// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
 /// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
@@ -2387,4 +2407,67 @@ class UploadedResultView {
           rolloutError == other.rolloutError &&
           rolloutCommands == other.rolloutCommands &&
           copies == other.copies;
+}
+
+/// This device's wake settings and state: `push` (on by default: other linked devices can wake
+/// this one), `relay_wake` (opt-in: a wake connection to the home relay; on Android the app
+/// runs a foreground service while it is on), whether that connection is up, the last wake.
+class WakeView {
+  final bool push;
+  final bool relayWake;
+  final bool relayConnected;
+  final PlatformInt64? lastWakeMs;
+  final BigInt refused;
+
+  const WakeView({
+    required this.push,
+    required this.relayWake,
+    required this.relayConnected,
+    this.lastWakeMs,
+    required this.refused,
+  });
+
+  @override
+  int get hashCode =>
+      push.hashCode ^
+      relayWake.hashCode ^
+      relayConnected.hashCode ^
+      lastWakeMs.hashCode ^
+      refused.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WakeView &&
+          runtimeType == other.runtimeType &&
+          push == other.push &&
+          relayWake == other.relayWake &&
+          relayConnected == other.relayConnected &&
+          lastWakeMs == other.lastWakeMs &&
+          refused == other.refused;
+}
+
+/// One of the user's other devices that shared a wake card.
+class WakeableView {
+  final String peerId;
+  final String label;
+  final bool throughRelay;
+
+  const WakeableView({
+    required this.peerId,
+    required this.label,
+    required this.throughRelay,
+  });
+
+  @override
+  int get hashCode => peerId.hashCode ^ label.hashCode ^ throughRelay.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WakeableView &&
+          runtimeType == other.runtimeType &&
+          peerId == other.peerId &&
+          label == other.label &&
+          throughRelay == other.throughRelay;
 }

@@ -1959,3 +1959,73 @@ pub async fn training_overview() -> Result<TrainingOverviewView, String> {
             .collect(),
     })
 }
+
+// ---- push wake-ups (B4) ------------------------------------------------------------------
+
+/// This device's wake settings and state: `push` (on by default: other linked devices can wake
+/// this one), `relay_wake` (opt-in: a wake connection to the home relay; on Android the app
+/// runs a foreground service while it is on), whether that connection is up, the last wake.
+#[derive(Debug, Clone)]
+pub struct WakeView {
+    pub push: bool,
+    pub relay_wake: bool,
+    pub relay_connected: bool,
+    pub last_wake_ms: Option<i64>,
+    pub refused: u64,
+}
+
+/// One of the user's other devices that shared a wake card.
+#[derive(Debug, Clone)]
+pub struct WakeableView {
+    pub peer_id: String,
+    pub label: String,
+    pub through_relay: bool,
+}
+
+fn wake_view(s: &bragi_core::wake::WakeStatus) -> WakeView {
+    WakeView {
+        push: s.settings.push,
+        relay_wake: s.settings.relay_wake,
+        relay_connected: s.relay_connected,
+        last_wake_ms: s.last_wake_ms,
+        refused: s.refused,
+    }
+}
+
+#[frb(sync)]
+pub fn wake_status() -> Result<WakeView, String> {
+    Ok(wake_view(&core()?.wake_status()))
+}
+
+/// Saves the wake settings. Push off withdraws this device's card and forgets its handle.
+#[frb(sync)]
+pub fn set_wake_settings(push: bool, relay_wake: bool) -> Result<WakeView, String> {
+    let c = core()?;
+    c.set_wake_settings(bragi_core::wake::WakeSettings { push, relay_wake }).map_err(err)?;
+    Ok(wake_view(&c.wake_status()))
+}
+
+/// What the settings say before relay wake is turned on (the battery cost).
+#[frb(sync)]
+pub fn relay_wake_cost() -> String {
+    bragi_core::wake::RELAY_WAKE_COST.to_string()
+}
+
+#[frb(sync)]
+pub fn wakeable_devices() -> Result<Vec<WakeableView>, String> {
+    Ok(core()?.wakeable_devices().into_iter().map(|d| WakeableView { peer_id: d.peer_id, label: d.label, through_relay: d.through_relay }).collect())
+}
+
+/// Wakes another linked device through its relay so it syncs: `delivered`, `held`, `offline`
+/// or `too_many`.
+pub async fn wake_device(peer_id: String) -> Result<String, String> {
+    let d = core()?.wake_device(&peer_id, weirdnet_push::Reason::MessageWaiting).await.map_err(err)?;
+    use weirdnet_push::relaywake::Delivery;
+    Ok(match d {
+        Delivery::Delivered => "delivered",
+        Delivery::Held => "held",
+        Delivery::Offline => "offline",
+        Delivery::TooMany => "too_many",
+    }
+    .to_string())
+}
