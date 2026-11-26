@@ -6,6 +6,12 @@ import 'rust/api/bragi.dart' as rust;
 
 export 'rust/api/bragi.dart'
     show
+        NodeTrainingView,
+        RolloutVersionView,
+        RolloutView,
+        TrainingJobView,
+        TrainingOverviewView,
+        TrainingRunView,
         AttachmentView,
         ChatEventView,
         ChatStarted,
@@ -167,6 +173,9 @@ abstract class BragiApi {
 
   // Models on the user's Ymir pool (LF-30).
   Future<List<rust.NodeModelsView>> modelsOverview();
+
+  /// The training view: runs and jobs per node (Ymir 0.15.5) and the inference nodes' rollouts.
+  Future<rust.TrainingOverviewView> trainingOverview();
 
   /// Starts a Hub search with a fit per node; stream it with [followModels].
   Future<String> modelsSearch(String query);
@@ -454,6 +463,8 @@ class RustBragiApi implements BragiApi {
 
   @override
   Future<List<rust.NodeModelsView>> modelsOverview() => rust.modelsOverview();
+  @override
+  Future<rust.TrainingOverviewView> trainingOverview() => rust.trainingOverview();
   @override
   Future<String> modelsSearch(String query) async =>
       rust.modelsSearch(query: query);

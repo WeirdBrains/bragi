@@ -9,7 +9,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 // These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `spec_of`, `spec_view`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `uploaded_view`, `variant_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -562,6 +562,11 @@ Future<List<String>> themeWarnings({
   required String name,
   required bool dark,
 }) => RustLib.instance.api.crateApiBragiThemeWarnings(name: name, dark: dark);
+
+/// The training view: every other device's runs and jobs (Ymir 0.15.5) and the inference nodes'
+/// rollouts with each version's share and stage. A read.
+Future<TrainingOverviewView> trainingOverview() =>
+    RustLib.instance.api.crateApiBragiTrainingOverview();
 
 /// A file attached to a message: `kind` is `text`, `image` or `audio`. Text is in `text`; for
 /// an image or sound `mime` is the image's MIME type or the audio's format (`wav`, `mp3`) and
@@ -1439,6 +1444,45 @@ class NodeModelsView {
           models == other.models;
 }
 
+class NodeTrainingView {
+  final ModelNodeView node;
+  final String status;
+  final String? detail;
+  final bool remote;
+  final List<TrainingRunView> runs;
+  final List<TrainingJobView> jobs;
+
+  const NodeTrainingView({
+    required this.node,
+    required this.status,
+    this.detail,
+    required this.remote,
+    required this.runs,
+    required this.jobs,
+  });
+
+  @override
+  int get hashCode =>
+      node.hashCode ^
+      status.hashCode ^
+      detail.hashCode ^
+      remote.hashCode ^
+      runs.hashCode ^
+      jobs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NodeTrainingView &&
+          runtimeType == other.runtimeType &&
+          node == other.node &&
+          status == other.status &&
+          detail == other.detail &&
+          remote == other.remote &&
+          runs == other.runs &&
+          jobs == other.jobs;
+}
+
 /// [`PairState`] flattened: `state` is `unpaired`, `offering`, `confirm`, `waiting`, `linked`
 /// or `failed`; the other fields are set when that state has them.
 class PairView {
@@ -1684,6 +1728,71 @@ class RoleInfoView {
           role == other.role &&
           label == other.label &&
           optional == other.optional;
+}
+
+class RolloutVersionView {
+  final int version;
+  final String model;
+  final double percent;
+
+  /// `live`, `canary` or `standby`.
+  final String stage;
+  final String? trainedOn;
+  final String? trainedRun;
+
+  const RolloutVersionView({
+    required this.version,
+    required this.model,
+    required this.percent,
+    required this.stage,
+    this.trainedOn,
+    this.trainedRun,
+  });
+
+  @override
+  int get hashCode =>
+      version.hashCode ^
+      model.hashCode ^
+      percent.hashCode ^
+      stage.hashCode ^
+      trainedOn.hashCode ^
+      trainedRun.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RolloutVersionView &&
+          runtimeType == other.runtimeType &&
+          version == other.version &&
+          model == other.model &&
+          percent == other.percent &&
+          stage == other.stage &&
+          trainedOn == other.trainedOn &&
+          trainedRun == other.trainedRun;
+}
+
+class RolloutView {
+  final ModelNodeView node;
+  final String name;
+  final List<RolloutVersionView> versions;
+
+  const RolloutView({
+    required this.node,
+    required this.name,
+    required this.versions,
+  });
+
+  @override
+  int get hashCode => node.hashCode ^ name.hashCode ^ versions.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is RolloutView &&
+          runtimeType == other.runtimeType &&
+          node == other.node &&
+          name == other.name &&
+          versions == other.versions;
 }
 
 class SessionView {
@@ -1955,6 +2064,126 @@ class ThemeRowView {
           displayName == other.displayName &&
           builtin == other.builtin &&
           userFile == other.userFile &&
+          error == other.error;
+}
+
+class TrainingJobView {
+  final String id;
+  final String state;
+  final String base;
+  final String adapter;
+  final String? holder;
+  final int attempts;
+  final BigInt? checkpointEpoch;
+
+  const TrainingJobView({
+    required this.id,
+    required this.state,
+    required this.base,
+    required this.adapter,
+    this.holder,
+    required this.attempts,
+    this.checkpointEpoch,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      state.hashCode ^
+      base.hashCode ^
+      adapter.hashCode ^
+      holder.hashCode ^
+      attempts.hashCode ^
+      checkpointEpoch.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrainingJobView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          state == other.state &&
+          base == other.base &&
+          adapter == other.adapter &&
+          holder == other.holder &&
+          attempts == other.attempts &&
+          checkpointEpoch == other.checkpointEpoch;
+}
+
+class TrainingOverviewView {
+  final List<NodeTrainingView> nodes;
+  final List<RolloutView> rollouts;
+
+  const TrainingOverviewView({required this.nodes, required this.rollouts});
+
+  @override
+  int get hashCode => nodes.hashCode ^ rollouts.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrainingOverviewView &&
+          runtimeType == other.runtimeType &&
+          nodes == other.nodes &&
+          rollouts == other.rollouts;
+}
+
+class TrainingRunView {
+  final String id;
+  final String status;
+  final String base;
+  final String? adapter;
+  final String dataset;
+  final String datasetLicense;
+  final BigInt rowsUsed;
+  final int epochs;
+  final double? finalLoss;
+  final PlatformInt64 startedMs;
+  final String? error;
+
+  const TrainingRunView({
+    required this.id,
+    required this.status,
+    required this.base,
+    this.adapter,
+    required this.dataset,
+    required this.datasetLicense,
+    required this.rowsUsed,
+    required this.epochs,
+    this.finalLoss,
+    required this.startedMs,
+    this.error,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      status.hashCode ^
+      base.hashCode ^
+      adapter.hashCode ^
+      dataset.hashCode ^
+      datasetLicense.hashCode ^
+      rowsUsed.hashCode ^
+      epochs.hashCode ^
+      finalLoss.hashCode ^
+      startedMs.hashCode ^
+      error.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is TrainingRunView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          status == other.status &&
+          base == other.base &&
+          adapter == other.adapter &&
+          dataset == other.dataset &&
+          datasetLicense == other.datasetLicense &&
+          rowsUsed == other.rowsUsed &&
+          epochs == other.epochs &&
+          finalLoss == other.finalLoss &&
+          startedMs == other.startedMs &&
           error == other.error;
 }
 

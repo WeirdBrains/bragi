@@ -245,9 +245,20 @@ void main() {
     expect(shown('upload-result'), isTrue, reason: 'the demo node takes it: ${said('upload-refused')}${said('upload-ended')}');
     expect(text('Stored '), isTrue);
     expect(shown('upload-rollout-result') || shown('upload-rollout-error'), isTrue);
+    final rolled = shown('upload-rollout-result');
     await shot('flutter-58-upload-done');
     await tester.pageBack();
     await tester.pumpAndSettle();
     await until('it listed', () => text('my-tune'));
+
+    // The Training view: each demo node's finished run, and the rollout the upload made.
+    await tap('models-training');
+    await until('the runs', () => text('+demo'));
+    if (rolled) expect(text('support on'), isTrue, reason: 'the rollout the upload made');
+    expect(text('CC0-1.0'), isTrue);
+    await tester.pumpAndSettle();
+    await shot('flutter-60-training');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
   });
 }

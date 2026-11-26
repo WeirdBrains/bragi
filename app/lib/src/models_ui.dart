@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'api.dart';
 import 'controller.dart';
 import 'theme.dart';
+import 'training_view_ui.dart';
 import 'upload_ui.dart';
 
 /// `4.4 GB`, like the core's `human_bytes`.
@@ -290,7 +291,16 @@ class _ModelsScreenState extends State<ModelsScreen> {
   Widget build(BuildContext context) {
     final nodes = _nodes;
     return Scaffold(
-      appBar: AppBar(title: const Text('Models'), actions: [IconButton(key: const Key('models-refresh'), tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: _reload)]),
+      appBar: AppBar(title: const Text('Models'), actions: [
+          IconButton(
+            key: const Key('models-training'),
+            tooltip: 'Training',
+            icon: const Icon(Icons.model_training),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => TrainingScreen(controller: widget.controller))),
+          ),
+          IconButton(key: const Key('models-refresh'), tooltip: 'Refresh', icon: const Icon(Icons.refresh), onPressed: _reload),
+        ],
+      ),
       body: ListView(
         key: const Key('models-list'),
         padding: const EdgeInsets.only(bottom: 24),

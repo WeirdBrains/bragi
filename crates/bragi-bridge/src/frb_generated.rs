@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.13.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -291525779;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1097124063;
 
 // Section: executor
 
@@ -3664,6 +3664,34 @@ fn wire__crate__api__bragi__thinking_label_impl(
         },
     )
 }
+fn wire__crate__api__bragi__training_overview_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "training_overview",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe { flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_) };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, String>(
+                    (move || async move {
+                        let output_ok = crate::api::bragi::training_overview().await?;
+                        std::result::Result::Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__api__bragi__undo_delete_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4389,6 +4417,18 @@ impl SseDecode for Vec<crate::api::bragi::NodeModelsView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::bragi::NodeTrainingView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::NodeTrainingView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::code::NotificationView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4497,6 +4537,30 @@ impl SseDecode for Vec<crate::api::bragi::RoleInfoView> {
     }
 }
 
+impl SseDecode for Vec<crate::api::bragi::RolloutVersionView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::RolloutVersionView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::bragi::RolloutView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::RolloutView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::code::RootView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -4564,6 +4628,30 @@ impl SseDecode for Vec<crate::api::bragi::ThemeRowView> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::bragi::ThemeRowView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::bragi::TrainingJobView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::TrainingJobView>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::bragi::TrainingRunView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::bragi::TrainingRunView>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -4726,6 +4814,26 @@ impl SseDecode for crate::api::bragi::NodeModelsView {
         let mut var_detail = <Option<String>>::sse_decode(deserializer);
         let mut var_models = <Vec<crate::api::bragi::StoredModelView>>::sse_decode(deserializer);
         return crate::api::bragi::NodeModelsView { node: var_node, status: var_status, detail: var_detail, models: var_models };
+    }
+}
+
+impl SseDecode for crate::api::bragi::NodeTrainingView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_node = <crate::api::bragi::ModelNodeView>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_detail = <Option<String>>::sse_decode(deserializer);
+        let mut var_remote = <bool>::sse_decode(deserializer);
+        let mut var_runs = <Vec<crate::api::bragi::TrainingRunView>>::sse_decode(deserializer);
+        let mut var_jobs = <Vec<crate::api::bragi::TrainingJobView>>::sse_decode(deserializer);
+        return crate::api::bragi::NodeTrainingView {
+            node: var_node,
+            status: var_status,
+            detail: var_detail,
+            remote: var_remote,
+            runs: var_runs,
+            jobs: var_jobs,
+        };
     }
 }
 
@@ -5038,6 +5146,36 @@ impl SseDecode for crate::api::bragi::RoleInfoView {
     }
 }
 
+impl SseDecode for crate::api::bragi::RolloutVersionView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_version = <u32>::sse_decode(deserializer);
+        let mut var_model = <String>::sse_decode(deserializer);
+        let mut var_percent = <f64>::sse_decode(deserializer);
+        let mut var_stage = <String>::sse_decode(deserializer);
+        let mut var_trainedOn = <Option<String>>::sse_decode(deserializer);
+        let mut var_trainedRun = <Option<String>>::sse_decode(deserializer);
+        return crate::api::bragi::RolloutVersionView {
+            version: var_version,
+            model: var_model,
+            percent: var_percent,
+            stage: var_stage,
+            trained_on: var_trainedOn,
+            trained_run: var_trainedRun,
+        };
+    }
+}
+
+impl SseDecode for crate::api::bragi::RolloutView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_node = <crate::api::bragi::ModelNodeView>::sse_decode(deserializer);
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_versions = <Vec<crate::api::bragi::RolloutVersionView>>::sse_decode(deserializer);
+        return crate::api::bragi::RolloutView { node: var_node, name: var_name, versions: var_versions };
+    }
+}
+
 impl SseDecode for crate::api::code::RootView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5185,6 +5323,67 @@ impl SseDecode for crate::api::bragi::ThemeRowView {
             display_name: var_displayName,
             builtin: var_builtin,
             user_file: var_userFile,
+            error: var_error,
+        };
+    }
+}
+
+impl SseDecode for crate::api::bragi::TrainingJobView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_state = <String>::sse_decode(deserializer);
+        let mut var_base = <String>::sse_decode(deserializer);
+        let mut var_adapter = <String>::sse_decode(deserializer);
+        let mut var_holder = <Option<String>>::sse_decode(deserializer);
+        let mut var_attempts = <u32>::sse_decode(deserializer);
+        let mut var_checkpointEpoch = <Option<u64>>::sse_decode(deserializer);
+        return crate::api::bragi::TrainingJobView {
+            id: var_id,
+            state: var_state,
+            base: var_base,
+            adapter: var_adapter,
+            holder: var_holder,
+            attempts: var_attempts,
+            checkpoint_epoch: var_checkpointEpoch,
+        };
+    }
+}
+
+impl SseDecode for crate::api::bragi::TrainingOverviewView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_nodes = <Vec<crate::api::bragi::NodeTrainingView>>::sse_decode(deserializer);
+        let mut var_rollouts = <Vec<crate::api::bragi::RolloutView>>::sse_decode(deserializer);
+        return crate::api::bragi::TrainingOverviewView { nodes: var_nodes, rollouts: var_rollouts };
+    }
+}
+
+impl SseDecode for crate::api::bragi::TrainingRunView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <String>::sse_decode(deserializer);
+        let mut var_status = <String>::sse_decode(deserializer);
+        let mut var_base = <String>::sse_decode(deserializer);
+        let mut var_adapter = <Option<String>>::sse_decode(deserializer);
+        let mut var_dataset = <String>::sse_decode(deserializer);
+        let mut var_datasetLicense = <String>::sse_decode(deserializer);
+        let mut var_rowsUsed = <u64>::sse_decode(deserializer);
+        let mut var_epochs = <u32>::sse_decode(deserializer);
+        let mut var_finalLoss = <Option<f64>>::sse_decode(deserializer);
+        let mut var_startedMs = <i64>::sse_decode(deserializer);
+        let mut var_error = <Option<String>>::sse_decode(deserializer);
+        return crate::api::bragi::TrainingRunView {
+            id: var_id,
+            status: var_status,
+            base: var_base,
+            adapter: var_adapter,
+            dataset: var_dataset,
+            dataset_license: var_datasetLicense,
+            rows_used: var_rowsUsed,
+            epochs: var_epochs,
+            final_loss: var_finalLoss,
+            started_ms: var_startedMs,
             error: var_error,
         };
     }
@@ -5420,9 +5619,10 @@ fn pde_ffi_dispatcher_primary_impl(
         134 => wire__crate__api__bragi__theme_reset_impl(port, ptr, rust_vec_len, data_len),
         136 => wire__crate__api__bragi__theme_warnings_impl(port, ptr, rust_vec_len, data_len),
         137 => wire__crate__api__bragi__themes_impl(port, ptr, rust_vec_len, data_len),
-        139 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
-        140 => wire__crate__api__bragi__upload_command_impl(port, ptr, rust_vec_len, data_len),
-        142 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
+        139 => wire__crate__api__bragi__training_overview_impl(port, ptr, rust_vec_len, data_len),
+        140 => wire__crate__api__bragi__undo_delete_impl(port, ptr, rust_vec_len, data_len),
+        141 => wire__crate__api__bragi__upload_command_impl(port, ptr, rust_vec_len, data_len),
+        143 => wire__crate__api__bragi__watch_state_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5472,7 +5672,7 @@ fn pde_ffi_dispatcher_sync_impl(
         132 => wire__crate__api__bragi__theme_preference_impl(ptr, rust_vec_len, data_len),
         135 => wire__crate__api__bragi__theme_roles_impl(ptr, rust_vec_len, data_len),
         138 => wire__crate__api__bragi__thinking_label_impl(ptr, rust_vec_len, data_len),
-        141 => wire__crate__api__bragi__upload_percent_presets_impl(ptr, rust_vec_len, data_len),
+        142 => wire__crate__api__bragi__upload_percent_presets_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6007,6 +6207,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::NodeModelsView> for cr
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::NodeTrainingView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.node.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.remote.into_into_dart().into_dart(),
+            self.runs.into_into_dart().into_dart(),
+            self.jobs.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::NodeTrainingView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::NodeTrainingView> for crate::api::bragi::NodeTrainingView {
+    fn into_into_dart(self) -> crate::api::bragi::NodeTrainingView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::code::NotificationView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.at_ms.into_into_dart().into_dart(), self.level.into_into_dart().into_dart(), self.text.into_into_dart().into_dart()].into_dart()
@@ -6193,6 +6413,38 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::RoleInfoView> for crat
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::RolloutVersionView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.version.into_into_dart().into_dart(),
+            self.model.into_into_dart().into_dart(),
+            self.percent.into_into_dart().into_dart(),
+            self.stage.into_into_dart().into_dart(),
+            self.trained_on.into_into_dart().into_dart(),
+            self.trained_run.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::RolloutVersionView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::RolloutVersionView> for crate::api::bragi::RolloutVersionView {
+    fn into_into_dart(self) -> crate::api::bragi::RolloutVersionView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::RolloutView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.node.into_into_dart().into_dart(), self.name.into_into_dart().into_dart(), self.versions.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::RolloutView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::RolloutView> for crate::api::bragi::RolloutView {
+    fn into_into_dart(self) -> crate::api::bragi::RolloutView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::code::RootView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.name.into_into_dart().into_dart(), self.path.into_into_dart().into_dart()].into_dart()
@@ -6362,6 +6614,64 @@ impl flutter_rust_bridge::IntoDart for crate::api::bragi::ThemeRowView {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::ThemeRowView {}
 impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::ThemeRowView> for crate::api::bragi::ThemeRowView {
     fn into_into_dart(self) -> crate::api::bragi::ThemeRowView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::TrainingJobView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.state.into_into_dart().into_dart(),
+            self.base.into_into_dart().into_dart(),
+            self.adapter.into_into_dart().into_dart(),
+            self.holder.into_into_dart().into_dart(),
+            self.attempts.into_into_dart().into_dart(),
+            self.checkpoint_epoch.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::TrainingJobView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::TrainingJobView> for crate::api::bragi::TrainingJobView {
+    fn into_into_dart(self) -> crate::api::bragi::TrainingJobView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::TrainingOverviewView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [self.nodes.into_into_dart().into_dart(), self.rollouts.into_into_dart().into_dart()].into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::TrainingOverviewView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::TrainingOverviewView> for crate::api::bragi::TrainingOverviewView {
+    fn into_into_dart(self) -> crate::api::bragi::TrainingOverviewView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::bragi::TrainingRunView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+            self.base.into_into_dart().into_dart(),
+            self.adapter.into_into_dart().into_dart(),
+            self.dataset.into_into_dart().into_dart(),
+            self.dataset_license.into_into_dart().into_dart(),
+            self.rows_used.into_into_dart().into_dart(),
+            self.epochs.into_into_dart().into_dart(),
+            self.final_loss.into_into_dart().into_dart(),
+            self.started_ms.into_into_dart().into_dart(),
+            self.error.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::bragi::TrainingRunView {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::bragi::TrainingRunView> for crate::api::bragi::TrainingRunView {
+    fn into_into_dart(self) -> crate::api::bragi::TrainingRunView {
         self
     }
 }
@@ -6941,6 +7251,16 @@ impl SseEncode for Vec<crate::api::bragi::NodeModelsView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::bragi::NodeTrainingView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::NodeTrainingView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::code::NotificationView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7031,6 +7351,26 @@ impl SseEncode for Vec<crate::api::bragi::RoleInfoView> {
     }
 }
 
+impl SseEncode for Vec<crate::api::bragi::RolloutVersionView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::RolloutVersionView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::bragi::RolloutView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::RolloutView>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::code::RootView> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7087,6 +7427,26 @@ impl SseEncode for Vec<crate::api::bragi::ThemeRowView> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::bragi::ThemeRowView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::bragi::TrainingJobView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::TrainingJobView>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::bragi::TrainingRunView> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::bragi::TrainingRunView>::sse_encode(item, serializer);
         }
     }
 }
@@ -7188,6 +7548,18 @@ impl SseEncode for crate::api::bragi::NodeModelsView {
         <String>::sse_encode(self.status, serializer);
         <Option<String>>::sse_encode(self.detail, serializer);
         <Vec<crate::api::bragi::StoredModelView>>::sse_encode(self.models, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::NodeTrainingView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::bragi::ModelNodeView>::sse_encode(self.node, serializer);
+        <String>::sse_encode(self.status, serializer);
+        <Option<String>>::sse_encode(self.detail, serializer);
+        <bool>::sse_encode(self.remote, serializer);
+        <Vec<crate::api::bragi::TrainingRunView>>::sse_encode(self.runs, serializer);
+        <Vec<crate::api::bragi::TrainingJobView>>::sse_encode(self.jobs, serializer);
     }
 }
 
@@ -7458,6 +7830,27 @@ impl SseEncode for crate::api::bragi::RoleInfoView {
     }
 }
 
+impl SseEncode for crate::api::bragi::RolloutVersionView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <u32>::sse_encode(self.version, serializer);
+        <String>::sse_encode(self.model, serializer);
+        <f64>::sse_encode(self.percent, serializer);
+        <String>::sse_encode(self.stage, serializer);
+        <Option<String>>::sse_encode(self.trained_on, serializer);
+        <Option<String>>::sse_encode(self.trained_run, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::RolloutView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <crate::api::bragi::ModelNodeView>::sse_encode(self.node, serializer);
+        <String>::sse_encode(self.name, serializer);
+        <Vec<crate::api::bragi::RolloutVersionView>>::sse_encode(self.versions, serializer);
+    }
+}
+
 impl SseEncode for crate::api::code::RootView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7560,6 +7953,44 @@ impl SseEncode for crate::api::bragi::ThemeRowView {
         <String>::sse_encode(self.display_name, serializer);
         <bool>::sse_encode(self.builtin, serializer);
         <bool>::sse_encode(self.user_file, serializer);
+        <Option<String>>::sse_encode(self.error, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::TrainingJobView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.state, serializer);
+        <String>::sse_encode(self.base, serializer);
+        <String>::sse_encode(self.adapter, serializer);
+        <Option<String>>::sse_encode(self.holder, serializer);
+        <u32>::sse_encode(self.attempts, serializer);
+        <Option<u64>>::sse_encode(self.checkpoint_epoch, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::TrainingOverviewView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::bragi::NodeTrainingView>>::sse_encode(self.nodes, serializer);
+        <Vec<crate::api::bragi::RolloutView>>::sse_encode(self.rollouts, serializer);
+    }
+}
+
+impl SseEncode for crate::api::bragi::TrainingRunView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.id, serializer);
+        <String>::sse_encode(self.status, serializer);
+        <String>::sse_encode(self.base, serializer);
+        <Option<String>>::sse_encode(self.adapter, serializer);
+        <String>::sse_encode(self.dataset, serializer);
+        <String>::sse_encode(self.dataset_license, serializer);
+        <u64>::sse_encode(self.rows_used, serializer);
+        <u32>::sse_encode(self.epochs, serializer);
+        <Option<f64>>::sse_encode(self.final_loss, serializer);
+        <i64>::sse_encode(self.started_ms, serializer);
         <Option<String>>::sse_encode(self.error, serializer);
     }
 }
