@@ -2,6 +2,12 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 13:05 EST: v0.15.1 released
+
+**Release:** [v0.15.1](https://github.com/WeirdBrains/bragi/releases/tag/v0.15.1) (`release: v0.15.1`, 5e33552, patch cut on main b4383e7; Release run 45863593860, green after re-running Android, which first hit Maven Central `429 Too Many Requests`): one sync session per device (weirdnet-sync 0.8.5 `pull_types_shared`) and the delete test waiting for the disk. GitHub: 41 files, leak scan 0 hits (`pub-bragi.sh`, assets ok), then the 6 Arch `.sig`s (`sign-bragi.sh 0.15.1` EXIT 0); 48 assets. Packaging ac93004 on main (bragi-bin PKGBUILD/.SRCINFO, Nix `release.json`, site `latestVersion`); TAUR bragi-bin 0.15.1-1 (dry-run first). Straight to main (no PRs). No live nodes touched.
+
+**Next:** nothing on Bragi that doesn't need Michael (F-Droid key and submission, store listings, APNs/FCM and a push server, B7 on real nodes).
+
 ## 2026-11-26 10:15 EST: one sync session per device (weirdnet-sync 0.8.5, on main)
 
 **What:** `Identity::tick` pulls `SYNC_TYPE`, `CONTEXT_TYPE` and (when due, full devices only) the wake cards with `weirdnet_sync::pull_types_shared` in one session per device, instead of three `pull_from_shared` calls (three Hellos and roster swaps). A refused type fails alone; a failed roster pull still marks the pass incomplete, so conversations are not re-sealed. The wire is unchanged (0.7.1 to 0.8.4 peers answer it). weirdnet-sync 0.8.4 → 0.8.5 (Weirdnet Lead's release for this).
