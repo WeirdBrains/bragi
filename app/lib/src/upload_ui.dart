@@ -222,6 +222,13 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<void> _send(UploadSpecView spec) async {
+    // What the last try said goes before this one starts.
+    setState(() {
+      _result = null;
+      _refused = null;
+      _ended = null;
+      _problem = null;
+    });
     await _sub?.cancel();
     try {
       final run = await _api.modelsUpload(spec);
