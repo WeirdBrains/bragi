@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 17:15 EST: video V2 slice 1, MCP video tools, override UI and endpoint limits (merged `feature/video-v2-mcp-override`, LF-43)
+
+Michael approved rolling straight into V2 of [docs/design/video.md](docs/design/video.md). weirdnet-mcp requirement 0.6 → 0.6.2 (image and audio content blocks, `StdioTransport::spawn_limited`).
+
+- **MCP servers Bragi talks to:** stdio servers start with `spawn_limited(cmd, MAX_STDIO_LINE)` (64 MiB) instead of the 4 MiB default, so a reply carrying frames fits ([mcp_servers.rs](crates/bragi-core/src/mcp_servers.rs)). `McpSource::call` still hands only text to the model (Weirdnet ask).
+- **bragi-mcp** ([video.rs](crates/bragi-mcp/src/video.rs)): `bragi_video_probe` (file → duration, size, fps, sound, codecs) and `bragi_video_frames` (file; an explicit `count` 1–64 with `max_edge`, or frames sized from a `model`/`endpoint`'s reported limits; `mode` uniform/scene/hybrid, `start_ms`/`end_ms`). `Content::Image` has no annotations, so each image is preceded by a text block with its time (`[00:07.5]`) and `structuredContent` lists `{index, at_ms, label, mime_type}` per frame plus the clip. A file is a path inside the server root or a `data:` URL. `bragi_chat` takes `video` (+ `video_max_frames`, `video_max_edge`, `video_mode`, `video_start_ms`, `video_end_ms`), counted with the other attachments. Core: `extract` (caller-sized, capped at 64 frames / 32 MiB) and `clip_range`.
+- **Endpoint limits:** `video_plan(target, model)`: an OpenAI endpoint target uses `endpoint_video_limits` (its `/v1/models` `weirdnet.*` plus the override; no sound, since an endpoint doesn't say it takes audio); a pool target uses the catalog. `attach_video_source` is the shared path.
+- **Override UI:** `ModelLimits::parse/to_text/describe`, `LimitsView` (reported, yours, effective; `chip()`, `ignored()` names the values that would loosen a reported limit). TUI: `/video-limits` (show), `/video-limits image_tokens=258 max_images=32` (fill or tighten), `/video-limits clear`; the composer title shows the chip; attaching runs off the UI thread ("reading frames…"). Desktop: chip under the composer with a Limits editor (same `key=value` text, Save, Reset); attach runs in the background.
+
+**Checks:** on alien-blue at 54529a0: `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --no-fail-fast` 347 passed, 0 failed, 5 ignored in 43 suites (new: `extract_takes_the_callers_count_and_size_and_refuses_too_much`, `the_override_text_parses_round_trips_and_says_what_is_ignored`, bragi-mcp `probe_frames_and_chat_with_a_clip`, `an_mcp_client_reads_frames_as_images_with_their_times`, which reads frames through `Client::call_tool_content`/`Content::from_json`/`decoded_bytes` over a pipe and shows a 128 KiB line cap failing where 64 MiB delivers). `flutter analyze`: the 6 existing `curly_braces` infos only (no Dart or bridge changes, so no `flutter test`). No GUI opened.
+
+**Not done:** the Bragi status line in Ymir `docs/DESIGN.md` (follow-up), MCP image/audio parts reaching the model through `McpSource` (Weirdnet ask), image-block annotations (Weirdnet ask).
+
+**Next:** the V2 player (`feature/video-v2-player`).
+
 ## 2026-11-26 15:10 EST: video V1, sampling clips into frames sized from reported limits (merged `feature/video-upload`, LF-43)
 
 Michael (11-26): "Let's do the video uploads". Phase 1 of [docs/design/video.md](docs/design/video.md), core first. weirdnet-agent 0.5.6 → 0.5.7 (`MediaLimits`, `CatalogModel::limits`), weirdnet-backends 0.4.7 → 0.4.8. Ymir (merged the same day) publishes context and limits in catalog/1.
