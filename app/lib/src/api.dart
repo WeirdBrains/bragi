@@ -38,6 +38,11 @@ export 'rust/api/bragi.dart'
         QuantFitView,
         StoredModelView,
         PairView,
+        PendingUploadView,
+        UploadCopyView,
+        UploadPreviewView,
+        UploadSpecView,
+        UploadedResultView,
         StateView,
         SummaryView;
 
@@ -175,6 +180,24 @@ abstract class BragiApi {
   );
   Stream<rust.ModelsEventView> followModels(String runId);
   Future<BigInt> modelsRemove(String peer, String id, bool confirmed);
+
+  // Uploads of a model file from this device to a model node (LF-30 upload).
+  /// The inference nodes (peer ids) an upload's rollout can go to.
+  List<String> modelsInferenceNodes();
+
+  /// The share presets for a rollout, in percent.
+  List<int> uploadPercentPresets();
+
+  /// Reads and hashes a file on this device: what it is, before anything is sent.
+  Future<rust.UploadPreviewView> modelsInspectUpload(String path);
+
+  /// Starts an upload; stream it with [followModels] (`progress`, then `uploaded`, or `failed`).
+  Future<String> modelsUpload(rust.UploadSpecView spec);
+
+  /// The same upload as a `ymirctl` command for a computer that holds the file at [file].
+  Future<String> uploadCommand(rust.UploadSpecView spec, String file, List<rust.ModelNodeView> labels);
+  Future<List<rust.PendingUploadView>> modelsPendingUploads();
+  Future<void> modelsForgetUpload(String path, String peer);
 }
 
 class RustBragiApi implements BragiApi {
@@ -448,4 +471,26 @@ class RustBragiApi implements BragiApi {
   @override
   Future<BigInt> modelsRemove(String peer, String id, bool confirmed) =>
       rust.modelsRemove(peer: peer, id: id, confirmed: confirmed);
+
+  @override
+  List<String> modelsInferenceNodes() => rust.modelsInferenceNodes();
+
+  @override
+  List<int> uploadPercentPresets() => rust.uploadPercentPresets().toList();
+
+  @override
+  Future<rust.UploadPreviewView> modelsInspectUpload(String path) => rust.modelsInspectUpload(path: path);
+
+  @override
+  Future<String> modelsUpload(rust.UploadSpecView spec) async => rust.modelsUpload(spec: spec);
+
+  @override
+  Future<String> uploadCommand(rust.UploadSpecView spec, String file, List<rust.ModelNodeView> labels) async =>
+      rust.uploadCommand(spec: spec, file: file, labels: labels);
+
+  @override
+  Future<List<rust.PendingUploadView>> modelsPendingUploads() async => rust.modelsPendingUploads();
+
+  @override
+  Future<void> modelsForgetUpload(String path, String peer) async => rust.modelsForgetUpload(path: path, peer: peer);
 }

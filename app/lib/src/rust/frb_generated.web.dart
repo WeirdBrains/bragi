@@ -103,6 +103,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_box_autoadd_u_64(dynamic raw);
 
   @protected
+  UploadSpecView dco_decode_box_autoadd_upload_spec_view(dynamic raw);
+
+  @protected
+  UploadedResultView dco_decode_box_autoadd_uploaded_result_view(dynamic raw);
+
+  @protected
   ChatEventView dco_decode_chat_event_view(dynamic raw);
 
   @protected
@@ -214,6 +220,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MessageView> dco_decode_list_message_view(dynamic raw);
 
   @protected
+  List<ModelNodeView> dco_decode_list_model_node_view(dynamic raw);
+
+  @protected
   List<ModelView> dco_decode_list_model_view(dynamic raw);
 
   @protected
@@ -223,7 +232,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NotificationView> dco_decode_list_notification_view(dynamic raw);
 
   @protected
+  List<PendingUploadView> dco_decode_list_pending_upload_view(dynamic raw);
+
+  @protected
   List<PoolView> dco_decode_list_pool_view(dynamic raw);
+
+  @protected
+  Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -260,6 +275,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ThemeRowView> dco_decode_list_theme_row_view(dynamic raw);
+
+  @protected
+  List<UploadCopyView> dco_decode_list_upload_copy_view(dynamic raw);
 
   @protected
   MessageView dco_decode_message_view(dynamic raw);
@@ -328,10 +346,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? dco_decode_opt_box_autoadd_u_64(dynamic raw);
 
   @protected
+  UploadedResultView? dco_decode_opt_box_autoadd_uploaded_result_view(
+    dynamic raw,
+  );
+
+  @protected
   PairView dco_decode_pair_view(dynamic raw);
 
   @protected
   PaletteView dco_decode_palette_view(dynamic raw);
+
+  @protected
+  PendingUploadView dco_decode_pending_upload_view(dynamic raw);
 
   @protected
   PoolView dco_decode_pool_view(dynamic raw);
@@ -395,6 +421,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void dco_decode_unit(dynamic raw);
+
+  @protected
+  UploadCopyView dco_decode_upload_copy_view(dynamic raw);
+
+  @protected
+  UploadPreviewView dco_decode_upload_preview_view(dynamic raw);
+
+  @protected
+  UploadSpecView dco_decode_upload_spec_view(dynamic raw);
+
+  @protected
+  UploadedResultView dco_decode_uploaded_result_view(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -481,6 +519,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_box_autoadd_u_64(SseDeserializer deserializer);
+
+  @protected
+  UploadSpecView sse_decode_box_autoadd_upload_spec_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UploadedResultView sse_decode_box_autoadd_uploaded_result_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   ChatEventView sse_decode_chat_event_view(SseDeserializer deserializer);
@@ -604,6 +652,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MessageView> sse_decode_list_message_view(SseDeserializer deserializer);
 
   @protected
+  List<ModelNodeView> sse_decode_list_model_node_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ModelView> sse_decode_list_model_view(SseDeserializer deserializer);
 
   @protected
@@ -617,7 +670,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<PendingUploadView> sse_decode_list_pending_upload_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<PoolView> sse_decode_list_pool_view(SseDeserializer deserializer);
+
+  @protected
+  Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -662,6 +723,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ThemeRowView> sse_decode_list_theme_row_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<UploadCopyView> sse_decode_list_upload_copy_view(
     SseDeserializer deserializer,
   );
 
@@ -744,10 +810,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt? sse_decode_opt_box_autoadd_u_64(SseDeserializer deserializer);
 
   @protected
+  UploadedResultView? sse_decode_opt_box_autoadd_uploaded_result_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   PairView sse_decode_pair_view(SseDeserializer deserializer);
 
   @protected
   PaletteView sse_decode_palette_view(SseDeserializer deserializer);
+
+  @protected
+  PendingUploadView sse_decode_pending_upload_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   PoolView sse_decode_pool_view(SseDeserializer deserializer);
@@ -811,6 +887,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_decode_unit(SseDeserializer deserializer);
+
+  @protected
+  UploadCopyView sse_decode_upload_copy_view(SseDeserializer deserializer);
+
+  @protected
+  UploadPreviewView sse_decode_upload_preview_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  UploadSpecView sse_decode_upload_spec_view(SseDeserializer deserializer);
+
+  @protected
+  UploadedResultView sse_decode_uploaded_result_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   void sse_encode_AnyhowException(
@@ -928,6 +1020,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_autoadd_u_64(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_autoadd_upload_spec_view(
+    UploadSpecView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_uploaded_result_view(
+    UploadedResultView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_chat_event_view(ChatEventView self, SseSerializer serializer);
@@ -1080,6 +1184,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_model_node_view(
+    List<ModelNodeView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_model_view(
     List<ModelView> self,
     SseSerializer serializer,
@@ -1098,7 +1208,19 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_pending_upload_view(
+    List<PendingUploadView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_pool_view(List<PoolView> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_prim_u_32_strict(
+    Uint32List self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
@@ -1160,6 +1282,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_theme_row_view(
     List<ThemeRowView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_upload_copy_view(
+    List<UploadCopyView> self,
     SseSerializer serializer,
   );
 
@@ -1263,10 +1391,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_box_autoadd_u_64(BigInt? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_opt_box_autoadd_uploaded_result_view(
+    UploadedResultView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_pair_view(PairView self, SseSerializer serializer);
 
   @protected
   void sse_encode_palette_view(PaletteView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_pending_upload_view(
+    PendingUploadView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_pool_view(PoolView self, SseSerializer serializer);
@@ -1339,6 +1479,30 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_unit(void self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_upload_copy_view(
+    UploadCopyView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_upload_preview_view(
+    UploadPreviewView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_upload_spec_view(
+    UploadSpecView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_uploaded_result_view(
+    UploadedResultView self,
+    SseSerializer serializer,
+  );
 }
 
 // Section: wire_class

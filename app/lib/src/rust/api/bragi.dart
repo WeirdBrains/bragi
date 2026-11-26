@@ -7,9 +7,9 @@ import '../frb_generated.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `variant_of`
+// These functions are ignored because they are not marked as `pub`: `attachment_view`, `attachments`, `conversation_view`, `core`, `deleted_view`, `endpoint_view`, `err`, `error_kind_name`, `event_view`, `file_view`, `fit_view`, `form`, `is_optional_role`, `keep_run`, `message_state_name`, `mode_of`, `mode_str`, `models_event_view`, `node_view`, `pair_view`, `palette_view`, `pending_models`, `pending`, `pool_view`, `pref_view`, `register`, `running_parts`, `slot`, `spec_of`, `spec_view`, `started`, `state_view`, `status_name`, `status_parts`, `summary_view`, `target_of`, `target_view`, `test_view`, `uploaded_view`, `variant_of`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `Running`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Starts Bragi on the real network with its data in `dir`. Starting twice is a no-op.
 Future<void> start({required String dir, required String label}) =>
@@ -37,6 +37,10 @@ Future<void> demoFailNextAnswerAfter({required int words}) =>
 /// pastes a node address; none outside the demo.
 String? demoNodeAddress() =>
     RustLib.instance.api.crateApiBragiDemoNodeAddress();
+
+/// Writes a small demo GGUF model of `size` bytes at `path`, for tests and screenshots of uploads.
+Future<void> demoWriteGguf({required String path, required int size}) =>
+    RustLib.instance.api.crateApiBragiDemoWriteGguf(path: path, size: size);
 
 /// The demo node's answer to `prompt`, which a test compares a continued answer with.
 Future<String> demoAnswer({required String model, required String prompt}) =>
@@ -428,6 +432,46 @@ Future<String> modelsPull({
 /// Streams a search's or pull's events, ending after `search_done`, `done`, `cancelled` or `failed`.
 Stream<ModelsEventView> followModels({required String runId}) =>
     RustLib.instance.api.crateApiBragiFollowModels(runId: runId);
+
+/// The inference nodes (peer ids) the pool catalog comes from: where an upload's rollout can go.
+List<String> modelsInferenceNodes() =>
+    RustLib.instance.api.crateApiBragiModelsInferenceNodes();
+
+/// The share presets the upload dialog offers for a rollout, in percent.
+Uint32List uploadPercentPresets() =>
+    RustLib.instance.api.crateApiBragiUploadPercentPresets();
+
+/// Reads and hashes a file (or model folder) on this device: what it is, before anything is sent.
+Future<UploadPreviewView> modelsInspectUpload({required String path}) =>
+    RustLib.instance.api.crateApiBragiModelsInspectUpload(path: path);
+
+/// Starts an upload; stream it with `follow_models` (`progress`, then `uploaded`, or `failed`;
+/// `cancel` stops it and the node keeps the parts). Returns the run's id.
+Future<String> modelsUpload({required UploadSpecView spec}) =>
+    RustLib.instance.api.crateApiBragiModelsUpload(spec: spec);
+
+/// The same upload as a `ymirctl` command for a computer that holds the file (`file` is its path
+/// there), for when this device can't hold it. Nodes are named by their labels.
+Future<String> uploadCommand({
+  required UploadSpecView spec,
+  required String file,
+  required List<ModelNodeView> labels,
+}) => RustLib.instance.api.crateApiBragiUploadCommand(
+  spec: spec,
+  file: file,
+  labels: labels,
+);
+
+/// Uploads that were cancelled, cut off or under way when Bragi quit; sending one again resumes.
+Future<List<PendingUploadView>> modelsPendingUploads() =>
+    RustLib.instance.api.crateApiBragiModelsPendingUploads();
+
+/// Drops a pending upload from the list (the node deletes its parts after 7 days).
+Future<void> modelsForgetUpload({required String path, required String peer}) =>
+    RustLib.instance.api.crateApiBragiModelsForgetUpload(
+      path: path,
+      peer: peer,
+    );
 
 /// Removes a stored model from a node and returns the bytes freed. `confirmed` must be true.
 Future<BigInt> modelsRemove({
@@ -1261,6 +1305,9 @@ class ModelsEventView {
   final BigInt total;
   final bool served;
 
+  /// `uploaded`: what happened on the node, when it was stored.
+  final UploadedResultView? upload;
+
   const ModelsEventView({
     required this.kind,
     required this.hits,
@@ -1273,6 +1320,7 @@ class ModelsEventView {
     required this.done,
     required this.total,
     required this.served,
+    this.upload,
   });
 
   static Future<ModelsEventView> default_() =>
@@ -1290,7 +1338,8 @@ class ModelsEventView {
       size.hashCode ^
       done.hashCode ^
       total.hashCode ^
-      served.hashCode;
+      served.hashCode ^
+      upload.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1307,7 +1356,8 @@ class ModelsEventView {
           size == other.size &&
           done == other.done &&
           total == other.total &&
-          served == other.served;
+          served == other.served &&
+          upload == other.upload;
 }
 
 /// A repo on one node. `verdict` is `fits`, `too_big`, `no_budget` or `unknown`; `status` and
@@ -1464,6 +1514,35 @@ class PaletteView {
           dark == other.dark &&
           roles == other.roles &&
           raised == other.raised;
+}
+
+/// An upload that was cancelled, cut off or under way when Bragi quit; sending it again resumes.
+class PendingUploadView {
+  final UploadSpecView spec;
+  final String label;
+  final BigInt size;
+  final BigInt startedMs;
+
+  const PendingUploadView({
+    required this.spec,
+    required this.label,
+    required this.size,
+    required this.startedMs,
+  });
+
+  @override
+  int get hashCode =>
+      spec.hashCode ^ label.hashCode ^ size.hashCode ^ startedMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PendingUploadView &&
+          runtimeType == other.runtimeType &&
+          spec == other.spec &&
+          label == other.label &&
+          size == other.size &&
+          startedMs == other.startedMs;
 }
 
 /// A saved Ymir pool this device can switch to.
@@ -1707,12 +1786,16 @@ class StoredModelView {
   final String? servedAs;
   final String? state;
 
+  /// For an adapter: its base model (the upload dialog offers served models without one as bases).
+  final String? base;
+
   const StoredModelView({
     required this.id,
     required this.size,
     required this.complete,
     this.servedAs,
     this.state,
+    this.base,
   });
 
   @override
@@ -1721,7 +1804,8 @@ class StoredModelView {
       size.hashCode ^
       complete.hashCode ^
       servedAs.hashCode ^
-      state.hashCode;
+      state.hashCode ^
+      base.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -1732,7 +1816,8 @@ class StoredModelView {
           size == other.size &&
           complete == other.complete &&
           servedAs == other.servedAs &&
-          state == other.state;
+          state == other.state &&
+          base == other.base;
 }
 
 class SummaryView {
@@ -1871,4 +1956,206 @@ class ThemeRowView {
           builtin == other.builtin &&
           userFile == other.userFile &&
           error == other.error;
+}
+
+class UploadCopyView {
+  final String node;
+  final bool ok;
+  final String text;
+
+  const UploadCopyView({
+    required this.node,
+    required this.ok,
+    required this.text,
+  });
+
+  @override
+  int get hashCode => node.hashCode ^ ok.hashCode ^ text.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UploadCopyView &&
+          runtimeType == other.runtimeType &&
+          node == other.node &&
+          ok == other.ok &&
+          text == other.text;
+}
+
+/// What a file on this device is, read here before anything is sent (the upload dialog).
+class UploadPreviewView {
+  final String path;
+
+  /// `model`, `adapter` or `projector`.
+  final String kind;
+  final String format;
+  final String? architecture;
+  final String? baseModel;
+  final BigInt size;
+  final String revision;
+  final String suggestedId;
+
+  /// One line: `model, GGUF, llama, 4.4 GB`.
+  final String summary;
+
+  const UploadPreviewView({
+    required this.path,
+    required this.kind,
+    required this.format,
+    this.architecture,
+    this.baseModel,
+    required this.size,
+    required this.revision,
+    required this.suggestedId,
+    required this.summary,
+  });
+
+  @override
+  int get hashCode =>
+      path.hashCode ^
+      kind.hashCode ^
+      format.hashCode ^
+      architecture.hashCode ^
+      baseModel.hashCode ^
+      size.hashCode ^
+      revision.hashCode ^
+      suggestedId.hashCode ^
+      summary.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UploadPreviewView &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          kind == other.kind &&
+          format == other.format &&
+          architecture == other.architecture &&
+          baseModel == other.baseModel &&
+          size == other.size &&
+          revision == other.revision &&
+          suggestedId == other.suggestedId &&
+          summary == other.summary;
+}
+
+/// An upload: the file here, the model node it goes to (peer id) and how it is recorded. A
+/// rollout is asked for when `rollout_name` is set: its next version on `rollout_inference` with
+/// `rollout_percent` (0 to 100) of new conversations. `copy_to` nodes copy it node to node.
+class UploadSpecView {
+  final String path;
+  final String peer;
+  final String? name;
+  final String? adapterFor;
+  final String? license;
+  final bool persist;
+  final String? rolloutName;
+  final String? rolloutInference;
+  final int rolloutPercent;
+  final List<String> copyTo;
+
+  const UploadSpecView({
+    required this.path,
+    required this.peer,
+    this.name,
+    this.adapterFor,
+    this.license,
+    required this.persist,
+    this.rolloutName,
+    this.rolloutInference,
+    required this.rolloutPercent,
+    required this.copyTo,
+  });
+
+  @override
+  int get hashCode =>
+      path.hashCode ^
+      peer.hashCode ^
+      name.hashCode ^
+      adapterFor.hashCode ^
+      license.hashCode ^
+      persist.hashCode ^
+      rolloutName.hashCode ^
+      rolloutInference.hashCode ^
+      rolloutPercent.hashCode ^
+      copyTo.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UploadSpecView &&
+          runtimeType == other.runtimeType &&
+          path == other.path &&
+          peer == other.peer &&
+          name == other.name &&
+          adapterFor == other.adapterFor &&
+          license == other.license &&
+          persist == other.persist &&
+          rolloutName == other.rolloutName &&
+          rolloutInference == other.rolloutInference &&
+          rolloutPercent == other.rolloutPercent &&
+          copyTo == other.copyTo;
+}
+
+/// A finished upload on its node.
+class UploadedResultView {
+  final String id;
+  final String revision;
+  final BigInt resumed;
+  final bool alreadyThere;
+  final String? saved;
+  final String? registerError;
+  final String? adapterNote;
+
+  /// `NAME@N` and what the inference node said; `rollout_error` when adding failed.
+  final String? rollout;
+  final String? rolloutError;
+  final List<String> rolloutCommands;
+
+  /// Each copy: `label: what happened` (`ok` false when it failed).
+  final List<UploadCopyView> copies;
+
+  const UploadedResultView({
+    required this.id,
+    required this.revision,
+    required this.resumed,
+    required this.alreadyThere,
+    this.saved,
+    this.registerError,
+    this.adapterNote,
+    this.rollout,
+    this.rolloutError,
+    required this.rolloutCommands,
+    required this.copies,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      revision.hashCode ^
+      resumed.hashCode ^
+      alreadyThere.hashCode ^
+      saved.hashCode ^
+      registerError.hashCode ^
+      adapterNote.hashCode ^
+      rollout.hashCode ^
+      rolloutError.hashCode ^
+      rolloutCommands.hashCode ^
+      copies.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is UploadedResultView &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          revision == other.revision &&
+          resumed == other.resumed &&
+          alreadyThere == other.alreadyThere &&
+          saved == other.saved &&
+          registerError == other.registerError &&
+          adapterNote == other.adapterNote &&
+          rollout == other.rollout &&
+          rolloutError == other.rolloutError &&
+          rolloutCommands == other.rolloutCommands &&
+          copies == other.copies;
 }

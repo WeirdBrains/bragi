@@ -12,6 +12,7 @@ import 'package:bragi/src/app.dart';
 import 'package:bragi/src/controller.dart';
 import 'package:bragi/src/models_ui.dart';
 import 'package:bragi/src/theme.dart';
+import 'package:bragi/src/upload_ui.dart';
 import 'package:bragi/src/rust/api/bragi.dart' as rust;
 import 'package:bragi/src/rust/frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
@@ -38,6 +39,9 @@ class _RefusedApi implements BragiApi {
   ];
 
   @override
+  Future<List<PendingUploadView>> modelsPendingUploads() async => const [];
+
+  @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
 }
 
@@ -59,6 +63,12 @@ void main() {
     expect(humanBytes(512), '512 B');
     expect(humanBytes(4400000000), '4.4 GB');
     expect(statusLabel('needs_owner_device'), 'Needs owner device');
+    expect(parsePercent(''), 0);
+    expect(parsePercent(' 20 % '), 20);
+    expect(parsePercent('100'), 100);
+    expect(parsePercent('101'), isNull);
+    expect(parsePercent('-1'), isNull);
+    expect(parsePercent('half'), isNull);
   });
 
   testWidgets('a device the nodes refuse sees why, and nothing can change', (tester) async {
@@ -189,5 +199,55 @@ void main() {
     await until('it gone', () => !text('Tiny-Chat-Q8_0 · 5.0 MB'));
     expect(text('5.0 MB freed'), isTrue);
     await shot('flutter-56-models-removed');
+
+    // Upload a model from this device: read and hashed first, then a node, license, a rollout
+    // with a 20 % share; the same upload as a ymirctl command for a computer; then sent.
+    final file = '${dir.path}/my-tune-Q8_0.gguf';
+    await tester.runAsync(() => rust.demoWriteGguf(path: file, size: 2 << 20));
+    await tap('models-upload');
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('upload-path')), file);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await until('the preview', () => shown('upload-preview'));
+    expect(text('model, GGUF'), isTrue);
+    Future<void> pickNode(String label) async {
+      await tester.ensureVisible(find.byKey(const Key('upload-node')));
+      await tester.tap(find.byKey(const Key('upload-node')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    await pickNode('demo inference node 2');
+    await tester.enterText(find.byKey(const Key('upload-license')), 'apache-2.0');
+    await tester.enterText(find.byKey(const Key('upload-rollout')), 'support');
+    await tester.pump();
+    await tap('upload-preset-20');
+    expect(find.text('20'), findsOneWidget, reason: 'the preset fills the typed share');
+    await tap('upload-show-command');
+    await until('the command', () => shown('upload-command'));
+    expect(text('ymirctl models upload ~/models/my-tune-Q8_0.gguf --node'), isTrue);
+    expect(text('--license apache-2.0'), isTrue);
+    expect(text('--canary 20'), isTrue);
+    await shot('flutter-57-upload-dialog');
+    await tester.enterText(find.byKey(const Key('upload-percent')), '120');
+    await tap('upload-send');
+    expect(text('a percentage from 0 to 100'), isTrue);
+    await tester.enterText(find.byKey(const Key('upload-percent')), '20');
+    // The second demo node keeps more free than its disk has: it refuses with no-space.
+    await tap('upload-send');
+    await until('the refusal', () => shown('upload-refused') || shown('upload-ended') || shown('upload-result'));
+    expect(text('upload_keep_free'), isTrue, reason: 'the second node has no room');
+    await pickNode('demo inference node');
+    await tap('upload-send');
+    await until('the upload', () => shown('upload-result') || shown('upload-refused') || shown('upload-ended'));
+    String said(String key) => shown(key) ? tester.widget<Text>(find.byKey(Key(key))).data ?? '' : '';
+    expect(shown('upload-result'), isTrue, reason: 'the demo node takes it: ${said('upload-refused')}${said('upload-ended')}');
+    expect(text('Stored '), isTrue);
+    expect(shown('upload-rollout-result') || shown('upload-rollout-error'), isTrue);
+    await shot('flutter-58-upload-done');
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await until('it listed', () => text('my-tune'));
   });
 }
