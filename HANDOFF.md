@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 05:40 EST: v0.14.0 released
+
+**Release:** [v0.14.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.14.0) (`release: v0.14.0`, `92e6a4a`, cut on main `9faede0`; the cut's fmt, clippy and workspace tests passed): weirdnet-sync 0.8.4, so conversations are shared with Ymir inference servers linked cert-only (Ymir 0.18.0), and chats from before the link are re-sealed for them. Release run 45796114507 green on the first try. 41 files, the leak scan of dist found nothing (41 files, 0 hits), `assets` ok; the six Arch packages are gpg-signed and their signatures uploaded (48 files). This branch (`release/0.14.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` (and `latestDate`) to 0.14.0 (`taur-check` ready).
+
+**Upgrade note:** every Bragi that shares conversations with a cert-only inference server needs 0.14.0; 0.13.0 and older can't open records sealed under the type-scoped key.
+
+TAUR has bragi-bin 0.14.0-1.
+
+**Next:** merge `feature/fdroid-prep` (B3), then the next Bragi batch.
+
 ## 2026-11-26 04:45 EST: weirdnet-sync 0.8.4 (branch `chore/weirdnet-sync-0.8.4`)
 
 Ymir 0.18.0 gives inference nodes linked cert-only a key for `ymir.context` alone (weirdnet-sync 0.8.3/0.8.4): full devices seal conversations under that type-scoped key while such a server is granted the type, and under the epoch key otherwise. Devices on weirdnet-sync 0.8.3 or older can't open type-scoped records, so every Bragi that shares conversations with one needs this.
