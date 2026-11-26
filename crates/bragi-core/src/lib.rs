@@ -44,6 +44,8 @@ pub mod sessions;
 pub mod shell;
 mod targets;
 pub mod think;
+pub mod video;
+mod video_core;
 pub mod wake;
 mod wake_core;
 pub use wake_core::WakeableDevice;

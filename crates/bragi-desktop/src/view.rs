@@ -670,7 +670,22 @@ impl BragiView {
             Some(rest) => std::env::var_os("HOME").map(|h| PathBuf::from(h).join(rest)).unwrap_or_else(|| PathBuf::from(path)),
             None => PathBuf::from(path),
         };
-        match Attachment::from_path(&path) {
+        // A video is sampled for the model the message goes to (LF-43, V1: the chat shows its
+        // first frame; the inline player is V2).
+        let attached = if bragi_core::video::is_video_path(&path) {
+            if self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) {
+                Err(bragi_core::CoreError::new(bragi_core::ErrorKind::BadRequest, "One video per message."))
+            } else if let Some(model) = self.model() {
+                let history: Vec<&str> = self.current.as_ref().map(|c| c.messages.iter().map(|m| m.text.as_str()).collect()).unwrap_or_default();
+                let reserved = bragi_core::video::history_tokens(history);
+                self.core.attach_video(&path, &model, &bragi_core::video::VideoPrefs::default(), reserved)
+            } else {
+                Err(bragi_core::CoreError::new(bragi_core::ErrorKind::BadRequest, "Pick a model first: a video is sampled for the model it goes to."))
+            }
+        } else {
+            Attachment::from_path(&path)
+        };
+        match attached {
             Ok(a) => {
                 self.attachments.push(a);
                 self.attach_input.update(cx, |i, cx| i.set_text("", cx));

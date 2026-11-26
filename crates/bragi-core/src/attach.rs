@@ -33,6 +33,9 @@ pub enum Media {
     Image { mime: String, data: String },
     /// `format` is `wav` or `mp3`.
     Audio { format: String, data: String },
+    /// A clip sampled into timestamped frames and maybe its soundtrack ([`crate::video`]). It goes
+    /// to the model as plain image and audio parts; this only groups them for the chat.
+    Video(crate::video::Sampled),
 }
 
 impl Media {
@@ -41,13 +44,34 @@ impl Media {
         match self {
             Media::Image { .. } => Modalities::VISION,
             Media::Audio { .. } => Modalities::AUDIO,
+            Media::Video(v) => {
+                if v.audio.is_some() {
+                    Modalities::VISION.union(Modalities::AUDIO)
+                } else {
+                    Modalities::VISION
+                }
+            }
         }
     }
 
-    fn part(&self) -> ContentPart {
+    /// The content parts the model gets. A video is its leading line, then a `[00:07.5]` label
+    /// and the image for each frame, then the soundtrack.
+    fn parts(&self) -> Vec<ContentPart> {
         match self {
-            Media::Image { mime, data } => ContentPart::image(format!("data:{mime};base64,{data}")),
-            Media::Audio { format, data } => ContentPart::audio(data.clone(), format.clone()),
+            Media::Image { mime, data } => vec![ContentPart::image(format!("data:{mime};base64,{data}"))],
+            Media::Audio { format, data } => vec![ContentPart::audio(data.clone(), format.clone())],
+            Media::Video(v) => {
+                let mut parts = Vec::with_capacity(2 * v.frames.len() + 2);
+                parts.push(ContentPart::text(v.summary.clone()));
+                for f in &v.frames {
+                    parts.push(ContentPart::text(crate::video::label(f.at_ms)));
+                    parts.push(ContentPart::image(format!("data:{};base64,{}", f.mime, f.data)));
+                }
+                if let Some(wav) = &v.audio {
+                    parts.push(ContentPart::audio(wav.clone(), "wav"));
+                }
+                parts
+            }
         }
     }
 
@@ -56,6 +80,7 @@ impl Media {
         match self {
             Media::Image { .. } => "image",
             Media::Audio { .. } => "audio",
+            Media::Video(_) => "video",
         }
     }
 }
@@ -140,11 +165,24 @@ impl Attachment {
         }
     }
 
+    /// A sampled clip as one attachment ([`crate::video::sample`]).
+    pub fn from_video(name: &str, sampled: crate::video::Sampled) -> Self {
+        Self { name: clean_name(name), text: String::new(), media: Some(Media::Video(sampled)) }
+    }
+
     /// An attachment back from its parts (a shell hands them over as strings): `kind` is `image` or
     /// `audio`, `kind_type` the image's MIME type or the audio's format, `data` the base64. The
     /// same limits as [`from_bytes`](Self::from_bytes) apply.
     pub fn from_media(name: &str, kind: &str, kind_type: &str, data: &str) -> Result<Self> {
         let name = clean_name(name);
+        if kind == "video" {
+            // A sampled clip travels between shell and core as its JSON (`Sampled`).
+            let sampled: crate::video::Sampled = serde_json::from_str(data).map_err(|_| bad(format!("{name} is not the video it was said to be")))?;
+            if sampled.frames.is_empty() || sampled.frames.iter().any(|f| f.data.len() > MAX_IMAGE_BYTES.div_ceil(3) * 4) {
+                return Err(bad(format!("{name}: a video needs frames, each under {} KiB", MAX_IMAGE_BYTES / 1024)));
+            }
+            return Ok(Self::from_video(&name, sampled));
+        }
         let bytes = STANDARD.decode(data).map_err(|_| bad(format!("{name}: the data is not base64")))?;
         let attached = Self::from_bytes(&name, &bytes)?;
         match (&attached.media, kind) {
@@ -202,7 +240,7 @@ impl Attachment {
 /// Plain text when nothing is media.
 pub fn content(prompt: &str, attachments: &[Attachment]) -> Content {
     let text = render(prompt, attachments);
-    let media: Vec<ContentPart> = attachments.iter().filter_map(|a| a.media.as_ref()).map(Media::part).collect();
+    let media: Vec<ContentPart> = attachments.iter().filter_map(|a| a.media.as_ref()).flat_map(Media::parts).collect();
     if media.is_empty() {
         return Content::Text(text);
     }
@@ -244,6 +282,10 @@ pub fn render(prompt: &str, attachments: &[Attachment]) -> String {
 pub fn check(attachments: &[Attachment]) -> Result<()> {
     if attachments.len() > MAX_PER_MESSAGE {
         return Err(bad(format!("at most {MAX_PER_MESSAGE} files per message")));
+    }
+    // A video is one attachment, and one per message: the frame budget is per request.
+    if attachments.iter().filter(|a| matches!(a.media, Some(Media::Video(_)))).count() > 1 {
+        return Err(bad("one video per message"));
     }
     Ok(())
 }

@@ -50,6 +50,11 @@ pub struct ModelInfo {
     /// Its license (an SPDX id, or `unknown`), when given.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub license: Option<String>,
+    /// Media and request limits (images, image cost and edge, audio, request bytes): the
+    /// strictest across the nodes serving it, each absent when no node reports it (Ymir on
+    /// weirdnet-agent 0.5.7). What video frames are sized from ([`crate::video`]).
+    #[serde(default, skip_serializing_if = "weirdnet_agent::MediaLimits::is_unknown")]
+    pub limits: weirdnet_agent::MediaLimits,
 }
 
 impl ModelInfo {
@@ -114,6 +119,7 @@ fn info(m: &CatalogModel) -> ModelInfo {
         versions: Vec::new(),
         origin: m.origin.clone(),
         license: m.license.clone(),
+        limits: m.limits,
     }
 }
 
@@ -168,6 +174,7 @@ impl CatalogView {
                             (Some(a), Some(b)) => Some(a.min(b)),
                             (a, b) => a.or(b),
                         };
+                        i.limits = i.limits.tightest(m.limits);
                         i.vision |= m.inputs.vision;
                         i.audio |= m.inputs.audio;
                         if i.standin.is_none() {
@@ -225,6 +232,11 @@ impl CatalogView {
         } else {
             format!("{model} can't read {what}; pick one that can: {}", ok.join(", "))
         }
+    }
+
+    /// The media limits for `model` (the strictest its nodes report); unknown when none do.
+    pub fn limits_for(&self, model: &str) -> weirdnet_agent::MediaLimits {
+        self.model(model).map(|m| m.limits).unwrap_or_default()
     }
 
     /// The context window a request to `model` must fit (the smallest its nodes list), if known.

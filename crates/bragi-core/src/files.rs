@@ -138,6 +138,12 @@ fn attachment_facts(a: &Attachment) -> (String, u64, FileKind) {
         Some(Media::Audio { format, data }) => {
             (if format == "mp3" { "audio/mpeg".into() } else { format!("audio/{format}") }, decoded_len(data), FileKind::Audio)
         }
+        // Shown by its first frame until the shells have a video row (V2); the size is what was sent.
+        Some(Media::Video(v)) => (
+            v.frames.first().map_or_else(|| "image/jpeg".into(), |f| f.mime.clone()),
+            v.frames.iter().map(|f| decoded_len(&f.data)).sum::<u64>() + v.audio.as_deref().map_or(0, decoded_len),
+            FileKind::Image,
+        ),
         None => (text_mime(&a.name).into(), a.text.len() as u64, FileKind::Text),
     }
 }
@@ -152,6 +158,10 @@ pub fn attachment_bytes(a: &Attachment) -> Result<Vec<u8>> {
     match &a.media {
         Some(Media::Image { data, .. } | Media::Audio { data, .. }) => {
             STANDARD.decode(data).map_err(|_| CoreError::new(ErrorKind::Storage, format!("{} is damaged (not base64)", a.name)))
+        }
+        Some(Media::Video(v)) => {
+            let first = v.frames.first().ok_or_else(|| CoreError::new(ErrorKind::Storage, format!("{} has no frames", a.name)))?;
+            STANDARD.decode(&first.data).map_err(|_| CoreError::new(ErrorKind::Storage, format!("{} is damaged (not base64)", a.name)))
         }
         None => Ok(a.text.as_bytes().to_vec()),
     }
