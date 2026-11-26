@@ -46,6 +46,10 @@ The workflow signs with a release key only when these repository secrets exist:
 runner's debug key, which changes between builds, so a new version has to be installed fresh rather than
 over an older one.
 
+## F-Droid
+
+[packaging/fdroid/org.weirdbrains.bragi.yml](../packaging/fdroid/org.weirdbrains.bragi.yml) is the recipe to submit to [fdroiddata](https://gitlab.com/fdroid/fdroiddata) as `metadata/org.weirdbrains.bragi.yml` (drop the comment header); the store text and icon are in [fastlane/metadata/android/en-US](../fastlane/metadata/android/en-US). It passes `fdroid lint` and `fdroid rewritemeta` (fdroidserver 2.4.6 with fdroiddata's `config/categories.yml`); it has not been through `fdroid build`. F-Droid builds swap [app/lib/src/scanner.dart](../app/lib/src/scanner.dart) for [scanner_none.dart](../app/lib/src/scanner_none.dart) and drop `mobile_scanner` from `pubspec.yaml`, because mobile_scanner reads QR codes with Google ML Kit, which is not free software; those builds pair with a desktop by typed code. Keep both files' API alike. One build per ABI: `--split-per-abi` adds 1000 (armeabi-v7a), 2000 (arm64-v8a) or 4000 (x86_64) to the pubspec build number, which `VercodeOperation` mirrors. Once fdroiddata has the recipe, `AutoUpdateMode: Version` with `UpdateCheckMode: Tags` picks up new tags by itself; add `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` for each ABI's code in a release that should show notes there. F-Droid signs its builds with its own key unless the builds are reproducible against ours.
+
 ## minisign
 
 The `minisign` job signs every release file when the `MINISIGN_SECRET_KEY` and `MINISIGN_PASSWORD` repository secrets are set, and uploads the `.minisig` files as the `bragi-minisign` artifact to attach to the release. Without them it skips with a notice; there is no minisign key yet.

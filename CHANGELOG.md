@@ -6,6 +6,10 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- An F-Droid build recipe that passes `fdroid lint`, with the store text and icon in fastlane metadata. F-Droid builds have no QR camera (its scanner needs Google ML Kit, which is not free software) and pair with a desktop by typed code.
+
 ## [0.14.0] - 2026-11-26
 
 ### Fixed

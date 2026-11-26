@@ -1,0 +1,1 @@
+Chat with the AI models on your own machines, over Weirdnet. No hosted service.

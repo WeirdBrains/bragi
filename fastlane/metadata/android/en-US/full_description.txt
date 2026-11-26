@@ -1,0 +1,14 @@
+Bragi is the chat app for your own cloud. It links to your Weirdnet identity like any of your devices, finds your Ymir inference nodes, and streams answers from the models on your own machines. Nothing goes through a hosted service.
+
+<ul>
+<li>Pair with your own devices by a code; a conversation follows you from one device to another.</li>
+<li>One model list from all your inference nodes, with retries and failover in the middle of an answer.</li>
+<li>Stop an answer and continue it, folders for chats, text, image and audio attachments, and an agent mode with approval cards for tool calls.</li>
+<li>Any OpenAI-compatible server next to your own nodes, or as a fallback; its API key stays sealed on the device.</li>
+<li>A Models screen: search the Hugging Face Hub with a fit badge for each node, pull a model to your nodes, upload one, and watch training runs and rollouts.</li>
+<li>Code mode against a paired desktop.</li>
+</ul>
+
+This F-Droid build has no QR camera (the scanner library depends on Google ML Kit): pair with a desktop by typing the short code it shows. It has no trackers and no Google services.
+
+Bragi is free software under the BSD-3-Clause license, by Weird Brains LLC.

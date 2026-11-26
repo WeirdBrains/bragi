@@ -4,13 +4,10 @@
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'code_controller.dart';
+import 'scanner.dart';
 import 'theme.dart';
-
-/// Whether this device can scan (a phone camera); elsewhere the code is typed.
-bool get canScan => Platform.isAndroid || Platform.isIOS;
 
 class DesktopPairScreen extends StatefulWidget {
   const DesktopPairScreen({super.key, required this.code, this.scanner});
@@ -67,14 +64,7 @@ class _DesktopPairScreenState extends State<DesktopPairScreen> {
   Widget _camera() {
     final custom = widget.scanner;
     if (custom != null) return custom(_scanned);
-    return MobileScanner(
-      onDetect: (capture) {
-        for (final b in capture.barcodes) {
-          final raw = b.rawValue;
-          if (raw != null) _scanned(raw);
-        }
-      },
-    );
+    return cameraScanner(_scanned);
   }
 
   @override

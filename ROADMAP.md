@@ -20,7 +20,7 @@ Weirdnet crates: `weirdnet-agent`.
 
 ## B3 Platforms (In progress)
 
-iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. Next: store listings (Play, F-Droid, TestFlight), signing with a release key, and finishing the F-Droid draft recipe.
+iOS, macOS and Windows, and Android packaging for the apk, aab and F-Droid. Released in v0.1.0: Linux packages and tarballs, macOS dmg, Windows installers, Android apks and an unsigned iOS ipa. The F-Droid recipe passes `fdroid lint`, with store text and icon in fastlane metadata, and F-Droid builds pair by typed code without the ML Kit QR scanner (from v0.15.0). Next: submitting it to fdroiddata, store listings (Play, TestFlight) and signing with a release key.
 
 Weirdnet crates: none new.
 

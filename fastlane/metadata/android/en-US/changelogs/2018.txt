@@ -1,0 +1,1 @@
+First F-Droid release. Pair with a desktop by typing its code (no QR camera in this build).
