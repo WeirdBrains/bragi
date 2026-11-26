@@ -62,7 +62,13 @@ pub struct Identity {
     dir: PathBuf,
     node_key: Keypair,
     state: Arc<Mutex<SyncState>>,
+    /// When each device's wake cards were last pulled (B4). A pull costs a sync session of its
+    /// own, and cards rarely change, so they come in every [`WAKE_PULL_EVERY`], not every pass.
+    wake_pulled: Mutex<std::collections::HashMap<String, std::time::Instant>>,
 }
+
+/// How often a sync pass pulls a device's wake cards.
+pub const WAKE_PULL_EVERY: std::time::Duration = std::time::Duration::from_secs(120);
 
 fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
@@ -158,6 +164,18 @@ fn ensure_dir(dir: &Path) -> Result<()> {
 }
 
 impl Identity {
+    fn wake_pull_due(&self, peer: &str) -> bool {
+        self.wake_pulled.lock().map(|m| m.get(peer).is_none_or(|t| t.elapsed() >= WAKE_PULL_EVERY)).unwrap_or(true)
+    }
+
+    /// The next sync pass pulls every device's wake cards (after this device's wake settings
+    /// change, say).
+    pub fn refresh_wake_cards(&self) {
+        if let Ok(mut m) = self.wake_pulled.lock() {
+            m.clear();
+        }
+    }
+
     /// Whether `dir` holds an identity.
     pub fn exists(dir: &Path) -> bool {
         dir.join("seed").is_file() && dir.join("node.key").is_file()
@@ -241,10 +259,11 @@ impl Identity {
             voter: None,
         };
         st.configure(CONTEXT_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("context records: {e}"))?;
+        st.configure(crate::wake::WAKE_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("wake records: {e}"))?;
         load_log(dir, &mut st);
         st.publish_device_key(now_ms()).map_err(|e| anyhow!("device key: {e}"))?;
         st.refresh_keys();
-        Ok(Self { dir: dir.to_path_buf(), node_key, state: Arc::new(Mutex::new(st)) })
+        Ok(Self { dir: dir.to_path_buf(), node_key, state: Arc::new(Mutex::new(st)), wake_pulled: Mutex::default() })
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, SyncState> {
@@ -530,6 +549,18 @@ impl Identity {
                 if let Some(e) = &out.error {
                     context_ok = false;
                     tracing::debug!(peer = %cert.peer_id, applied = out.applied, "context pass: {e}");
+                }
+                // Wake cards only between the user's full devices (no server is granted them).
+                if !self.is_service(&cert.peer_id) && self.wake_pull_due(&cert.peer_id) {
+                    let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, crate::wake::WAKE_TYPE);
+                    match &out.error {
+                        None => {
+                            if let Ok(mut m) = self.wake_pulled.lock() {
+                                m.insert(cert.peer_id.clone(), std::time::Instant::now());
+                            }
+                        }
+                        Some(e) => tracing::debug!(peer = %cert.peer_id, applied = out.applied, "wake pass: {e}"),
+                    }
                 }
             } else {
                 context_ok = false;

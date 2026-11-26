@@ -50,7 +50,9 @@ export 'rust/api/bragi.dart'
         UploadSpecView,
         UploadedResultView,
         StateView,
-        SummaryView;
+        SummaryView,
+        WakeView,
+        WakeableView;
 
 abstract class BragiApi {
   Stream<rust.StateView> watchState();
@@ -154,6 +156,10 @@ abstract class BragiApi {
   Future<void> removePool(String id);
   bool sidebarCollapsed();
   void setSidebarCollapsed(bool collapsed);
+  // Push wake-ups (B4).
+  rust.WakeView wakeStatus();
+  rust.WakeView setWakeSettings(bool push, bool relayWake);
+  String relayWakeCost();
   Future<List<rust.TargetView>> targets();
   Future<rust.ChatStarted> sendTo(
     String? conversation,
@@ -422,6 +428,13 @@ class RustBragiApi implements BragiApi {
   @override
   void setSidebarCollapsed(bool collapsed) =>
       rust.setSidebarCollapsed(collapsed: collapsed);
+  @override
+  rust.WakeView wakeStatus() => rust.wakeStatus();
+  @override
+  rust.WakeView setWakeSettings(bool push, bool relayWake) =>
+      rust.setWakeSettings(push: push, relayWake: relayWake);
+  @override
+  String relayWakeCost() => rust.relayWakeCost();
   @override
   Future<List<rust.TargetView>> targets() => rust.targets();
   @override

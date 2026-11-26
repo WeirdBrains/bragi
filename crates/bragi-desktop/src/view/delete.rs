@@ -207,7 +207,7 @@ impl BragiView {
         )
     }
 
-    /// Settings: endpoints, Weirdnet links and history.
+    /// Settings: pools, endpoints, Weirdnet links, wake-ups and history.
     pub(super) fn settings(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         div()
@@ -222,6 +222,7 @@ impl BragiView {
             .child(self.pools_section(cx))
             .child(self.endpoints_section(cx))
             .child(self.links_section(cx))
+            .child(self.wake_section(cx))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
             .child(
                 div()

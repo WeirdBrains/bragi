@@ -8,6 +8,7 @@ import 'controller.dart';
 import 'delete_ui.dart';
 import 'models_ui.dart';
 import 'theme.dart';
+import 'wake_ui.dart';
 
 Widget _heading(String text) => Padding(
   padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
@@ -158,6 +159,8 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                _heading('WAKE-UPS'),
+                WakeSection(api: c.api),
                 _heading('HISTORY'),
                 ClearHistoryTile(controller: controller),
                 if (c.notice != null)

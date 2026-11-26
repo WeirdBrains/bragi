@@ -104,11 +104,14 @@ pub struct Config {
     /// Devices to dial directly: `/ip4/…/tcp/…/p2p/PEER` (or `/memory/…/p2p/PEER`). Dialing
     /// grants nothing; the roster decides.
     pub peers: Vec<String>,
+    /// The home relay of the relay wake path (`/…/p2p/RELAY`, B4). `None`: the WeirdBrains
+    /// relay on the real network, none on the memory transport.
+    pub wake_relay: Option<String>,
 }
 
 impl Config {
     pub fn new(dir: impl Into<PathBuf>, label: impl Into<String>) -> Self {
-        Self { dir: dir.into(), label: label.into(), transport: Transport::Internet, peers: Vec::new() }
+        Self { dir: dir.into(), label: label.into(), transport: Transport::Internet, peers: Vec::new(), wake_relay: None }
     }
 }
 
@@ -153,6 +156,9 @@ pub struct AppState {
     /// The active Ymir pool, when any is saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pool: Option<crate::pools::PoolRef>,
+    /// Push wake-ups on this device (B4).
+    #[serde(default)]
+    pub wake: crate::wake::WakeStatus,
 }
 
 /// The last node address added with [`Core::add_node`]: looked for, found, or not found in
@@ -292,6 +298,12 @@ pub(crate) struct Inner {
     pub(crate) sessions: crate::sessions::Sessions,
     /// Saved Ymir pools and which one is active.
     pub(crate) pools: crate::pools::Pools,
+    /// This device's wake key, handle and settings (B4), per pool like the identity.
+    pub(crate) wakes: Arc<crate::wake::Wakes>,
+    /// Bumped when the wake settings change (the relay wake connection restarts).
+    pub(crate) wake_gen: watch::Sender<u64>,
+    /// The relay wake connection is up.
+    pub(crate) wake_up: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -409,6 +421,8 @@ impl Core {
             merge_peers(&mut known, load_peers(&pool_dir));
         }
         let peers = Arc::new(Mutex::new(known));
+        let wakes = Arc::new(crate::wake::Wakes::open(&pool_dir).map_err(|e| CoreError::new(ErrorKind::Storage, e.to_string()))?);
+        state.send_modify(|s| s.wake = wakes.status(false));
         let core = Core {
             inner: Arc::new(Inner {
                 cfg,
@@ -428,6 +442,9 @@ impl Core {
                 mcp: crate::mcp_servers::McpServers::open(&dir),
                 sessions: crate::sessions::Sessions::open(&pool_dir),
                 pools,
+                wakes,
+                wake_gen: watch::channel(0).0,
+                wake_up: Arc::default(),
             }),
             _runtime: runtime,
         };
@@ -510,12 +527,33 @@ impl Core {
         }
         let (net_for_loop, hist, state, peers) = (identity.clone(), self.inner.history.clone(), self.inner.state.clone(), self.inner.peers.clone());
         let node_for_loop = node.clone();
+        let (wakes, relay) = (self.inner.wakes.clone(), self.wake_relay());
+        let (wakes_for_loop, relay_for_loop) = (wakes.clone(), relay.clone());
+        let on_wake: Arc<dyn Fn() + Send + Sync> = {
+            let (identity, node, peers, hist, state) = (identity.clone(), node.clone(), peers.clone(), hist.clone(), state.clone());
+            Arc::new(move || {
+                tokio::spawn(sync_pass(identity.clone(), node.clone(), peers.clone(), hist.clone(), state.clone()));
+            })
+        };
         tasks.push(tokio::spawn(async move {
             loop {
                 sync_pass(net_for_loop.clone(), node_for_loop.clone(), peers.clone(), hist.clone(), state.clone()).await;
+                // This device's wake card (B4): written once the key chain allows, kept current.
+                let (id, w, r) = (net_for_loop.clone(), wakes_for_loop.clone(), relay_for_loop.clone());
+                let _ = tokio::task::spawn_blocking(move || crate::wake_core::publish_card(&id, &w, r.as_deref())).await;
                 tokio::time::sleep(SYNC_EVERY).await;
             }
         }));
+        // The relay wake connection, while relay wake is on.
+        tasks.push(tokio::spawn(crate::wake_core::relay_loop(
+            node.clone(),
+            wakes,
+            relay,
+            self.inner.wake_up.clone(),
+            self.inner.state.clone(),
+            self.inner.wake_gen.subscribe(),
+            on_wake,
+        )));
         let (user, device) = (identity.user_id(), identity.our_cert().label);
         *lock(&self.inner.net) = Some(Arc::new(Net { identity, node, nodes, dialer, opts, tasks }));
         if let Some(id) = self.inner.pools.active_id() {

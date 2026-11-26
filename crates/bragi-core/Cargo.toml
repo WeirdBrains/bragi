@@ -39,6 +39,7 @@ weirdnet-model.workspace = true
 weirdnet-device-link.workspace = true
 weirdnet-net.workspace = true
 weirdnet-sync.workspace = true
+weirdnet-push.workspace = true
 zeroize.workspace = true
 weirdnet-themes.workspace = true
 

@@ -228,6 +228,48 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
         return Err("history was not kept".into());
     }
     shot(cx, "30-unbound-chat").await;
-    println!("bragi-scenario: endpoints, links and folders");
+
+    // Wake-ups (B4): push on and relay wake off by default; relay wake asks first with its
+    // battery cost, Cancel keeps it off, and push off turns it off with it.
+    let wake =
+        |cx: &mut gpui::AsyncApp| this.read_with(cx, |v, _| (v.state.wake.settings.push, v.state.wake.settings.relay_wake, v.prefs.wake_confirm));
+    if wake(cx).map_err(e)? != (true, false, false) {
+        return Err("wake-ups are not push on, relay wake off by default".into());
+    }
+    this.update(cx, |v, cx| {
+        v.toggle_settings(cx);
+        v.toggle_relay_wake(cx)
+    })
+    .map_err(e)?;
+    if wake(cx).map_err(e)? != (true, false, true) {
+        return Err("relay wake did not ask first".into());
+    }
+    shot(cx, "30a-relay-wake-confirm").await;
+    this.update(cx, |v, cx| {
+        v.prefs.wake_confirm = false;
+        cx.notify()
+    })
+    .map_err(e)?;
+    if wake(cx).map_err(e)? != (true, false, false) {
+        return Err("Cancel turned relay wake on".into());
+    }
+    this.update(cx, |v, cx| {
+        v.toggle_relay_wake(cx);
+        v.confirm_relay_wake(cx)
+    })
+    .map_err(e)?;
+    if wake(cx).map_err(e)? != (true, true, false) {
+        return Err("relay wake did not turn on".into());
+    }
+    this.update(cx, |v, cx| v.toggle_wake_push(cx)).map_err(e)?;
+    if this.read_with(cx, |v, _| v.core.wake_status().settings.push).map_err(e)? {
+        return Err("push did not turn off".into());
+    }
+    this.update(cx, |v, cx| {
+        v.set_wake(bragi_core::wake::WakeSettings::default(), cx);
+        v.toggle_settings(cx)
+    })
+    .map_err(e)?;
+    println!("bragi-scenario: endpoints, links, folders and wake-ups");
     Ok(())
 }

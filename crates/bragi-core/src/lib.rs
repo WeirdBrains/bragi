@@ -44,6 +44,10 @@ pub mod sessions;
 pub mod shell;
 mod targets;
 pub mod think;
+pub mod wake;
+mod wake_core;
+pub use wake_core::WakeableDevice;
+pub mod demo_wake;
 
 pub use crate::agent::{Choice, DEFAULT_COMPANION, ToolState};
 pub use crate::appearance::{Appearance, ModePref, Palette, Preference, ThemeRow};
