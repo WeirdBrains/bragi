@@ -99,16 +99,19 @@ async fn a_deleted_message_is_gone_on_the_other_device_too() {
         let left = on_disk(dir);
         assert!(left.iter().all(|v| !v.contains("zebra")), "{who} still holds it: {left:?}");
     }
-    // The next turn on B carries on without it.
-    chat(&b, Some(&conv), "one more").await;
-    assert!(b.conversation(&conv).unwrap().messages.iter().all(|m| !m.text.contains("zebra")));
-
-    // Undo on A brings it back on B as well.
+    // Undo on A (within the undo window, so before anything slow) brings it back on B as well.
     a.undo_delete(&d.undo).unwrap();
     sync_until(&demo, &[&a, &b], "the undo on B", || {
         b.conversation(&conv).map(|c| c.messages.iter().any(|m| m.text.contains("zebra"))).unwrap_or(false)
     })
     .await;
+
+    // Deleted again, the next turn on B carries on without it.
+    let q = a.conversation(&conv).unwrap().messages.iter().find(|m| m.text.contains("zebra")).unwrap().id.clone();
+    assert_eq!(a.delete_message(&conv, &q, true).unwrap().messages, 2);
+    sync_until(&demo, &[&a, &b], "the second delete on B", || b.conversation(&conv).map(|c| c.messages.len() == 4).unwrap_or(false)).await;
+    chat(&b, Some(&conv), "one more").await;
+    assert!(b.conversation(&conv).unwrap().messages.iter().all(|m| !m.text.contains("zebra")));
 
     // Clearing everything on B clears A.
     assert_eq!(b.clear_history().unwrap(), 1);

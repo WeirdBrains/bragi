@@ -10,6 +10,8 @@ B4 wake-ups on weirdnet-push 0.1.1 (`relay-wake` feature only). [crates/bragi-co
 
 **Tests:** wake.rs unit tests (defaults, push off forgets the key, the guard refuses a repeat, a stale wake and another handle); [crates/bragi-core/tests/wake.rs](crates/bragi-core/tests/wake.rs) end to end on the stand-in relay (defaults, relay connect, the card syncs, a wake is delivered and runs a sync, push off withdraws the card and closes the connection); [app/test/wake_test.dart](app/test/wake_test.dart) (defaults, Cancel keeps relay wake off, push off turns it off); the desktop scenario steps through the confirm (screenshot `30a-relay-wake-confirm`); `wake_cli` parser tests.
 
+**CI fix:** Platforms on Windows hit the delete test's 10 s undo window (a sync pass now pulls wake cards too, so it is a little slower): [crates/bragi-core/tests/delete.rs](crates/bragi-core/tests/delete.rs) undoes right after the delete reaches B, then deletes again before B's next turn.
+
 **Not done / needs Michael:** APNs and FCM delivery (push service accounts and a push server); whether the public relay serves `/weirdnet/wake/1`; Ymir's side (sending wakes, and keeping `bragi.wake` out of cert-only grants). No real-relay check.
 
 ## 2026-11-26 05:40 EST: v0.14.0 released
