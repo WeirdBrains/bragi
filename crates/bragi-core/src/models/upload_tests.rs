@@ -300,3 +300,25 @@ async fn an_upload_is_copied_on_to_other_nodes() {
     assert_eq!(e.provenance().unwrap().origin, ORIGIN_UPLOAD);
     assert!(!f.svcs[1].list().iter().any(|e| e.id() == "pool-q4_0"));
 }
+
+#[test]
+fn an_upload_reads_as_the_ymirctl_command_for_a_computer_that_holds_the_file() {
+    let label = |p: &str| match p {
+        "peer-gpu" => "gpu".to_string(),
+        "peer-mini" => "mini".to_string(),
+        "peer-inf" => "inference box".to_string(),
+        other => other.to_string(),
+    };
+    let mut s = UploadSpec::new("/phone/tune.gguf", "peer-gpu");
+    assert_eq!(s.ymirctl_command("tune.gguf", &label), "ymirctl models upload tune.gguf --node gpu");
+    s.name = Some("base+tune".into());
+    s.adapter_for = Some("base".into());
+    s.license = Some("apache-2.0".into());
+    s.persist = false;
+    s.copy_to = vec!["peer-mini".into(), "peer-gpu".into()];
+    s.rollout = Some(RolloutAsk { inference: "peer-inf".into(), name: "support".into(), percent: 20 });
+    assert_eq!(
+        s.ymirctl_command("~/models/My Tune.gguf", &label),
+        "ymirctl models upload ~/'models/My Tune.gguf' --node gpu,mini --stage gpu --name base+tune --adapter-for base --license apache-2.0 --no-persist --rollout support --inference 'inference box' --canary 20"
+    );
+}

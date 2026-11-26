@@ -144,6 +144,35 @@ impl UploadSpec {
     pub fn new(path: impl Into<PathBuf>, peer: impl Into<String>) -> Self {
         Self { path: path.into(), peer: peer.into(), name: None, adapter_for: None, license: None, persist: true, rollout: None, copy_to: Vec::new() }
     }
+
+    /// The same upload as a `ymirctl` command, for a computer that holds the file (a phone that
+    /// can't keep a multi-gigabyte model shows this instead). `label` names nodes by their
+    /// labels (peer ids work too); `file` is the path on that computer.
+    pub fn ymirctl_command(&self, file: &str, label: &dyn Fn(&str) -> String) -> String {
+        let mut nodes = vec![label(&self.peer)];
+        nodes.extend(self.copy_to.iter().filter(|p| **p != self.peer).map(|p| label(p)));
+        let mut c = format!("ymirctl models upload {} --node {}", quote_path(file), shell_quote(&nodes.join(",")));
+        if nodes.len() > 1 {
+            // Sent to the chosen node, the others copying from it, as Bragi does.
+            c.push_str(&format!(" --stage {}", shell_quote(&nodes[0])));
+        }
+        if let Some(n) = &self.name {
+            c.push_str(&format!(" --name {}", shell_quote(n)));
+        }
+        if let Some(b) = &self.adapter_for {
+            c.push_str(&format!(" --adapter-for {}", shell_quote(b)));
+        }
+        if let Some(l) = &self.license {
+            c.push_str(&format!(" --license {}", shell_quote(l)));
+        }
+        if !self.persist {
+            c.push_str(" --no-persist");
+        }
+        if let Some(r) = &self.rollout {
+            c.push_str(&format!(" --rollout {} --inference {} --canary {}", shell_quote(&r.name), shell_quote(&label(&r.inference)), r.percent));
+        }
+        c
+    }
 }
 
 /// A rollout to add an upload to: its next version, on `inference` (a peer id), with `percent`
@@ -257,8 +286,16 @@ fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
+/// A path for the shell: a leading `~/` stays outside the quotes so the shell still expands it.
+fn quote_path(s: &str) -> String {
+    match s.strip_prefix("~/") {
+        Some(rest) if !rest.is_empty() => format!("~/{}", shell_quote(rest)),
+        _ => shell_quote(s),
+    }
+}
+
 fn shell_quote(s: &str) -> String {
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || "/._+-=:".contains(c)) { s.to_string() } else { format!("'{}'", s.replace('\'', "'\\''")) }
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || "/._+-=:,".contains(c)) { s.to_string() } else { format!("'{}'", s.replace('\'', "'\\''")) }
 }
 
 impl ModelsManager {

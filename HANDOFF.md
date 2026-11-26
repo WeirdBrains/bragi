@@ -2,6 +2,21 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-25 21:56 EST: the upload dialog in the Flutter app (branch `feature/flutter-upload`)
+
+Michael asked at 9:33 PM ET for the Flutter upload dialog on par with the desktop one (rollout and canary share, license, keep in `node.toml`), as far as a phone can sensibly upload, showing the `ymirctl` command where it can't hold the file.
+
+**What changed**
+- [crates/bragi-core/src/models/upload.rs](crates/bragi-core/src/models/upload.rs): `UploadSpec::ymirctl_command(file, label)`: the same upload as `ymirctl models upload FILE --node A[,B --stage A] [--name] [--adapter-for] [--license] [--no-persist] [--rollout NAME --inference NODE --canary PCT]`, quoted for a shell (a leading `~/` stays outside the quotes).
+- [crates/bragi-bridge/src/api/bragi.rs](crates/bragi-bridge/src/api/bragi.rs): `UploadPreviewView`, `UploadSpecView`, `UploadedResultView`, `UploadCopyView`, `PendingUploadView`; `models_inspect_upload`, `models_upload`, `upload_command`, `models_pending_uploads`, `models_forget_upload`, `models_inference_nodes`, `upload_percent_presets`; the `uploaded` event carries the result; `StoredModelView.base`; `demo_write_gguf` for tests. `flutter_rust_bridge_codegen generate` was re-run.
+- [app/lib/src/upload_ui.dart](app/lib/src/upload_ui.dart): the Upload screen (file path or Choose…, preview, node, base for an adapter, Also copy to, name, license, Keep it, rollout name, inference node, presets and a typed percentage with `parsePercent`, progress with Cancel, Resume, the result with copies, adapter note and rollout lines, and From a computer with the `ymirctl` command and Copy). The Models screen has Upload a model and Unfinished uploads (Resume, Forget).
+
+**Checks:** `cargo fmt --check`; clippy `--workspace --all-targets -D warnings`; `cargo test --workspace --locked` 313 passed, 0 failed, 4 ignored; new `an_upload_reads_as_the_ymirctl_command_for_a_computer_that_holds_the_file`. `flutter test --dart-define=BRAGI_DEMO=true` against the regenerated bridge: the models test now uploads to the demo nodes (the no-space refusal from the second node, then stored on the first, added to the rollout, the command shown) and checks `parsePercent`; the whole Flutter suite passed (10 tests). `flutter analyze` reports only the six existing `curly_braces` infos in other files.
+
+**Not tested:** on a real phone (the file picker copies a picked file into the app's cache on Android and iOS, which is why large files point to the command); against a real Ymir node.
+
+**Next:** merge after CI; release 0.12.0.
+
 ## 2026-11-25 17:25 EST: v0.11.0 released
 
 `release: v0.11.0` (`9030973`, tag `v0.11.0`), cut on main `5a6805a` after Pages and Platforms (macOS and Windows desktop) were green: the model picker tags uploaded and trained models with their origin and license from the pool catalog (Ymir's U8; needs Ymir 0.15.3), weirdnet-agent 0.5.4 and weirdnet-backends 0.4.5, and the Windows sync-test race fix. The cut's checks passed. Every platform built in the Release workflow ([run 45703741360](https://github.com/WeirdBrains/bragi/actions/runs/45703741360)); the 41 files were scanned unpacked: no host names, tailnet names, private IPs or home paths. [GitHub release](https://github.com/WeirdBrains/bragi/releases/tag/v0.11.0) with 42 files and `SHA256SUMS` (`assets` ok), plus detached `.sig` files for the six Arch packages, signed with the WeirdBrains packages key (each "Good signature", sums matching): 48 files. `bragi-bin` 0.11.0-1 on TAUR; `packaging/nix/release.json` and the site's `latestVersion` at 0.11.0 (branch `release/0.11.0-packaging`).
