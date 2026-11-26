@@ -8,6 +8,10 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 
 **Upgrade note:** a wake card reaches the user's other devices only once they run 0.15.0; Ymir's side (waking a Bragi device from a seed holder) is on Ymir's `feature/push-wake`.
 
+## 2026-11-26 07:55 EST: delete test waits for the disk (branch `fix/delete-test-disk-race`)
+
+The v0.15.0 Release run's `check` job failed once on Linux: [crates/bragi-core/tests/delete.rs](crates/bragi-core/tests/delete.rs) read B's log from disk right after B's history showed the conversation, but a background sync pass saves the log a moment after it merges. The test now waits (inside `sync_until`) for the disk as well as the history, after the first sync, the delete and the clear. Test-only; the job was re-run on the tag. Checks: clippy `-D warnings`, the delete test 3 of 3 locally.
+
 ## 2026-11-26 05:50 EST: push wake-ups, Bragi side (branch `feature/push-wake`)
 
 B4 wake-ups on weirdnet-push 0.1.1 (`relay-wake` feature only). [crates/bragi-core/src/wake.rs](crates/bragi-core/src/wake.rs): per pool, a wake key and handle (`wake.key`, private file, made on first use), the settings (`push` on by default, `relay_wake` off by default, `RELAY_WAKE_COST` the text every shell shows before turning it on) and the guard (`ReplayGuard`, 600 s window: another handle, a bad seal, a repeat or a stale wake is refused and counted). Push off removes `wake.key` (that exact path) and withdraws the card. [crates/bragi-core/src/wake_core.rs](crates/bragi-core/src/wake_core.rs): the card is a sealed record of its own type, `bragi.wake`, so a cert-only server (granted `ymir.context` only) can't read it, and it is pulled only from full devices; `relay_loop` keeps a `/weirdnet/wake/1` subscription to the home relay while relay wake is on (backoff, an idle timeout of two keepalives) and runs a sync pass on every valid wake; `Core::wake_device` seals and delivers a wake to a linked device through its relay. [crates/bragi-core/src/demo_wake.rs](crates/bragi-core/src/demo_wake.rs) is a stand-in relay on the memory transport for tests and the demo.
