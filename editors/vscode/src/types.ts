@@ -77,3 +77,26 @@ export interface TargetOption {
   /** The pool's models (endpoints carry theirs in the target). */
   models: string[];
 }
+
+/** A clip on disk sent with a chat turn; `bragi serve` samples it for the model's limits. */
+export interface VideoAttach {
+  path: string;
+  max_frames?: number;
+  max_edge?: number;
+  mode?: 'uniform' | 'scene' | 'hybrid';
+  start_ms?: number;
+  end_ms?: number;
+}
+
+/** A model's video limits (`POST /v1/video/limits`), each as `key=value` text. */
+export interface VideoLimits {
+  model: string;
+  reported: string;
+  user: string;
+  effective: string;
+  ready: boolean;
+  chip: string;
+  keys: { key: string; about: string }[];
+  /** After a set: the values that would have loosened a reported limit, so were ignored. */
+  ignored?: string[];
+}
