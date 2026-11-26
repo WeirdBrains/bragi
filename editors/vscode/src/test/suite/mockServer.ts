@@ -26,6 +26,8 @@ export class MockServer {
   /** False: /v1/mcp-servers answers 404, like a Bragi without the MCP client. */
   mcpClient = true;
   linked: boolean | undefined;
+  /** The video override set through /v1/video/limits/set. */
+  videoUser = '';
   private nextId = 1;
 
   get url(): string {
@@ -137,8 +139,27 @@ export class MockServer {
       case '/v1/code/chat': {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
         const id = body.conversation ?? 'c-test';
+        const name = body.video ? String(body.video.path).split(/[\\/]/).pop() : '';
+        const video = body.video
+          ? [
+              {
+                type: 'video',
+                name,
+                bubble: `video  ${name}  0:42  2 frames  no sound sent`,
+                summary: `Video "${name}", 00:42, 2 frames sampled.`,
+                duration_ms: 42000,
+                sound: false,
+                clip: body.video.path,
+                frames: [
+                  { at_ms: 10500, label: '[00:10.5]', mime: 'image/jpeg', data: '/9j/AA==' },
+                  { at_ms: 31500, label: '[00:31.5]', mime: 'image/jpeg', data: '/9j/AQ==' },
+                ],
+              },
+            ]
+          : [];
         const events = [
           { type: 'conversation', id, request_id: 'r-1' },
+          ...video,
           { type: 'started', node: 'node-1', model: 'gemma-4-e4b' },
           { type: 'delta', offset: 0, text: 'It adds ' },
           { type: 'delta', offset: 8, text: 'two numbers.' },
@@ -186,6 +207,27 @@ export class MockServer {
           return this.json(res, 201, s);
         }
         return this.json(res, 200, { servers: this.mcpServers });
+      case '/v1/video/limits':
+      case '/v1/video/limits/set': {
+        if (path.endsWith('/set')) {
+          if (/frames=/.test(body.limits)) {
+            return this.json(res, 400, { error: { kind: 'bad_request', message: '`frames` isn\'t a key' } });
+          }
+          this.videoUser = body.limits;
+        }
+        const ready = /image_tokens=/.test(this.videoUser);
+        const model = body.model ?? 'gemma-4-e4b';
+        return this.json(res, 200, {
+          model,
+          reported: 'context=32768',
+          user: this.videoUser,
+          effective: ['context=32768', this.videoUser].filter(Boolean).join(' '),
+          ready,
+          chip: ready ? `video ready (context 32768 · yours: ${this.videoUser})` : `video needs image cost: set limits for ${model}`,
+          keys: [{ key: 'image_tokens', about: 'tokens per frame' }],
+          ...(path.endsWith('/set') ? { ignored: /context=/.test(body.limits) ? ['context'] : [] } : {}),
+        });
+      }
       case '/v1/cancel':
         return this.json(res, 200, { cancelled: true });
       default:
