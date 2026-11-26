@@ -231,7 +231,8 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
 
     // Wake-ups (B4): push on and relay wake off by default; relay wake asks first with its
     // battery cost, Cancel keeps it off, and push off turns it off with it.
-    let wake = |cx: &mut gpui::AsyncApp| this.read_with(cx, |v, _| (v.state.wake.settings.push, v.state.wake.settings.relay_wake, v.prefs.wake_confirm));
+    let wake =
+        |cx: &mut gpui::AsyncApp| this.read_with(cx, |v, _| (v.state.wake.settings.push, v.state.wake.settings.relay_wake, v.prefs.wake_confirm));
     if wake(cx).map_err(e)? != (true, false, false) {
         return Err("wake-ups are not push on, relay wake off by default".into());
     }
