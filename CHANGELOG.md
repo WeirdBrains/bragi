@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-26
+
 ### Added
 
 - A Training view on the Models screen, in both shells (desktop: a Training toggle; Flutter: the Training button): each of your Ymir model nodes' training runs (status, base, adapter, dataset and its license, loss) and resumable jobs (state, attempt, last checkpoint), and the versioned rollouts on your inference nodes with each version's share of new conversations, which one is the canary and the run that trained it. A read only; it needs Ymir 0.16.0 (`/ymir/train-status/1`) on the model nodes, and devices without it are counted, not shown. `Core::training_overview` and `bragi_core::models::training` in the core, `training_overview` in the bridge.
