@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'api.dart';
 import 'controller.dart';
 import 'theme.dart';
+import 'upload_ui.dart';
 
 /// `4.4 GB`, like the core's `human_bytes`.
 String humanBytes(num n) {
@@ -73,6 +74,7 @@ class _ModelsScreenState extends State<ModelsScreen> {
   bool _serve = true;
   final Map<String, String?> _quant = {};
   _PullRun? _pull;
+  List<PendingUploadView> _pending = const [];
   StreamSubscription<ModelsEventView>? _searchSub;
   StreamSubscription<ModelsEventView>? _pullSub;
 
@@ -96,9 +98,16 @@ class _ModelsScreenState extends State<ModelsScreen> {
   Future<void> _reload() async {
     try {
       final nodes = await _api.modelsOverview();
+      List<PendingUploadView> pending;
+      try {
+        pending = await _api.modelsPendingUploads();
+      } catch (_) {
+        pending = const [];
+      }
       if (!mounted) return;
       setState(() {
         _nodes = nodes;
+        _pending = pending;
         _error = null;
         // A node that went away cannot stay the target.
         if (_target != 'auto' && _target != 'all' && !nodes.any((n) => n.node.peer == _target && n.status == 'ready')) _target = 'auto';
@@ -235,6 +244,48 @@ class _ModelsScreenState extends State<ModelsScreen> {
     await _reload();
   }
 
+  Future<void> _openUpload([UploadSpecView? resume]) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => UploadScreen(api: _api, nodes: _nodes ?? const [], resume: resume)),
+    );
+    await _reload();
+  }
+
+  Future<void> _forgetUpload(PendingUploadView p) async {
+    try {
+      await _api.modelsForgetUpload(p.spec.path, p.spec.peer);
+    } catch (e) {
+      if (mounted) setState(() => _searchError = '$e');
+    }
+    await _reload();
+  }
+
+  Widget _uploadRow() => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: OutlinedButton.icon(
+        key: const Key('models-upload'),
+        icon: const Icon(Icons.upload_file, size: 18),
+        label: const Text('Upload a model'),
+        onPressed: _ready.isEmpty ? null : _openUpload,
+      ),
+    ),
+  );
+
+  Widget _pendingTile(PendingUploadView p) => ListTile(
+    key: Key('pending-${p.spec.peer}-${p.spec.path}'),
+    dense: true,
+    title: Text(p.label, style: const TextStyle(fontSize: 13)),
+    subtitle: Text(humanBytes(p.size.toInt()), style: TextStyle(fontSize: 12, color: BragiColors.textSecondary)),
+    trailing: Wrap(
+      children: [
+        TextButton(key: const Key('pending-resume'), onPressed: () => _openUpload(p.spec), child: const Text('Resume')),
+        TextButton(key: const Key('pending-forget'), onPressed: () => _forgetUpload(p), child: const Text('Forget')),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final nodes = _nodes;
@@ -256,6 +307,9 @@ class _ModelsScreenState extends State<ModelsScreen> {
               title: Text('No other devices on your roster yet. Link a Ymir node first.', style: TextStyle(color: BragiColors.textSecondary)),
             ),
           for (final n in nodes ?? const <NodeModelsView>[]) _nodeTile(n),
+          if (nodes != null && nodes.isNotEmpty) _uploadRow(),
+          if (_pending.isNotEmpty) _heading('UNFINISHED UPLOADS'),
+          for (final p in _pending) _pendingTile(p),
           _heading('FIND A MODEL'),
           _searchBar(),
           if (_searchError != null)

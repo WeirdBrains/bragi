@@ -597,6 +597,11 @@ pub fn demo_node_address() -> Option<String> {
     slot().lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|r| r._demo.as_ref().map(|d| d.address()))
 }
 
+/// Writes a small demo GGUF model of `size` bytes at `path`, for tests and screenshots of uploads.
+pub fn demo_write_gguf(path: String, size: u32) -> Result<(), String> {
+    std::fs::write(path, bragi_core::demo_models::gguf(size as usize)).map_err(|e| e.to_string())
+}
+
 /// The demo node's answer to `prompt`, which a test compares a continued answer with.
 pub fn demo_answer(model: String, prompt: String) -> String {
     bragi_core::demo::answer_for(&model, &prompt)
@@ -1211,6 +1216,8 @@ pub struct StoredModelView {
     /// The id the node serves it under, when it does.
     pub served_as: Option<String>,
     pub state: Option<String>,
+    /// For an adapter: its base model (the upload dialog offers served models without one as bases).
+    pub base: Option<String>,
 }
 
 /// One device of the user's. `status` is `ready`, `not_model_node`, `needs_owner_device` (the node
@@ -1271,6 +1278,75 @@ pub struct ModelsEventView {
     pub done: u64,
     pub total: u64,
     pub served: bool,
+    /// `uploaded`: what happened on the node, when it was stored.
+    pub upload: Option<UploadedResultView>,
+}
+
+/// What a file on this device is, read here before anything is sent (the upload dialog).
+#[derive(Debug, Clone)]
+pub struct UploadPreviewView {
+    pub path: String,
+    /// `model`, `adapter` or `projector`.
+    pub kind: String,
+    pub format: String,
+    pub architecture: Option<String>,
+    pub base_model: Option<String>,
+    pub size: u64,
+    pub revision: String,
+    pub suggested_id: String,
+    /// One line: `model, GGUF, llama, 4.4 GB`.
+    pub summary: String,
+}
+
+/// An upload: the file here, the model node it goes to (peer id) and how it is recorded. A
+/// rollout is asked for when `rollout_name` is set: its next version on `rollout_inference` with
+/// `rollout_percent` (0 to 100) of new conversations. `copy_to` nodes copy it node to node.
+#[derive(Debug, Clone)]
+pub struct UploadSpecView {
+    pub path: String,
+    pub peer: String,
+    pub name: Option<String>,
+    pub adapter_for: Option<String>,
+    pub license: Option<String>,
+    pub persist: bool,
+    pub rollout_name: Option<String>,
+    pub rollout_inference: Option<String>,
+    pub rollout_percent: u32,
+    pub copy_to: Vec<String>,
+}
+
+/// A finished upload on its node.
+#[derive(Debug, Clone)]
+pub struct UploadedResultView {
+    pub id: String,
+    pub revision: String,
+    pub resumed: u64,
+    pub already_there: bool,
+    pub saved: Option<String>,
+    pub register_error: Option<String>,
+    pub adapter_note: Option<String>,
+    /// `NAME@N` and what the inference node said; `rollout_error` when adding failed.
+    pub rollout: Option<String>,
+    pub rollout_error: Option<String>,
+    pub rollout_commands: Vec<String>,
+    /// Each copy: `label: what happened` (`ok` false when it failed).
+    pub copies: Vec<UploadCopyView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UploadCopyView {
+    pub node: String,
+    pub ok: bool,
+    pub text: String,
+}
+
+/// An upload that was cancelled, cut off or under way when Bragi quit; sending it again resumes.
+#[derive(Debug, Clone)]
+pub struct PendingUploadView {
+    pub spec: UploadSpecView,
+    pub label: String,
+    pub size: u64,
+    pub started_ms: u64,
 }
 
 fn node_view(n: &bragi_core::ModelNode) -> ModelNodeView {
@@ -1341,9 +1417,19 @@ fn models_event_view(e: bragi_core::ModelsEvent) -> ModelsEventView {
         E::Done => ModelsEventView { kind: "done".into(), ..base },
         E::Cancelled => ModelsEventView { kind: "cancelled".into(), ..base },
         E::Failed { message } => ModelsEventView { kind: "failed".into(), text: Some(message), ..base },
-        // Uploads are desktop (GPUI) first; the Flutter app gets its dialog later (Ymir's U4).
         E::Uploaded { node, result } => match result {
-            Ok(u) => ModelsEventView { kind: "uploaded".into(), node: Some(node_view(&node)), model: Some(u.id), size: u.size, served: true, ..base },
+            Ok(u) => {
+                let (model, size) = (u.id.clone(), u.size);
+                ModelsEventView {
+                    kind: "uploaded".into(),
+                    node: Some(node_view(&node)),
+                    model: Some(model),
+                    size,
+                    served: true,
+                    upload: Some(uploaded_view(u)),
+                    ..base
+                }
+            }
             Err(m) => ModelsEventView { kind: "uploaded".into(), node: Some(node_view(&node)), text: Some(m), ..base },
         },
     }
@@ -1377,7 +1463,7 @@ pub async fn models_overview() -> Result<Vec<NodeModelsView>, String> {
                 models: n
                     .models
                     .into_iter()
-                    .map(|m| StoredModelView { id: m.id, size: m.size, complete: m.complete, served_as: m.served_as, state: m.state })
+                    .map(|m| StoredModelView { id: m.id, size: m.size, complete: m.complete, served_as: m.served_as, state: m.state, base: m.base })
                     .collect(),
             }
         })
@@ -1416,6 +1502,7 @@ pub fn follow_models(run_id: String, sink: StreamSink<ModelsEventView>) -> Resul
                 e,
                 bragi_core::ModelsEvent::SearchDone { .. }
                     | bragi_core::ModelsEvent::Done
+                    | bragi_core::ModelsEvent::Uploaded { .. }
                     | bragi_core::ModelsEvent::Cancelled
                     | bragi_core::ModelsEvent::Failed { .. }
             );
@@ -1424,6 +1511,132 @@ pub fn follow_models(run_id: String, sink: StreamSink<ModelsEventView>) -> Resul
             }
         }
     });
+    Ok(())
+}
+
+fn uploaded_view(u: bragi_core::UploadedView) -> UploadedResultView {
+    let (rollout, rollout_error) = match u.rollout {
+        Some(Ok(r)) => (Some(r), None),
+        Some(Err(e)) => (None, Some(e)),
+        None => (None, None),
+    };
+    UploadedResultView {
+        id: u.id,
+        revision: u.revision,
+        resumed: u.resumed,
+        already_there: u.already_there,
+        saved: u.saved,
+        register_error: u.register_error,
+        adapter_note: u.adapter_note,
+        rollout,
+        rollout_error,
+        rollout_commands: u.rollout_commands,
+        copies: u
+            .copies
+            .into_iter()
+            .map(|(node, r)| match r {
+                Ok(text) => UploadCopyView { node, ok: true, text },
+                Err(text) => UploadCopyView { node, ok: false, text },
+            })
+            .collect(),
+    }
+}
+
+fn spec_of(v: UploadSpecView) -> Result<bragi_core::UploadSpec, String> {
+    let mut s = bragi_core::UploadSpec::new(v.path, v.peer);
+    let some = |o: Option<String>| o.map(|x| x.trim().to_string()).filter(|x| !x.is_empty());
+    s.name = some(v.name);
+    if let Some(n) = &s.name {
+        bragi_core::models::upload::check_id(n)?;
+    }
+    s.adapter_for = some(v.adapter_for);
+    s.license = bragi_core::models::upload::check_license(v.license.as_deref())?;
+    s.persist = v.persist;
+    s.copy_to = v.copy_to.into_iter().filter(|p| *p != s.peer).collect();
+    if let Some(name) = some(v.rollout_name) {
+        let inference = some(v.rollout_inference).ok_or_else(|| "pick the inference node of the rollout".to_string())?;
+        if v.rollout_percent > bragi_core::models::ymir_rollouts::MAX_PERCENT {
+            return Err("the share is a percentage from 0 to 100, such as 20".into());
+        }
+        s.rollout = Some(bragi_core::RolloutAsk { inference, name, percent: v.rollout_percent });
+    }
+    Ok(s)
+}
+
+fn spec_view(s: bragi_core::UploadSpec) -> UploadSpecView {
+    let (rollout_name, rollout_inference, rollout_percent) = match s.rollout {
+        Some(r) => (Some(r.name), Some(r.inference), r.percent),
+        None => (None, None, 0),
+    };
+    UploadSpecView {
+        path: s.path.to_string_lossy().into_owned(),
+        peer: s.peer,
+        name: s.name,
+        adapter_for: s.adapter_for,
+        license: s.license,
+        persist: s.persist,
+        rollout_name,
+        rollout_inference,
+        rollout_percent,
+        copy_to: s.copy_to,
+    }
+}
+
+/// The inference nodes (peer ids) the pool catalog comes from: where an upload's rollout can go.
+#[frb(sync)]
+pub fn models_inference_nodes() -> Result<Vec<String>, String> {
+    Ok(core()?.state().catalog.nodes.iter().map(|n| n.id.clone()).collect())
+}
+
+/// The share presets the upload dialog offers for a rollout, in percent.
+#[frb(sync)]
+pub fn upload_percent_presets() -> Vec<u32> {
+    bragi_core::models::ymir_rollouts::PRESETS.to_vec()
+}
+
+/// Reads and hashes a file (or model folder) on this device: what it is, before anything is sent.
+pub async fn models_inspect_upload(path: String) -> Result<UploadPreviewView, String> {
+    let p = core()?.models_inspect_upload(std::path::PathBuf::from(path)).await?;
+    Ok(UploadPreviewView {
+        path: p.path.to_string_lossy().into_owned(),
+        summary: p.summary(),
+        kind: p.kind,
+        format: p.format,
+        architecture: p.architecture,
+        base_model: p.base_model,
+        size: p.size,
+        revision: p.revision,
+        suggested_id: p.suggested_id,
+    })
+}
+
+/// Starts an upload; stream it with `follow_models` (`progress`, then `uploaded`, or `failed`;
+/// `cancel` stops it and the node keeps the parts). Returns the run's id.
+pub fn models_upload(spec: UploadSpecView) -> Result<String, String> {
+    let spec = spec_of(spec)?;
+    core()?.models_upload(spec).map(keep_run).map_err(err)
+}
+
+/// The same upload as a `ymirctl` command for a computer that holds the file (`file` is its path
+/// there), for when this device can't hold it. Nodes are named by their labels.
+pub fn upload_command(spec: UploadSpecView, file: String, labels: Vec<ModelNodeView>) -> Result<String, String> {
+    let spec = spec_of(spec)?;
+    let label = |p: &str| labels.iter().find(|n| n.peer == p).map_or_else(|| p.to_string(), |n| n.label.clone());
+    Ok(spec.ymirctl_command(&file, &label))
+}
+
+/// Uploads that were cancelled, cut off or under way when Bragi quit; sending one again resumes.
+pub fn models_pending_uploads() -> Result<Vec<PendingUploadView>, String> {
+    Ok(core()?
+        .models_pending_uploads()
+        .into_iter()
+        .map(|p| PendingUploadView { spec: spec_view(p.spec), label: p.label, size: p.size, started_ms: p.started_ms })
+        .collect())
+}
+
+/// Drops a pending upload from the list (the node deletes its parts after 7 days).
+pub fn models_forget_upload(path: String, peer: String) -> Result<(), String> {
+    core()?.models_forget_upload(std::path::Path::new(&path), &peer);
     Ok(())
 }
 
