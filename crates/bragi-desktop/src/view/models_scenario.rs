@@ -143,6 +143,19 @@ pub(super) async fn run(this: &WeakEntity<BragiView>, cx: &mut gpui::AsyncApp, p
     .await?;
     shot(cx, "46-models-removed").await;
     super::upload_scenario::run(this, cx, pause).await?;
+    // The Training toggle: the demo nodes' finished run, and the rollout the upload made.
+    scroll_to(cx, 0.)?;
+    this.update(cx, |v, cx| v.toggle_training(true, cx)).map_err(e)?;
+    wait_for(this, cx, "the training view", |v| v.training.overview.as_ref().is_some_and(|o| o.ready().count() == 2 && !o.rollouts.is_empty()))
+        .await?;
+    let support = this
+        .read_with(cx, |v, _| v.training.overview.as_ref().is_some_and(|o| o.rollouts.iter().any(|r| r.name == "support" && !r.versions.is_empty())))
+        .map_err(e)?;
+    if !support {
+        return Err("the training view does not show the upload's rollout".into());
+    }
+    shot(cx, "60-training").await;
+    this.update(cx, |v, cx| v.toggle_training(false, cx)).map_err(e)?;
     this.update(cx, |v, cx| v.toggle_models(cx)).map_err(e)?;
     println!("bragi-scenario: models");
     Ok(())
