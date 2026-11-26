@@ -20,3 +20,4 @@ pub mod settings;
 pub mod theme;
 pub mod tree;
 pub mod ui;
+pub mod wake_cli;

@@ -34,6 +34,7 @@ mod themes;
 mod training;
 mod upload;
 mod upload_scenario;
+mod wake;
 
 actions!(bragi, [Quit, Stop, ChatPageUp, ChatPageDown, ChatTop, ChatBottom]);
 

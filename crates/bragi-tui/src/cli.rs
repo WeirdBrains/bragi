@@ -47,6 +47,8 @@ usage:
       Prints the proposed change as a unified diff; the explanation goes to stderr.
   bragi-tui pool list|add|switch|rename|remove     saved Ymir pools: switch which one this device
                                                    talks to (bragi-tui pool --help)
+  bragi-tui wake [status|on|off|relay on|off]      wake-ups: linked devices can wake this one to sync;
+                                                   relay wake is opt-in (bragi-tui wake --help)
   bragi-tui mcp-servers list|add|remove|enable|disable|test|revoke
                                                    outside MCP servers a chat can use (bragi-tui mcp-servers
                                                    add --help). Secrets come from environment variables
@@ -108,6 +110,8 @@ pub enum Cmd {
     Linker(Vec<String>),
     /// `pool …`: saved Ymir pools, run by [`crate::pool_cli`].
     Pool(Vec<String>),
+    /// `wake …`: wake-up settings, run by [`crate::wake_cli`].
+    Wake(Vec<String>),
     Version,
     Help,
 }
@@ -141,6 +145,24 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
         }
         crate::pool_cli::parse(rest.clone())?;
         out.command = Cmd::Pool(rest);
+        return Ok(out);
+    }
+    // `bragi-tui [--home DIR] wake …`.
+    if let Some(at) = args.iter().position(|a| a == "wake")
+        && args[..at].iter().all(|a| !a.starts_with("--") || a == "--home" || a == "--demo")
+        && args[..at].iter().filter(|a| !a.starts_with("--")).count() <= args[..at].iter().filter(|a| *a == "--home").count()
+    {
+        let mut it = args[..at].iter();
+        while let Some(a) = it.next() {
+            match a.as_str() {
+                "--home" => out.launch.home = it.next().map(|h| h.into()),
+                "--demo" => out.launch.demo = true,
+                _ => {}
+            }
+        }
+        let rest = args[at + 1..].to_vec();
+        crate::wake_cli::parse(rest.clone())?;
+        out.command = Cmd::Wake(rest);
         return Ok(out);
     }
     // `bragi-tui [--home DIR] mcp-servers …`: everything after the word is the command's own.
@@ -287,6 +309,7 @@ pub fn run(args: Args) -> i32 {
         }
         Cmd::Linker(rest) => crate::linker_cli::parse(rest).and_then(|sub| crate::linker_cli::run(&home_of(&args), sub)),
         Cmd::Pool(rest) => crate::pool_cli::parse(rest).and_then(|sub| crate::pool_cli::run(&args.launch, sub)),
+        Cmd::Wake(rest) => crate::wake_cli::parse(rest).and_then(|sub| crate::wake_cli::run(&args.launch, sub)),
         Cmd::Link { arg, yes, server } => Session::open(&args.launch).and_then(|s| link(&s, arg, yes, server)),
         Cmd::Status => Session::open(&args.launch).and_then(|s| status(&s)),
         Cmd::Code { task: CodeTaskArg::Suggest, context, .. } if context.is_empty() => {
@@ -620,6 +643,8 @@ mod tests {
         assert_eq!(p("link").unwrap().command, Cmd::Link { arg: None, yes: false, server: None });
         assert_eq!(p("pool list").unwrap().command, Cmd::Pool(vec!["list".into()]));
         assert_eq!(p("pools").unwrap().command, Cmd::Pool(vec!["list".into()]));
+        assert_eq!(p("wake relay on").unwrap().command, Cmd::Wake(vec!["relay".into(), "on".into()]));
+        assert_eq!(p("--home /tmp/x wake").unwrap().command, Cmd::Wake(vec![]));
         assert_eq!(p("status").unwrap().open, None);
         assert_eq!(p("src").unwrap().command, Cmd::Tui);
         assert!(p("a b").is_err());
