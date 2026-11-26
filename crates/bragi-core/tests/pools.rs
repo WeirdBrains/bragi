@@ -70,6 +70,7 @@ async fn a_fresh_device_has_no_pools_until_it_links() {
         label: "Bragi test".into(),
         transport: bragi_core::Transport::Memory,
         peers: Vec::new(),
+        wake_relay: None,
     })
     .unwrap();
     assert!(core.pools().is_empty());
@@ -193,6 +194,7 @@ fn the_sidebar_choice_is_on_the_preference() {
         label: "t".into(),
         transport: bragi_core::Transport::Memory,
         peers: Vec::new(),
+        wake_relay: None,
     })
     .unwrap();
     assert!(!core.appearance().preference().sidebar_collapsed);
@@ -202,6 +204,7 @@ fn the_sidebar_choice_is_on_the_preference() {
         label: "t".into(),
         transport: bragi_core::Transport::Memory,
         peers: Vec::new(),
+        wake_relay: None,
     })
     .unwrap()
     .appearance()

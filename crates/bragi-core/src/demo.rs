@@ -690,7 +690,7 @@ impl DemoNode {
     pub fn app_config(&self, dir: &Path, label: &str) -> Config {
         let mut peers = vec![self.address()];
         peers.extend(self.siblings().iter().map(|s| s.address()));
-        Config { dir: dir.to_path_buf(), label: label.into(), transport: Transport::Memory, peers }
+        Config { dir: dir.to_path_buf(), label: label.into(), transport: Transport::Memory, peers, wake_relay: None }
     }
 
     /// Links the device showing `link`, as the user's existing device would once both screens

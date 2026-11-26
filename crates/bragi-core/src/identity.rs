@@ -241,6 +241,7 @@ impl Identity {
             voter: None,
         };
         st.configure(CONTEXT_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("context records: {e}"))?;
+        st.configure(crate::wake::WAKE_TYPE, RecordOptions { sealed: true, ..Default::default() }).map_err(|e| anyhow!("wake records: {e}"))?;
         load_log(dir, &mut st);
         st.publish_device_key(now_ms()).map_err(|e| anyhow!("device key: {e}"))?;
         st.refresh_keys();
@@ -530,6 +531,13 @@ impl Identity {
                 if let Some(e) = &out.error {
                     context_ok = false;
                     tracing::debug!(peer = %cert.peer_id, applied = out.applied, "context pass: {e}");
+                }
+                // Wake cards only between the user's full devices (no server is granted them).
+                if !self.is_service(&cert.peer_id) {
+                    let out = weirdnet_sync::pull_from_shared(&self.state, node, peer, &a, crate::wake::WAKE_TYPE);
+                    if let Some(e) = &out.error {
+                        tracing::debug!(peer = %cert.peer_id, applied = out.applied, "wake pass: {e}");
+                    }
                 }
             } else {
                 context_ok = false;

@@ -25,7 +25,7 @@ async fn until(core: &Core, what: &str, limit: Duration, f: impl Fn(&AppState) -
 
 /// An app that knows no node address at all: only the link can tell it where the nodes are.
 fn bare(dir: &std::path::Path) -> Config {
-    Config { dir: dir.to_path_buf(), label: "Bragi test".into(), transport: Transport::Memory, peers: Vec::new() }
+    Config { dir: dir.to_path_buf(), label: "Bragi test".into(), transport: Transport::Memory, peers: Vec::new(), wake_relay: None }
 }
 
 async fn link(core: &Core, accept: impl std::future::Future<Output = ()>) {
