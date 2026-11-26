@@ -63,6 +63,10 @@ enum Job {
     Shell(Result<bragi_core::shell::ShellOutput, String>),
     /// A pool switch or remove finished.
     Pool(Result<String, String>),
+    /// A clip was sampled (LF-43).
+    Video(Result<Attachment, String>),
+    /// A model's video limits were read (the chip, `/video-limits`); with what to say.
+    VideoLimits(Result<bragi_core::video::LimitsView, String>, Option<String>),
 }
 
 /// An answer streaming in.
@@ -104,6 +108,10 @@ pub struct App {
     pub stream: Option<Stream>,
     /// Where the next message goes: `None` uses the chat's own target (a new chat the default).
     pub target: Option<Target>,
+    /// The video limits chip for the model the next message goes to (`/video-limits`, LF-43).
+    pub video_limits: Option<bragi_core::video::LimitsView>,
+    /// A clip is being sampled.
+    pub video_busy: bool,
     pub targets: Vec<TargetOption>,
     pub model: Option<String>,
     pub model_sel: usize,
@@ -220,6 +228,8 @@ impl App {
             current: None,
             stream: None,
             target: None,
+            video_limits: None,
+            video_busy: false,
             targets: Vec::new(),
             model: None,
             model_sel: 0,
@@ -403,30 +413,107 @@ impl App {
         }
     }
 
+    /// Where a clip for the next message goes and the model it is sized for: the endpoint's model
+    /// when the chat goes to an endpoint, else the picked model or the pool's default.
+    fn video_target(&self) -> Result<(Option<Target>, String), String> {
+        let target = self.effective_target();
+        if let Some(Target::Endpoint { model, .. }) = &target {
+            return if model.is_empty() {
+                Err("Pick the endpoint's model first: a video is sampled for the model it goes to.".into())
+            } else {
+                Ok((target.clone(), model.clone()))
+            };
+        }
+        let model = self.model.clone().or_else(|| self.state.catalog.default_model().map(str::to_string));
+        model.map(|m| (target, m)).ok_or_else(|| "Pick a model first: a video is sampled for the model it goes to.".into())
+    }
+
     /// Samples a video for the model the next message goes to (LF-43). The frames are sized from
-    /// the limits the pool reports (or this device's override for that model); when they aren't
-    /// known the refusal says what to set. Runs in place: sampling a short clip takes seconds.
+    /// the limits the pool or the endpoint (`/v1/models`) reports, with this device's override for
+    /// that model; when they aren't known the refusal says what to set (`/video-limits`). Runs off
+    /// the UI thread; [`Job::Video`] brings the attachment back.
     fn attach_video(&mut self, path: &std::path::Path) {
-        if self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) {
+        if self.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) || self.video_busy {
             return self.fail("One video per message: /detach first.");
         }
-        let Some(model) = self.model.clone().or_else(|| self.state.catalog.default_model().map(str::to_string)) else {
-            return self.fail("Pick a model first: a video is sampled for the model it goes to.");
+        let (target, model) = match self.video_target() {
+            Ok(t) => t,
+            Err(e) => return self.fail(e),
         };
         let history = self.current.as_ref().map(|c| c.messages.iter().map(|m| m.text.as_str()).collect::<Vec<_>>()).unwrap_or_default();
         let reserved = bragi_core::video::history_tokens(history);
-        match self.core.attach_video(path, &model, &bragi_core::video::VideoPrefs::default(), reserved) {
-            Ok(a) => {
-                let summary = match &a.media {
-                    Some(bragi_core::Media::Video(v)) => v.summary.clone(),
-                    _ => a.name.clone(),
-                };
-                self.say(format!("Attached to the next message: {summary}"));
-                self.attachments.push(a);
-                self.input.take();
+        let (core, tx, path) = (self.core.clone(), self.jobs.0.clone(), path.to_path_buf());
+        self.video_busy = true;
+        self.input.take();
+        self.say(format!("Reading frames from {}…", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()));
+        self.core.handle().spawn(async move {
+            let r = async {
+                let plan = core.video_plan(target.as_ref(), &model).await?;
+                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                let prefs = bragi_core::video::VideoPrefs::default();
+                tokio::task::spawn_blocking(move || {
+                    let source = core.video_source(&path)?;
+                    core.attach_video_source(&name, &source, &model, &plan, &prefs, reserved)
+                })
+                .await
+                .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))?
             }
-            Err(e) => self.fail(e.message),
-        }
+            .await;
+            let _ = tx.send(Job::Video(r.map_err(|e| e.message)));
+        });
+    }
+
+    /// Reads the chip for the composer quietly (after a clip is attached).
+    fn refresh_video_chip(&mut self) {
+        let Ok((target, model)) = self.video_target() else { return };
+        let (core, tx) = (self.core.clone(), self.jobs.0.clone());
+        self.core.handle().spawn(async move {
+            let r = core.video_limits_view(target.as_ref(), &model).await.map_err(|e| e.message);
+            let _ = tx.send(Job::VideoLimits(r, Some(String::new())));
+        });
+    }
+
+    /// `/video-limits` (show), `/video-limits key=value …` (set this device's limits for the
+    /// model), `/video-limits clear`. The override fills what isn't reported and only tightens
+    /// what is.
+    fn video_limits_command(&mut self, rest: &str) {
+        let (target, model) = match self.video_target() {
+            Ok(t) => t,
+            Err(e) => return self.fail(e),
+        };
+        let change = match rest {
+            "" => None,
+            "clear" | "reset" => Some(bragi_core::video::ModelLimits::default()),
+            text => match bragi_core::video::ModelLimits::parse(text) {
+                Ok(l) => Some(l),
+                Err(e) => return self.fail(e.message),
+            },
+        };
+        let (core, tx) = (self.core.clone(), self.jobs.0.clone());
+        self.core.handle().spawn(async move {
+            let r = async {
+                let mut said = None;
+                if let Some(user) = change {
+                    let before = core.video_limits_view(target.as_ref(), &model).await?;
+                    let ignored = before.ignored(&user);
+                    core.set_video_override(&model, user)?;
+                    said = Some(if user.is_unknown() {
+                        format!("Cleared your video limits for {model}.")
+                    } else if ignored.is_empty() {
+                        format!("Saved your video limits for {model}.")
+                    } else {
+                        format!("Saved. {} can only tighten what {model} reports, so it is ignored.", ignored.join(", "))
+                    });
+                }
+                Ok::<_, bragi_core::CoreError>((core.video_limits_view(target.as_ref(), &model).await?, said))
+            }
+            .await;
+            let (view, said) = match r {
+                Ok((v, s)) => (Ok(v), s),
+                Err(e) => (Err(e.message), None),
+            };
+            let _ = tx.send(Job::VideoLimits(view, said));
+        });
     }
 
     /// The model chats go to: the picked one, else the catalog's default.
@@ -609,6 +696,42 @@ impl App {
                 self.say(line.clone());
                 self.settings.tests.insert(id, line);
             }
+            Job::Video(r) => {
+                self.video_busy = false;
+                match r {
+                    Ok(a) => {
+                        let summary = match &a.media {
+                            Some(bragi_core::Media::Video(v)) => v.summary.clone(),
+                            _ => a.name.clone(),
+                        };
+                        self.say(format!("Attached to the next message: {summary}"));
+                        self.attachments.push(a);
+                        self.refresh_video_chip();
+                    }
+                    Err(e) => {
+                        self.fail(e);
+                        self.video_limits_command("");
+                    }
+                }
+            }
+            Job::VideoLimits(r, said) => match r {
+                Ok(view) if said.as_deref() == Some("") => self.video_limits = Some(view),
+                Ok(view) => {
+                    let line = match said {
+                        Some(s) => format!("{s} {}", view.chip()),
+                        None => format!(
+                            "{} · reported: {} · yours: {} · /video-limits key=value… (keys: {}) or /video-limits clear",
+                            view.chip(),
+                            view.reported.describe(),
+                            view.user.describe(),
+                            bragi_core::video::OVERRIDE_KEYS.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(" ")
+                        ),
+                    };
+                    self.video_limits = Some(view);
+                    self.say(line);
+                }
+                Err(e) => self.fail(e),
+            },
             Job::Models(id, r) => match r {
                 Ok(models) if self.models_for.as_deref() == Some(id.as_str()) => self.endpoint_models = models,
                 Ok(_) => {}
@@ -1716,6 +1839,10 @@ impl App {
                 Err(e) => self.fail(e.message),
             }
             return;
+        }
+        if text == "/video-limits" || text.starts_with("/video-limits ") {
+            self.input.take();
+            return self.video_limits_command(text.trim_start_matches("/video-limits").trim());
         }
         if text == "/detach" {
             self.attachments.clear();

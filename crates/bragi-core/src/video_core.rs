@@ -10,7 +10,7 @@ use crate::attach::Attachment;
 use crate::core::Core;
 use crate::error::Result;
 use crate::sessions::Target;
-use crate::video::{Ffmpeg, FfmpegCli, FrameSource, LimitOverrides, ModelLimits, VideoPrefs};
+use crate::video::{Ffmpeg, FfmpegCli, FrameSource, LimitOverrides, LimitsView, ModelLimits, VideoPrefs};
 
 /// This device's per-model video limits, beside the other device settings.
 const OVERRIDES_FILE: &str = "video-limits.json";
@@ -32,9 +32,23 @@ impl Core {
     /// `weirdnet.context`, `weirdnet.limits`, `weirdnet.max_request_bytes`: a Ymir bridge says;
     /// other servers say nothing), with this device's override for that model.
     pub async fn endpoint_video_limits(&self, endpoint: &str, model: &str) -> Result<ModelLimits> {
+        Ok(self.reported_endpoint_video_limits(endpoint, model).await?.with_override(&self.video_override(model)?))
+    }
+
+    /// What `model` on `endpoint` reports, without the override.
+    pub async fn reported_endpoint_video_limits(&self, endpoint: &str, model: &str) -> Result<ModelLimits> {
         let target = self.inner.endpoints.target(endpoint)?;
-        let reported = crate::openai::model_limits(&target, model).await?;
-        Ok(reported.with_override(&self.video_override(model)?))
+        crate::openai::model_limits(&target, model).await
+    }
+
+    /// `model`'s limits for the shells' chip and settings: reported by `target` (an endpoint's
+    /// `/v1/models`, else the pool's catalog), the user's override, and the two together.
+    pub async fn video_limits_view(&self, target: Option<&Target>, model: &str) -> Result<LimitsView> {
+        let reported = match target {
+            Some(Target::Endpoint { id, .. }) => self.reported_endpoint_video_limits(id, model).await?,
+            _ => self.reported_video_limits(model),
+        };
+        Ok(LimitsView::new(model, reported, self.video_override(model)?))
     }
 
     /// The user's own limits for `model` (the "set limits for this model" override); empty when
@@ -86,7 +100,7 @@ impl Core {
     ) -> Result<Attachment> {
         let source = self.video_source(path)?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        self.attach_video_source(&name, &source, model, &VideoPlan { limits: limits.clone(), audio_ok }, prefs, reserved)
+        self.attach_video_source(&name, &source, model, &VideoPlan { limits: *limits, audio_ok }, prefs, reserved)
     }
 
     /// [`attach_video_with`](Self::attach_video_with) from any [`FrameSource`] (a platform
@@ -127,7 +141,7 @@ impl Core {
 
 /// The limits a clip is planned with and whether its sound may go as audio
 /// ([`Core::video_plan`]).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VideoPlan {
     pub limits: ModelLimits,
     pub audio_ok: bool,

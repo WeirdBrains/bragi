@@ -67,7 +67,8 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
     ("/folder NAME", "make a folder (n in the sidebar: inside the selected one)"),
     ("/move FOLDER · /move -", "put the open chat in a folder · take it out"),
     ("/rename NAME · /nest F", "rename · move the selected folder"),
-    ("/attach PATH · /detach", "attach a text, image or audio file · drop them"),
+    ("/attach PATH · /detach", "attach a text, image, audio or video file · drop them"),
+    ("/video-limits [k=v… | clear]", "the model's video limits · set yours (fill gaps, only tighten) · clear them"),
     ("/train · /train off", "mark the open chat for training on your Ymir nodes · withdraw it"),
 ];
 
@@ -126,8 +127,18 @@ pub fn draw(f: &mut Frame, app: &mut App) {
                 format!("{} Bragi is answering · Esc stops it", t.spinner(app.stream.as_ref().map_or(0, |s| s.started.elapsed().as_millis()))),
                 "Type the next message…",
             ),
-            _ if !app.attachments.is_empty() => (
-                format!("Message · {} attachment{}", app.attachments.len(), crate::code::plural(app.attachments.len())),
+            _ if !app.attachments.is_empty() || app.video_busy => (
+                format!(
+                    "Message · {} attachment{}{}",
+                    app.attachments.len(),
+                    crate::code::plural(app.attachments.len()),
+                    match (&app.video_limits, app.video_busy) {
+                        (_, true) => " · reading frames…".to_string(),
+                        (Some(v), _) if app.attachments.iter().any(|a| matches!(a.media, Some(bragi_core::Media::Video(_)))) =>
+                            format!(" · {}", v.chip()),
+                        _ => String::new(),
+                    }
+                ),
                 "Say what to do with the files…",
             ),
             _ => ("Chat mode · Tab for code".to_string(), "Ask or plan anything…  /attach PATH adds a file"),
