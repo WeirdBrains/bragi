@@ -2,6 +2,14 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 01:10 EST: v0.13.0 released
+
+**Release:** [v0.13.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.13.0) (`release: v0.13.0`, `2b7e317`, cut on main `f6a002c`; the cut's fmt, clippy and workspace tests passed): the Training view on the Models screen in both shells (needs Ymir 0.16.0 on the model nodes). Release run 45760743281 is green after re-running two failed jobs once: `check` (`tests/pools.rs:177`, `rename_remove_and_cancel_a_new_pool`, "Directory not empty" when removing the pool folder) and `macos` (`hdiutil create` ran out of space on the runner); neither touches the training view, and both passed on the re-run. 42 files and `assets` ok; the leak scan of dist found nothing (41 files, 0 hits). The six Arch packages are gpg-signed ("Good signature" each, sums matching) and their signatures uploaded: 48 files. This branch (`release/0.13.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` to 0.13.0 (`taur-check` ready, check_links ok).
+
+**Not fixed:** the `pools.rs` removal race (a background writer in the pool folder while it is removed); seen once on Linux CI.
+
+**Next:** TAUR bragi-bin 0.13.0-1; the Training view against a real Ymir 0.16.0 node.
+
 ## 2026-11-25 22:55 EST: v0.12.0 released
 
 **Release:** [v0.12.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.12.0) (Release run 45749409093, green): the model upload dialog in the Flutter app. 42 files; the assets check passes; the leak scan of dist found nothing (41 files, 0 hits). The six Arch packages are gpg-signed and their signatures uploaded. TAUR has bragi-bin 0.12.0-1. This branch (`release/0.12.0-packaging`) moves the bragi-bin PKGBUILD and .SRCINFO, the Nix release.json and the site's `latestVersion` to 0.12.0 (`taur-check` ready, check_links ok).
