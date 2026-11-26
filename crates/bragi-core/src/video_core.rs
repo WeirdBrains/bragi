@@ -9,7 +9,8 @@ use weirdnet_agent::Modalities;
 use crate::attach::Attachment;
 use crate::core::Core;
 use crate::error::Result;
-use crate::video::{Ffmpeg, FfmpegCli, LimitOverrides, ModelLimits, VideoPrefs};
+use crate::sessions::Target;
+use crate::video::{Ffmpeg, FfmpegCli, FrameSource, LimitOverrides, ModelLimits, VideoPrefs};
 
 /// This device's per-model video limits, beside the other device settings.
 const OVERRIDES_FILE: &str = "video-limits.json";
@@ -83,10 +84,51 @@ impl Core {
         prefs: &VideoPrefs,
         reserved: u32,
     ) -> Result<Attachment> {
-        let bin = Ffmpeg::locate().ok_or_else(|| crate::error::CoreError::new(crate::error::ErrorKind::Unavailable, Ffmpeg::missing_message()))?;
-        let source = FfmpegCli::open(bin, path)?;
+        let source = self.video_source(path)?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        let sampled = crate::video::sample(&name, &source, model, limits, prefs, reserved, audio_ok)?;
-        Ok(Attachment::from_video(&name, sampled))
+        self.attach_video_source(&name, &source, model, &VideoPlan { limits: limits.clone(), audio_ok }, prefs, reserved)
     }
+
+    /// [`attach_video_with`](Self::attach_video_with) from any [`FrameSource`] (a platform
+    /// decoder, or `FakeSource` in tests).
+    pub fn attach_video_source(
+        &self,
+        name: &str,
+        source: &dyn FrameSource,
+        model: &str,
+        plan: &VideoPlan,
+        prefs: &VideoPrefs,
+        reserved: u32,
+    ) -> Result<Attachment> {
+        let sampled = crate::video::sample(name, source, model, &plan.limits, prefs, reserved, plan.audio_ok)?;
+        Ok(Attachment::from_video(name, sampled))
+    }
+
+    /// The clip at `path` read by ffmpeg (refused, with the sentence to show, when ffmpeg is
+    /// missing or the file is too big).
+    pub fn video_source(&self, path: &Path) -> Result<FfmpegCli> {
+        let bin = Ffmpeg::locate().ok_or_else(|| crate::error::CoreError::new(crate::error::ErrorKind::Unavailable, Ffmpeg::missing_message()))?;
+        FfmpegCli::open(bin, path)
+    }
+
+    /// What a clip for `model` at `target` is planned with: an endpoint's `/v1/models` limits
+    /// (frames only: an endpoint doesn't say it takes audio), else the pool's, each with this
+    /// device's override.
+    pub async fn video_plan(&self, target: Option<&Target>, model: &str) -> Result<VideoPlan> {
+        match target {
+            Some(Target::Endpoint { id, .. }) => Ok(VideoPlan { limits: self.endpoint_video_limits(id, model).await?, audio_ok: false }),
+            _ => Ok(VideoPlan {
+                limits: self.video_limits(model)?,
+                audio_ok: self.state().catalog.model(model).is_some_and(|m| m.takes(Modalities::AUDIO)),
+            }),
+        }
+    }
+}
+
+/// The limits a clip is planned with and whether its sound may go as audio
+/// ([`Core::video_plan`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct VideoPlan {
+    pub limits: ModelLimits,
+    pub audio_ok: bool,
 }

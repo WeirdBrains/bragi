@@ -512,20 +512,7 @@ pub fn sample(
     audio_ok: bool,
 ) -> Result<Sampled> {
     let probe = source.probe()?;
-    if probe.duration_ms == 0 {
-        return Err(bad(format!("{name} has no length; it can't be read as a video")));
-    }
-    if probe.duration_ms > MAX_CLIP_MS {
-        return Err(bad(format!("{name} is {}; the longest clip is {} (trim it)", clock(probe.duration_ms), clock(MAX_CLIP_MS))));
-    }
-    let (start, end) = match prefs.range {
-        Some((s, e)) if s < e => (s.min(probe.duration_ms), e.min(probe.duration_ms)),
-        Some(_) => return Err(bad("the clip's range ends before it starts")),
-        None => (0, probe.duration_ms),
-    };
-    if end <= start {
-        return Err(bad("the clip's range is empty"));
-    }
+    let (start, end) = clip_range(name, &probe, prefs.range)?;
     let clip = Clip { len_ms: end - start, width: probe.width, height: probe.height, has_audio: probe.has_audio };
     let budget = Budget::from_limits(model, limits, prefs, clip, reserved, audio_ok).map_err(Refusal::into_error)?;
     let scenes = match prefs.mode {
@@ -582,6 +569,82 @@ pub fn sample(
         if n == 1 { "" } else { "s" }
     );
     Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio })
+}
+
+/// The part of the clip to read: the whole of it, or `range` clamped to it. Refuses clips with no
+/// length, longer than [`MAX_CLIP_MS`], and empty or backwards ranges.
+pub fn clip_range(name: &str, probe: &Probe, range: Option<(u64, u64)>) -> Result<(u64, u64)> {
+    if probe.duration_ms == 0 {
+        return Err(bad(format!("{name} has no length; it can't be read as a video")));
+    }
+    if probe.duration_ms > MAX_CLIP_MS {
+        return Err(bad(format!("{name} is {}; the longest clip is {} (trim it)", clock(probe.duration_ms), clock(MAX_CLIP_MS))));
+    }
+    let (start, end) = match range {
+        Some((s, e)) if s < e => (s.min(probe.duration_ms), e.min(probe.duration_ms)),
+        Some(_) => return Err(bad("the clip's range ends before it starts")),
+        None => (0, probe.duration_ms),
+    };
+    if end <= start {
+        return Err(bad("the clip's range is empty"));
+    }
+    Ok((start, end))
+}
+
+/// The most frames one [`extract`] call returns (`bragi_video_frames`).
+pub const MAX_TOOL_FRAMES: u32 = 64;
+/// The most frame bytes (base64) one [`extract`] call returns: under the 64 MiB line Bragi's own
+/// MCP client reads (`mcp_servers::MAX_STDIO_LINE`); clients on weirdnet-mcp's 4 MiB default ask
+/// for fewer or smaller frames.
+pub const MAX_TOOL_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Frames asked for by count rather than by a model's limits (`bragi_video_frames` without a
+/// model). The count is the caller's: Bragi never picks one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrameRequest {
+    pub count: u32,
+    /// The longest side; `None` keeps the clip's size.
+    pub max_edge: Option<u32>,
+    pub mode: Mode,
+    pub scene_threshold: f32,
+    pub range: Option<(u64, u64)>,
+}
+
+impl FrameRequest {
+    pub fn new(count: u32) -> Self {
+        Self { count, max_edge: None, mode: Mode::Uniform, scene_threshold: scene_threshold(), range: None }
+    }
+}
+
+/// `req.count` frames of the clip `name` read by `source`, planned like [`sample`]'s (uniform,
+/// scene or hybrid, inside the range), each at most [`crate::attach::MAX_IMAGE_BYTES`] and all
+/// together at most [`MAX_TOOL_BYTES`]. Returns the probe with them.
+pub fn extract(name: &str, source: &dyn FrameSource, req: &FrameRequest) -> Result<(Probe, Vec<VideoFrame>)> {
+    if req.count == 0 || req.count > MAX_TOOL_FRAMES {
+        return Err(bad(format!("ask for 1 to {MAX_TOOL_FRAMES} frames")));
+    }
+    let probe = source.probe()?;
+    let (start, end) = clip_range(name, &probe, req.range)?;
+    let scenes = match req.mode {
+        Mode::Uniform => Vec::new(),
+        Mode::Scene | Mode::Hybrid => source.scenes(req.scene_threshold)?,
+    };
+    let (w, h) = fit(probe.width, probe.height, req.max_edge);
+    let mut frames = Vec::new();
+    let mut total = 0u64;
+    for t in plan_frames(req.mode, (start, end), req.count, &scenes) {
+        let f = source.frame_at(t, w, h)?;
+        if f.bytes.len() > crate::attach::MAX_IMAGE_BYTES {
+            return Err(bad(format!("a frame of {name} is over {} KiB; ask for a smaller max_edge", crate::attach::MAX_IMAGE_BYTES / 1024)));
+        }
+        let data = STANDARD.encode(&f.bytes);
+        total += data.len() as u64;
+        if total > MAX_TOOL_BYTES {
+            return Err(bad(format!("those frames come to over {} MiB; ask for fewer or a smaller max_edge", MAX_TOOL_BYTES >> 20)));
+        }
+        frames.push(VideoFrame { at_ms: t, mime: f.mime, data });
+    }
+    Ok((probe, frames))
 }
 
 /// A source with generated frames, for tests: no ffmpeg.
@@ -1067,6 +1130,26 @@ mod tests {
     fn scene_output_is_parsed() {
         let text = "frame:0    pts:1001  pts_time:1.001\nlavfi.scene_score=0.512\nframe:1 pts:9009 pts_time:9.009\nlavfi.scene_score=0.33\n";
         assert_eq!(parse_scenes(text), vec![(1_001, 0.512), (9_009, 0.33)]);
+    }
+
+    #[test]
+    fn extract_takes_the_callers_count_and_size_and_refuses_too_much() {
+        let src = FakeSource::new(60_000, false);
+        let mut req = FrameRequest::new(4);
+        req.max_edge = Some(640);
+        let (probe, frames) = extract("clip.mp4", &src, &req).unwrap();
+        assert_eq!(probe.duration_ms, 60_000);
+        assert_eq!(frames.len(), 4);
+        assert_eq!(frames[0].at_ms, 0, "the first frame is always in");
+        assert!(frames.windows(2).all(|w| w[0].at_ms < w[1].at_ms));
+        let first = STANDARD.decode(&frames[0].data).unwrap();
+        assert!(String::from_utf8_lossy(&first).ends_with("@640x360"), "scaled to the edge, aspect kept");
+        req.range = Some((30_000, 40_000));
+        let (_, frames) = extract("clip.mp4", &src, &req).unwrap();
+        assert!(frames.iter().all(|f| (30_000..40_000).contains(&f.at_ms)));
+        assert!(extract("clip.mp4", &src, &FrameRequest::new(0)).is_err());
+        assert!(extract("clip.mp4", &src, &FrameRequest::new(MAX_TOOL_FRAMES + 1)).is_err());
+        assert!(extract("long.mp4", &FakeSource::new(MAX_CLIP_MS + 1, false), &FrameRequest::new(2)).is_err());
     }
 
     /// Real ffmpeg against a clip made at test time (no fixture checked in); run with `--ignored`

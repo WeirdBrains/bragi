@@ -18,7 +18,11 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use weirdnet_mcp::agent::{McpSource, SourceOptions};
-use weirdnet_mcp::client::{ClientOptions, HttpConfig, Secret, StdioCommand};
+use weirdnet_mcp::client::{Client, ClientOptions, HttpConfig, Secret, StdioCommand, StdioTransport};
+
+/// The longest line Bragi reads from a stdio MCP server: big enough for a tool result with a
+/// batch of images (weirdnet-mcp's default is 4 MiB).
+pub const MAX_STDIO_LINE: usize = 64 * 1024 * 1024;
 
 use crate::core::{lock, random_id};
 use crate::endpoints::Endpoints;
@@ -380,7 +384,13 @@ impl McpServers {
                 for k in &s.env_names {
                     c = c.env(k.clone(), get("env", k)?);
                 }
-                McpSource::connect_stdio(s.id.clone(), &c, options).await
+                // A server's tool result can carry a batch of images (video frames from `bragi
+                // mcp`'s `bragi_video_frames`, screenshots) on one JSON-RPC line, past the client's
+                // 4 MiB default; longer lines are still dropped unread.
+                match StdioTransport::spawn_limited(&c, MAX_STDIO_LINE) {
+                    Ok(t) => Client::connect(t, options).await.map(|client| McpSource::new(s.id.clone(), client)),
+                    Err(e) => Err(e),
+                }
             }
             McpTransport::Http => {
                 let mut h = HttpConfig::new(s.url.clone().unwrap_or_default());

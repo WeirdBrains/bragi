@@ -33,7 +33,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 weirdnet-agent.workspace = true
-weirdnet-mcp = { version = "0.6", features = ["agent"] }
+weirdnet-mcp = { version = "0.6.2", features = ["agent"] }
 weirdnet-backends.workspace = true
 weirdnet-model.workspace = true
 weirdnet-device-link.workspace = true
@@ -51,7 +51,7 @@ libc = "0.2"
 
 [dev-dependencies]
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }
-weirdnet-mcp = { version = "0.6", features = ["agent", "axum"] }
+weirdnet-mcp = { version = "0.6.2", features = ["agent", "axum"] }
 tempfile.workspace = true
 tokio = { workspace = true, features = ["net", "io-util", "rt-multi-thread", "macros"] }
 
