@@ -563,7 +563,7 @@ Future<List<String>> themeWarnings({
   required bool dark,
 }) => RustLib.instance.api.crateApiBragiThemeWarnings(name: name, dark: dark);
 
-/// The training view: every other device's runs and jobs (Ymir 0.15.5) and the inference nodes'
+/// The training view: every other device's runs and jobs (Ymir 0.16.0) and the inference nodes'
 /// rollouts with each version's share and stage. A read.
 Future<TrainingOverviewView> trainingOverview() =>
     RustLib.instance.api.crateApiBragiTrainingOverview();

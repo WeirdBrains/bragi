@@ -160,7 +160,7 @@ class _TrainingScreenState extends State<TrainingScreen> {
             if (ready.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: _small('None of your devices reports training (it needs a Ymir model node, 0.15.5 or later).'),
+                child: _small('None of your devices reports training (it needs a Ymir model node, 0.16.0 or later).'),
               ),
             for (final n in ready) _node(n),
             if (others > 0)

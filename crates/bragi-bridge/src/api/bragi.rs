@@ -1883,7 +1883,7 @@ pub struct TrainingOverviewView {
     pub rollouts: Vec<RolloutView>,
 }
 
-/// The training view: every other device's runs and jobs (Ymir 0.15.5) and the inference nodes'
+/// The training view: every other device's runs and jobs (Ymir 0.16.0) and the inference nodes'
 /// rollouts with each version's share and stage. A read.
 pub async fn training_overview() -> Result<TrainingOverviewView, String> {
     use bragi_core::models::training::Stage;

@@ -18,7 +18,7 @@ use super::{ModelNode, NodeStatus, explain};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeTraining {
     pub node: ModelNode,
-    /// `Ready`; `NotModelNode` for a device without the protocol (a phone, a Ymir before 0.15.5,
+    /// `Ready`; `NotModelNode` for a device without the protocol (a phone, a Ymir before 0.16.0,
     /// the model role off); `NeedsOwnerDevice`; `Unreachable`.
     pub status: NodeStatus,
     /// It takes runs from the owner's devices.

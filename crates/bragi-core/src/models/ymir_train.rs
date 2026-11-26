@@ -1,5 +1,5 @@
 //! TEMPORARY: a minimal client for Ymir's `/ymir/train-status/1` (Ymir `ymir_core::train_net`,
-//! Ymir 0.15.5), which reads a model node's training runs and resumable jobs, read-only, for any
+//! Ymir 0.16.0), which reads a model node's training runs and resumable jobs, read-only, for any
 //! of the owner's linked devices. Ymir's crate is not published, so the wire types Bragi reads
 //! are mirrored here. It goes away with the Weirdnet job record (`weirdnet-agent` 0.6.0's
 //! `JobRecord`, asked of the Weirdnet lead, 2026-11-25), which the training view then reads.

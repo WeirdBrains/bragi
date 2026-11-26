@@ -174,7 +174,7 @@ abstract class BragiApi {
   // Models on the user's Ymir pool (LF-30).
   Future<List<rust.NodeModelsView>> modelsOverview();
 
-  /// The training view: runs and jobs per node (Ymir 0.15.5) and the inference nodes' rollouts.
+  /// The training view: runs and jobs per node (Ymir 0.16.0) and the inference nodes' rollouts.
   Future<rust.TrainingOverviewView> trainingOverview();
 
   /// Starts a Hub search with a fit per node; stream it with [followModels].

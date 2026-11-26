@@ -40,7 +40,7 @@ impl Core {
     }
 
     /// The training view: every other device's training runs and jobs (Ymir's
-    /// `/ymir/train-status/1`, Ymir 0.15.5) and the inference nodes' rollouts with each
+    /// `/ymir/train-status/1`, Ymir 0.16.0) and the inference nodes' rollouts with each
     /// version's share, canary and the run that trained it. A read; nothing changes.
     pub async fn training_overview(&self) -> Result<crate::models::training::TrainingOverview> {
         let net = self.net()?;

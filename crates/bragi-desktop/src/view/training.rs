@@ -125,7 +125,7 @@ impl BragiView {
         col = col.child(heading("RUNS AND JOBS"));
         let ready: Vec<_> = o.ready().collect();
         if ready.is_empty() {
-            col = col.child(small("None of your devices reports training (it needs a Ymir model node, 0.15.5 or later).".into()));
+            col = col.child(small("None of your devices reports training (it needs a Ymir model node, 0.16.0 or later).".into()));
         }
         for n in ready {
             let mut c = card().child(
