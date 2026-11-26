@@ -3,7 +3,10 @@
 import 'dart:typed_data';
 
 import 'rust/api/bragi.dart' as rust;
+import 'rust/api/video.dart' as rv;
 
+export 'rust/api/video.dart'
+    show VideoFrameIn, VideoFramePlanView, VideoFrameView, VideoInfoView, VideoLimitsView, VideoProbeView;
 export 'rust/api/bragi.dart'
     show
         NodeTrainingView,
@@ -84,6 +87,17 @@ abstract class BragiApi {
     List<rust.AttachmentView> files,
   );
   rust.AttachmentView attachBytes(String name, List<int> bytes);
+
+  // Video (LF-43, V3): the core plans the frames, a phone's platform decoder makes them, the core
+  // attaches them; a computer reads the clip with ffmpeg through the core.
+  Future<rv.VideoFramePlanView> videoFramePlan(String name, rv.VideoProbeView probe, String? model, rust.TargetView? target, List<String> history);
+  Future<rust.AttachmentView> attachVideoFrames(String name, String? path, rv.VideoProbeView probe, List<rv.VideoFrameIn> frames, String? model, rust.TargetView? target, List<String> history);
+  Future<rust.AttachmentView> attachVideoFile(String path, String? model, rust.TargetView? target, List<String> history);
+  String? videoFileUnavailable();
+  rv.VideoInfoView videoInfo(String name, String json);
+  rv.VideoInfoView? videoAttachment(String conversation, String file);
+  Future<rv.VideoLimitsView> videoLimits(String? model, rust.TargetView? target);
+  Future<rv.VideoLimitsView> setVideoLimits(String? model, String limits, rust.TargetView? target);
   bool approve(String requestId, int ask, String choice);
   Future<rust.ChatStarted> continueAnswer(String conversation, String? model);
   Stream<rust.ChatEventView> followChat(String requestId);
@@ -276,6 +290,26 @@ class RustBragiApi implements BragiApi {
   @override
   rust.AttachmentView attachBytes(String name, List<int> bytes) =>
       rust.attachBytes(name: name, bytes: bytes);
+  @override
+  Future<rv.VideoFramePlanView> videoFramePlan(String name, rv.VideoProbeView probe, String? model, rust.TargetView? target, List<String> history) =>
+      rv.videoFramePlan(name: name, probe: probe, model: model, target: target, history: history);
+  @override
+  Future<rust.AttachmentView> attachVideoFrames(String name, String? path, rv.VideoProbeView probe, List<rv.VideoFrameIn> frames, String? model, rust.TargetView? target, List<String> history) =>
+      rv.attachVideoFrames(name: name, path: path, probe: probe, frames: frames, model: model, target: target, history: history);
+  @override
+  Future<rust.AttachmentView> attachVideoFile(String path, String? model, rust.TargetView? target, List<String> history) =>
+      rv.attachVideoFile(path: path, model: model, target: target, history: history);
+  @override
+  String? videoFileUnavailable() => rv.videoFileUnavailable();
+  @override
+  rv.VideoInfoView videoInfo(String name, String json) => rv.videoInfo(name: name, json: json);
+  @override
+  rv.VideoInfoView? videoAttachment(String conversation, String file) => rv.videoAttachment(conversation: conversation, file: file);
+  @override
+  Future<rv.VideoLimitsView> videoLimits(String? model, rust.TargetView? target) => rv.videoLimits(model: model, target: target);
+  @override
+  Future<rv.VideoLimitsView> setVideoLimits(String? model, String limits, rust.TargetView? target) =>
+      rv.setVideoLimits(model: model, limits: limits, target: target);
   @override
   bool approve(String requestId, int ask, String choice) =>
       rust.approve(requestId: requestId, ask: BigInt.from(ask), choice: choice);

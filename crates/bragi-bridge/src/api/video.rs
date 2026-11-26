@@ -82,10 +82,6 @@ fn probe_of(p: VideoProbeView) -> Probe {
     Probe { duration_ms: p.duration_ms, width: p.width, height: p.height, fps: p.fps, has_audio: p.has_audio }
 }
 
-fn prefs(max_frames: Option<u32>) -> VideoPrefs {
-    VideoPrefs { max_frames, ..VideoPrefs::default() }
-}
-
 fn model_for(core: &Core, model: Option<String>, target: Option<&Target>) -> Result<String, String> {
     if let Some(m) = model.filter(|m| !m.is_empty()) {
         return Ok(m);
@@ -121,14 +117,13 @@ pub async fn video_frame_plan(
     probe: VideoProbeView,
     model: Option<String>,
     target: Option<TargetView>,
-    max_frames: Option<u32>,
     history: Vec<String>,
 ) -> Result<VideoFramePlanView, String> {
     let (core, model, target) = parts(model, target)?;
     let c = core.clone();
     let p = core
         .handle()
-        .spawn(async move { c.video_frame_plan(target.as_ref(), &model, &name, &probe_of(probe), &prefs(max_frames), reserved(&history)).await })
+        .spawn(async move { c.video_frame_plan(target.as_ref(), &model, &name, &probe_of(probe), &VideoPrefs::default(), reserved(&history)).await })
         .await
         .map_err(|e| e.to_string())?
         .map_err(err)?;
@@ -145,7 +140,6 @@ pub async fn attach_video_frames(
     frames: Vec<VideoFrameIn>,
     model: Option<String>,
     target: Option<TargetView>,
-    max_frames: Option<u32>,
     history: Vec<String>,
 ) -> Result<AttachmentView, String> {
     let (core, model, target) = parts(model, target)?;
@@ -155,7 +149,7 @@ pub async fn attach_video_frames(
         .handle()
         .spawn(async move {
             let path = path.map(PathBuf::from);
-            c.attach_video_frames(target.as_ref(), &model, &name, path.as_deref(), probe_of(probe), frames, &prefs(max_frames), reserved(&history))
+            c.attach_video_frames(target.as_ref(), &model, &name, path.as_deref(), probe_of(probe), frames, &VideoPrefs::default(), reserved(&history))
                 .await
         })
         .await
@@ -169,7 +163,6 @@ pub async fn attach_video_file(
     path: String,
     model: Option<String>,
     target: Option<TargetView>,
-    max_frames: Option<u32>,
     history: Vec<String>,
 ) -> Result<AttachmentView, String> {
     let (core, model, target) = parts(model, target)?;
@@ -180,7 +173,7 @@ pub async fn attach_video_file(
             let plan = c.video_plan(target.as_ref(), &model).await?;
             let c2 = c.clone();
             tokio::task::spawn_blocking(move || {
-                c2.attach_video_with(Path::new(&path), &model, &plan.limits, plan.audio_ok, &prefs(max_frames), reserved(&history))
+                c2.attach_video_with(Path::new(&path), &model, &plan.limits, plan.audio_ok, &VideoPrefs::default(), reserved(&history))
             })
             .await
             .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, format!("reading the clip stopped: {e}")))?
