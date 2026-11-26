@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-26
+
 ### Fixed
 
 - A Ymir inference server linked cert-only (`--server inference`) can read your conversations again: they are sealed under a key for conversations alone while such a server is linked, and chats from before the link are re-sealed for it after a sync pass that reached every device (and moved back once no such server is left). Every Bragi device that shares conversations with one needs this release.
