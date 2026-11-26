@@ -11,6 +11,13 @@ A running record of finished work on Bragi, newest first. Each entry says what c
 TAUR has bragi-bin 0.14.0-1.
 
 **Next:** merge `feature/fdroid-prep` (B3), then the next Bragi batch.
+## 2026-11-26 05:10 EST: F-Droid recipe (branch `feature/fdroid-prep`)
+
+B3: the F-Droid draft recipe made submittable. [packaging/fdroid/org.weirdbrains.bragi.yml](packaging/fdroid/org.weirdbrains.bragi.yml) now builds one apk per ABI from v0.15.0 (versionCode 1018/2018/4018, `VercodeOperation`), with Rust 1.99 from the `rustup` srclib, Flutter 3.50.0, `scandelete` of the pub cache and tag-based auto-updates; store text and a 512 px icon are in [fastlane/metadata/android/en-US](fastlane/metadata/android/en-US). mobile_scanner reads QR codes with Google ML Kit (non-free, F-Droid refuses it), so the QR camera moved to [app/lib/src/scanner.dart](app/lib/src/scanner.dart) and F-Droid's prebuild copies [app/lib/src/scanner_none.dart](app/lib/src/scanner_none.dart) over it and drops mobile_scanner from `pubspec.yaml`: pairing with a desktop is by typed code there. [docs/RELEASES.md](docs/RELEASES.md) has an F-Droid section.
+
+**Checks:** `fdroid lint` and `fdroid rewritemeta` clean (fdroidserver 2.4.6 in a venv, fdroiddata's categories); the F-Droid variant simulated in a copy (swap + sed, `flutter pub get` leaves no mobile_scanner in the lock, `flutter analyze` only the existing infos, `flutter test --dart-define=BRAGI_DEMO=true` 10 passed); the normal app the same (10 passed). Not run: `fdroid build` (no Android SDK build server here) or an apk build of the F-Droid variant.
+
+**Needs Michael:** submitting to fdroiddata (a GitLab account and merge request), and whether F-Droid signs with its key or reproducible builds against a WeirdBrains release key (no Android release key in the repository secrets yet).
 
 ## 2026-11-26 04:45 EST: weirdnet-sync 0.8.4 (branch `chore/weirdnet-sync-0.8.4`)
 
