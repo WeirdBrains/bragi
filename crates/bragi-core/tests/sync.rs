@@ -68,10 +68,13 @@ async fn a_conversation_follows_the_user_to_another_device() {
     let conv = chat(&a, None, "hello from the first device").await;
     assert_eq!(a.conversation(&conv).unwrap().messages.len(), 2);
     // b may already have it: the devices sync in the background as well (seen on Windows CI),
-    // so only the end state is checked.
-
-    sync_until(&demo, &[&a, &b], "the conversation on the second device", || b.conversation(&conv).map(|c| c.messages.len() == 2).unwrap_or(false))
-        .await;
+    // so only the end state is checked. A background pass can also bring the reply while it is
+    // still streaming (empty, seen on macOS CI), so wait for the whole reply text, not a count.
+    let reply = a.conversation(&conv).unwrap().messages[1].text.clone();
+    sync_until(&demo, &[&a, &b], "the whole conversation on the second device", || {
+        b.conversation(&conv).map(|c| c.messages.len() == 2 && c.messages[1].text == reply).unwrap_or(false)
+    })
+    .await;
     let seen = b.conversation(&conv).unwrap();
     assert_eq!(seen.messages[0].text, "hello from the first device");
     assert_eq!(seen.messages[1].text, a.conversation(&conv).unwrap().messages[1].text);
@@ -79,7 +82,11 @@ async fn a_conversation_follows_the_user_to_another_device() {
 
     // Carry on from the second device; the first sees it.
     chat(&b, Some(&conv), "and a follow-up from the second").await;
-    sync_until(&demo, &[&a, &b], "the follow-up on the first device", || a.conversation(&conv).map(|c| c.messages.len() == 4).unwrap_or(false)).await;
+    let follow_up = b.conversation(&conv).unwrap().messages[3].text.clone();
+    sync_until(&demo, &[&a, &b], "the whole follow-up on the first device", || {
+        a.conversation(&conv).map(|c| c.messages.len() == 4 && c.messages[3].text == follow_up).unwrap_or(false)
+    })
+    .await;
 
     // A delete travels too.
     b.delete_conversation(&conv).unwrap();
