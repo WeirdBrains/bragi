@@ -55,7 +55,7 @@ pub const RESOURCE_SESSIONS: usize = 50;
 const INSTRUCTIONS: &str = "Bragi is a chat app for the models on the user's own Weirdnet (Ymir nodes) and the OpenAI-compatible \
 endpoints in Bragi's Settings. Use bragi_chat to ask a model; the conversation is kept as a Bragi session the user also sees in the app. \
 bragi_models_list and bragi_endpoints_list show where a chat can go, bragi_sessions_list and bragi_session_get read past sessions, \
-bragi_code_suggest and bragi_code_rewrite propose code changes as unified diffs (writing nothing), and bragi_status explains why nothing answers. Sessions are also resources: bragi://sessions/{id}.";
+bragi_video_probe and bragi_video_frames read a clip in the project (bragi_chat takes one as `video`), bragi_code_suggest and bragi_code_rewrite propose code changes as unified diffs (writing nothing), and bragi_status explains why nothing answers. Sessions are also resources: bragi://sessions/{id}.";
 
 pub(crate) const fn spec(name: &'static str, description: &'static str, params: &'static [Param], read_only: bool, destructive: bool) -> ToolSpec {
     ToolSpec { name, description, params, auth: false, read_only, destructive, open_world: false }
@@ -80,6 +80,16 @@ const CHAT_PARAMS: &[Param] = &[
         T::StringArray,
         "Files to attach: paths inside the project root (text, PNG/JPEG/GIF/WebP images up to 5 MB, WAV/MP3 audio up to 10 MB), or data: URLs. At most 5.",
     ),
+    Param::optional(
+        "video",
+        T::String,
+        "A clip to attach: a path inside the project root or a base64 data: URL. It is sampled into timestamped frames (and its sound when the model takes audio) sized from the model's reported limits; refused with what to set when they aren't reported. Counts as one file.",
+    ),
+    Param::optional("video_max_frames", T::Integer, "At most this many frames; may only lower what the model's limits allow."),
+    Param::optional("video_max_edge", T::Integer, "The longest side of a frame in pixels; may only shrink frames."),
+    Param::optional("video_mode", T::Enum(&["uniform", "scene", "hybrid"]), "How frame times are picked (default uniform)."),
+    Param::optional("video_start_ms", T::Integer, "Sample from here (milliseconds)."),
+    Param::optional("video_end_ms", T::Integer, "Sample up to here (milliseconds)."),
 ];
 
 const LIST_PARAMS: &[Param] = &[
@@ -207,6 +217,7 @@ pub struct BragiTools {
     root: Arc<PathBuf>,
     specs: Vec<ToolSpec>,
     proposals: Arc<crate::code::Proposals>,
+    video_source: crate::video::VideoSourceFn,
 }
 
 /// The protocol server for `tools`.
@@ -244,7 +255,21 @@ impl BragiTools {
         if opts.allow_deletes {
             specs.extend_from_slice(DELETE_TOOLS);
         }
-        Ok(Self { core, opts: Arc::new(opts), root: Arc::new(root), specs, proposals: Arc::default() })
+        specs.extend_from_slice(crate::video::VIDEO_TOOLS);
+        let ffmpeg = core.clone();
+        let video_source: crate::video::VideoSourceFn =
+            Arc::new(move |p: &Path| ffmpeg.video_source(p).map(|s| Box::new(s) as Box<dyn bragi_core::video::FrameSource + Send>));
+        Ok(Self { core, opts: Arc::new(opts), root: Arc::new(root), specs, proposals: Arc::default(), video_source })
+    }
+
+    /// Reads clips with `open` instead of ffmpeg (tests, platform decoders).
+    pub fn with_video_source(mut self, open: crate::video::VideoSourceFn) -> Self {
+        self.video_source = open;
+        self
+    }
+
+    pub(crate) fn video_source_fn(&self) -> crate::video::VideoSourceFn {
+        self.video_source.clone()
     }
 
     pub fn core(&self) -> &Core {
@@ -361,7 +386,13 @@ impl BragiTools {
         if files.len() > bragi_core::attach::MAX_PER_MESSAGE {
             return Err(bad(format!("at most {} files go with one message", bragi_core::attach::MAX_PER_MESSAGE)));
         }
-        let attachments = files.iter().map(|f| self.attachment(f)).collect::<Result<Vec<_>, _>>()?;
+        let mut attachments = files.iter().map(|f| self.attachment(f)).collect::<Result<Vec<_>, _>>()?;
+        if let Some(v) = self.chat_video(args, model.as_deref(), target.as_ref(), &prompt).await? {
+            if attachments.len() >= bragi_core::attach::MAX_PER_MESSAGE {
+                return Err(bad(format!("at most {} files go with one message, the video counting as one", bragi_core::attach::MAX_PER_MESSAGE)));
+            }
+            attachments.push(v);
+        }
         let handle = self.core.send_to(session.as_deref(), &prompt, model, attachments, target)?;
         let answer = collect::answer(&self.core, handle, self.opts.timeout).await?;
         if session.is_none()
@@ -501,6 +532,8 @@ impl BragiTools {
                 let saved = self.save_file(&s("session")?, &s("file")?, path, weirdnet_mcp::args::boolean(args, "overwrite", false))?;
                 json_out(json!({"saved": saved.display().to_string()}))
             }
+            "bragi_video_probe" => self.video_probe(args).await,
+            "bragi_video_frames" => self.video_frames(args).await,
             "bragi_code_suggest" => self.code_suggest(args).await,
             "bragi_code_rewrite" => self.code_rewrite(args).await,
             "bragi_code_apply" => self.code_apply(args),
@@ -721,6 +754,7 @@ mod tests {
         all.extend_from_slice(crate::code::CODE_WRITE_TOOLS);
         all.extend_from_slice(WRITE_TOOLS);
         all.extend_from_slice(DELETE_TOOLS);
+        all.extend_from_slice(crate::video::VIDEO_TOOLS);
         ToolSpec::check(&all).unwrap();
     }
 
