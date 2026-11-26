@@ -128,6 +128,13 @@ pub struct BragiView {
     player: Option<crate::audio::Player>,
     audio_loading: Option<String>,
     audio_tick: Option<Task<()>>,
+    /// The clip playing inline (one media clip at a time with the audio files: the same
+    /// `deck`), the one being opened, why a clip can't play inline (by file id), and the timer
+    /// that moves the picture (LF-43, V2).
+    video: Option<crate::video::VideoPlayback>,
+    video_opening: Option<String>,
+    video_fallbacks: HashMap<String, bragi_core::video_play::Fallback>,
+    video_tick: Option<Task<()>>,
     /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
     /// all history wants, the last delete while it can be undone, and the Settings view.
     confirm: Option<delete::Confirm>,
@@ -280,6 +287,10 @@ impl BragiView {
             player: None,
             audio_loading: None,
             audio_tick: None,
+            video: None,
+            video_opening: None,
+            video_fallbacks: HashMap::new(),
+            video_tick: None,
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -597,6 +608,7 @@ impl BragiView {
         }
         self.deck.start(&conv, &file.id);
         self.player = None;
+        self.video = None;
         let bytes = match self.core.file_bytes(&conv, &file.id) {
             Ok((_, b)) => b,
             Err(e) => {
@@ -633,6 +645,145 @@ impl BragiView {
             });
         })
         .detach();
+    }
+
+    /// Play or pause the clip of attachment `key` (`<message id>#a<n>`) inline. Another clip
+    /// (audio or video) stops first. The soundtrack is read and decoded off the UI thread; when the
+    /// clip can't play here the card says why and offers the system player.
+    pub fn play_video(&mut self, key: &str, sampled: &bragi_core::video::Sampled, then_seek: Option<u64>, cx: &mut Context<Self>) {
+        let Some(conv) = self.current.as_ref().map(|c| c.id.clone()) else { return };
+        if let Some(v) = self.video.as_mut().filter(|v| v.key == key && v.conversation == conv) {
+            match then_seek {
+                Some(ms) => v.seek(ms),
+                None => v.toggle(),
+            }
+            self.tick_video(cx);
+            return cx.notify();
+        }
+        let clip = match bragi_core::video_play::playable_clip(sampled) {
+            Ok(p) => p,
+            Err(why) => {
+                self.video_fallbacks.insert(key.to_string(), why);
+                return cx.notify();
+            }
+        };
+        let Some(bin) = bragi_core::video::Ffmpeg::locate() else {
+            self.video_fallbacks.insert(key.to_string(), bragi_core::video_play::Fallback::NoDecoder);
+            return cx.notify();
+        };
+        self.deck.start(&conv, key);
+        self.player = None;
+        self.video = None;
+        self.video_fallbacks.remove(key);
+        self.video_opening = Some(key.to_string());
+        let (path, key) = (clip.clone(), key.to_string());
+        let job = cx.background_executor().spawn(async move {
+            use bragi_core::video::FrameSource as _;
+            let probe = bragi_core::video::FfmpegCli::open(bin.clone(), &path)?.probe()?;
+            let sound = match bragi_core::video_play::soundtrack(&bin, &path)? {
+                Some(wav) => Some(bragi_core::audio::decode(wav, "soundtrack.wav")?),
+                None => None,
+            };
+            Ok::<_, bragi_core::CoreError>((bin, probe, sound))
+        });
+        cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            let r = job.await;
+            let _ = this.update(cx, |v, cx| {
+                if v.video_opening.as_deref() == Some(key.as_str()) {
+                    v.video_opening = None;
+                }
+                if !v.deck.is(&conv, &key) {
+                    return;
+                }
+                match r {
+                    Ok((bin, probe, sound)) => {
+                        let (fps, width) = bragi_core::video_play::decode_shape(probe.fps, probe.width);
+                        let decode_path = clip.clone();
+                        let start: crate::video::StartDecode = Box::new(move |at| {
+                            bragi_core::video_play::Decoder::start(&bin, &decode_path, at, fps, width).map(crate::video::Feed::Ffmpeg)
+                        });
+                        let has_sound = sound.is_some();
+                        let pcm = sound.unwrap_or_else(|| bragi_core::video_play::silence(probe.duration_ms));
+                        let device = !std::env::var("BRAGI_AUDIO").is_ok_and(|x| x == "null");
+                        let mut p = crate::video::VideoPlayback::open(&conv, &key, clip, pcm, has_sound, device, start);
+                        if let Some(ms) = then_seek {
+                            p.seek(ms);
+                        }
+                        v.video = Some(p);
+                        v.tick_video(cx);
+                    }
+                    Err(e) => {
+                        v.deck.stop();
+                        v.video_fallbacks.insert(key.clone(), bragi_core::video_play::Fallback::CantDecode(e.message));
+                    }
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Moves the picture along while a clip plays (about 15 times a second).
+    fn tick_video(&mut self, cx: &mut Context<Self>) {
+        if self.video_tick.is_some() {
+            return;
+        }
+        self.video_tick = Some(cx.spawn(async move |this: WeakEntity<Self>, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(66)).await;
+                let go = this
+                    .update(cx, |v, cx| {
+                        let Some(p) = v.video.as_mut() else {
+                            v.video_tick = None;
+                            return false;
+                        };
+                        p.tick(Instant::now());
+                        if let Some(why) = p.fallback.clone() {
+                            v.video_fallbacks.insert(p.key.clone(), why);
+                        }
+                        cx.notify();
+                        let go = p.playing();
+                        if !go {
+                            v.video_tick = None;
+                        }
+                        go
+                    })
+                    .unwrap_or(false);
+                if !go {
+                    break;
+                }
+            }
+        }));
+    }
+
+    pub fn seek_video(&mut self, fraction: f64, cx: &mut Context<Self>) {
+        if let Some(p) = self.video.as_mut() {
+            p.seek(bragi_core::audio::seek_ms(fraction, p.duration_ms));
+            p.tick(Instant::now());
+            cx.notify();
+        }
+    }
+
+    pub fn mute_video(&mut self, cx: &mut Context<Self>) {
+        if let Some(p) = self.video.as_mut() {
+            p.toggle_mute(!std::env::var("BRAGI_AUDIO").is_ok_and(|x| x == "null"));
+            cx.notify();
+        }
+    }
+
+    /// The clip in the system player (`xdg-open`, `open`, `start`).
+    pub fn open_video_externally(&mut self, sampled: &bragi_core::video::Sampled, cx: &mut Context<Self>) {
+        let r = bragi_core::video_play::playable_clip(sampled)
+            .map_err(|why| why.message())
+            .and_then(|p| bragi_core::video_play::open_externally(&p).map_err(|e| e.message));
+        if let Some(p) = self.video.as_mut().filter(|p| p.playing()) {
+            p.toggle();
+        }
+        self.notice = Some(match r {
+            Ok(()) => "Opened in the system player.".into(),
+            Err(e) => e,
+        });
+        cx.notify();
     }
 
     /// A click on the seek bar of file `id`, at `fraction` of its length.
@@ -1445,7 +1596,11 @@ impl BragiView {
                 )
                 .children(self.thinking(i, m, cx))
                 .child(self.message_text(i, m, cx))
-                .children(files.iter().map(|f| self.file_card(m, f, cx))),
+                .children(m.attachments.iter().enumerate().filter_map(|(n, a)| match &a.media {
+                    Some(bragi_core::Media::Video(v)) if !m.id.is_empty() => Some(self.video_card(m, n, &a.name, v, cx)),
+                    _ => None,
+                }))
+                .children(files.iter().filter(|f| !is_video_file(m, &f.id)).map(|f| self.file_card(m, f, cx))),
         )
     }
 
@@ -1533,6 +1688,118 @@ impl BragiView {
             )
             .children(preview.map(|i| img(i).max_w(px(320.)).max_h(px(220.)).object_fit(ObjectFit::Contain)))
             .children(player)
+    }
+
+    /// A clip in the chat: the inline player (picture, Play/Pause, a seek bar, elapsed / total,
+    /// Mute, System player) or why it can't play here, then the frames the model saw (a click
+    /// plays from there).
+    fn video_card(&self, m: &ChatMessage, n: usize, name: &str, v: &bragi_core::video::Sampled, cx: &mut Context<Self>) -> gpui::Div {
+        const STEPS: usize = 48;
+        let t = self.theme;
+        let key = format!("{}#a{n}", m.id);
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let mine = self.video.as_ref().filter(|p| p.key == key && p.conversation == conv);
+        let (playing, pos, total) = match mine {
+            Some(p) => (p.playing(), p.position_ms(), p.duration_ms),
+            None => (false, 0, v.duration_ms),
+        };
+        let fallback = self.video_fallbacks.get(&key);
+        let label = if self.video_opening.as_deref() == Some(key.as_str()) {
+            "…"
+        } else if playing {
+            "❚❚ Pause"
+        } else {
+            "▶ Play"
+        };
+        let mut card = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .mt(px(4.))
+            .p(px(8.))
+            .rounded(px(8.))
+            .border_1()
+            .border_color(rgb(t.border))
+            .bg(rgb(t.background))
+            .child(div().text_size(px(13.)).text_color(rgb(t.text_primary)).child(bragi_core::video_play::bubble(name, v)));
+        let picture = mine.and_then(|p| p.frame.as_ref().map(|(_, i)| i.clone())).or_else(|| self.video_thumb(&key, v, 0));
+        if let Some(i) = picture {
+            card = card.child(img(i).max_w(px(480.)).max_h(px(270.)).object_fit(ObjectFit::Contain));
+        }
+        let sampled = v.clone();
+        let external = v.clone();
+        let mut controls = div().flex().flex_row().gap(px(10.)).items_center();
+        if fallback.is_none() {
+            let filled = (bragi_core::audio::progress(pos, total) * STEPS as f64).round() as usize;
+            let k2 = key.clone();
+            controls = controls.child(
+                self.button(SharedString::from(format!("vplay-{key}")), label, false)
+                    .on_click(cx.listener(move |view, _, _, cx| view.play_video(&k2, &sampled, None, cx))),
+            );
+            if mine.is_some() {
+                controls = controls.child(div().flex().flex_row().flex_1().min_w(px(80.)).h(px(16.)).items_center().children((0..STEPS).map(|k| {
+                    div()
+                        .id(SharedString::from(format!("vseek-{key}-{k}")))
+                        .flex_1()
+                        .h(px(16.))
+                        .flex()
+                        .items_center()
+                        .cursor_pointer()
+                        .child(div().w_full().h(px(4.)).bg(rgb(if k < filled { t.accent } else { t.border })))
+                        .on_click(cx.listener(move |view, _, _, cx| view.seek_video((k as f64 + 0.5) / STEPS as f64, cx)))
+                })));
+            }
+            controls = controls.child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(bragi_core::audio::times(pos, total)));
+            if let Some(p) = mine.filter(|p| p.has_sound) {
+                controls = controls.child(
+                    self.button(SharedString::from(format!("vmute-{key}")), if p.muted { "Unmute" } else { "Mute" }, false)
+                        .on_click(cx.listener(|view, _, _, cx| view.mute_video(cx))),
+                );
+            }
+        } else if let Some(why) = fallback {
+            controls = controls.child(div().flex_1().text_size(px(12.)).text_color(rgb(t.warning)).child(why.message()));
+        }
+        if bragi_core::video_play::playable_clip(v).is_ok() {
+            controls = controls.child(
+                self.button(SharedString::from(format!("vopen-{key}")), "Open in system player", fallback.is_some())
+                    .on_click(cx.listener(move |view, _, _, cx| view.open_video_externally(&external, cx))),
+            );
+        }
+        card = card.child(controls);
+        // The frames the model saw; a click plays from there.
+        let mut strip = div().flex().flex_row().flex_wrap().gap(px(4.));
+        for (i, f) in v.frames.iter().enumerate() {
+            let (k2, s2, at) = (key.clone(), v.clone(), f.at_ms);
+            let thumb = self.video_thumb(&key, v, i);
+            strip = strip.child(
+                div()
+                    .id(SharedString::from(format!("vframe-{key}-{i}")))
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .cursor_pointer()
+                    .children(thumb.map(|im| img(im).w(px(72.)).h(px(40.)).object_fit(ObjectFit::Cover)))
+                    .child(div().text_size(px(10.)).text_color(rgb(t.text_secondary)).child(bragi_core::video::label(at)))
+                    .on_click(cx.listener(move |view, _, _, cx| view.play_video(&k2, &s2, Some(at), cx))),
+            );
+        }
+        card.child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("Frames the model saw")).child(strip)
+    }
+
+    /// Frame `i` of a clip as a picture, decoded once.
+    fn video_thumb(&self, key: &str, v: &bragi_core::video::Sampled, i: usize) -> Option<Arc<Image>> {
+        use base64::Engine as _;
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        self.previews
+            .borrow_mut()
+            .entry(format!("{conv}/{key}/f{i}"))
+            .or_insert_with(|| {
+                let f = v.frames.get(i)?;
+                let format = ImageFormat::from_mime_type(&f.mime)?;
+                let bytes = base64::engine::general_purpose::STANDARD.decode(&f.data).ok()?;
+                Some(Arc::new(Image::from_bytes(format, bytes)))
+            })
+            .clone()
     }
 
     /// An audio file's player: Play/Pause, a seek bar (a click goes there) and elapsed / total.
@@ -1897,6 +2164,8 @@ impl Render for BragiView {
         if self.deck.shown(self.current.as_ref().map(|c| c.id.as_str())) {
             self.player = None;
             self.audio_loading = None;
+            self.video = None;
+            self.video_opening = None;
         }
         if std::mem::take(&mut self.recheck) {
             self.stick = self.at_bottom();
@@ -2635,4 +2904,12 @@ mod tests {
         splice(&mut t, 20, "!");
         assert_eq!(t, "héllo there!");
     }
+}
+
+/// Whether file card `id` of message `m` is a clip (drawn by its video card instead).
+fn is_video_file(m: &ChatMessage, id: &str) -> bool {
+    id.strip_prefix(&format!("{}#a", m.id))
+        .and_then(|n| n.parse::<usize>().ok())
+        .and_then(|n| m.attachments.get(n))
+        .is_some_and(|a| matches!(a.media, Some(bragi_core::Media::Video(_))))
 }
