@@ -8,7 +8,7 @@ All notable changes to Bragi are listed here. The format follows
 
 ### Added
 
-- Video attachments, phase 1 (LF-43): `/attach clip.mp4` in the terminal app and the desktop's attach box sample the clip with ffmpeg into timestamped frames (and the soundtrack, when the model takes audio and reports its limits) sized from the model's reported limits. There is no default frame count: when the pool doesn't report the limits, the attach refuses and names what is missing, and a per-model override (`video-limits.json`) can set them. Needs `ffmpeg` and `ffprobe` (`BRAGI_FFMPEG`, beside the executable, or `PATH`). No player yet: the chat shows the first frame.
+- Video attachments, phase 1 (LF-43): `/attach clip.mp4` in the terminal app and the desktop's attach box sample the clip with ffmpeg into timestamped frames (and the soundtrack, when the model takes audio and reports its limits) sized from the model's reported limits: the pool's catalog (context and `MediaLimits`: per-image cost or patch size, edge, images per request, audio length, request bytes; weirdnet-agent 0.5.7). The core also reads an OpenAI-compatible endpoint's `weirdnet.context`/`weirdnet.limits`/`weirdnet.max_request_bytes` from `/v1/models` (`Core::endpoint_video_limits`); the terminal app and the desktop don't use it yet. There is no default frame count: when nothing reports the limits, the attach refuses and names what is missing, and a per-model override (`video-limits.json`) can set them; it fills missing fields and can only tighten reported ones. weirdnet-agent 0.5.6 → 0.5.7, weirdnet-backends → 0.4.8. Needs `ffmpeg` and `ffprobe` (`BRAGI_FFMPEG`, beside the executable, or `PATH`). No player yet: the chat shows the first frame.
 
 ## [0.15.1] - 2026-11-26
 
