@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-bridge"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "bragi-core",
  "flutter_rust_bridge",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-core"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1136,7 +1136,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-desktop"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "bragi-core",
  "bragi-mcp",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-mcp"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1172,7 +1172,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-serve"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "bragi-tui"
-version = "0.14.0"
+version = "0.15.0"
 dependencies = [
  "base64 0.21.7",
  "bragi-core",

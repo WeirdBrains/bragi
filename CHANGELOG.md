@@ -6,10 +6,11 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-26
+
 ### Added
 
 - Wake-ups (B4, weirdnet-push 0.1.1): each device makes a wake handle and key and shares them, sealed as `bragi.wake`, only with your linked devices (never with cert-only servers). A wake carries no message content, and stale or repeated wakes are refused. Settings, Wake-ups: on by default with an off switch (off withdraws the card and forgets the key). "Wake through your relay" is opt-in and off by default: it keeps a connection to your home relay on `/weirdnet/wake/1` so linked devices can wake this one without Google or Apple push, and it asks first because it uses more battery. On Android it runs as a foreground service with a quiet notification, so F-Droid builds can be woken too. In the desktop window, the Android app and `bragi-tui wake [status|on|off|relay on|off]`. APNs and FCM delivery are not wired yet.
-
 - An F-Droid build recipe that passes `fdroid lint`, with the store text and icon in fastlane metadata. F-Droid builds have no QR camera (its scanner needs Google ML Kit, which is not free software) and pair with a desktop by typed code.
 
 ## [0.14.0] - 2026-11-26
