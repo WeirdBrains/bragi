@@ -538,8 +538,10 @@ fn hub_hit(h: &SearchHit) -> HubHit {
     HubHit { repo: h.id.clone(), downloads: h.downloads, likes: h.likes, gated: h.gated, updated: h.last_modified.clone() }
 }
 
+pub mod training;
 pub mod upload;
 pub mod ymir_rollouts;
+pub mod ymir_train;
 pub mod ymir_uploads;
 
 #[cfg(test)]

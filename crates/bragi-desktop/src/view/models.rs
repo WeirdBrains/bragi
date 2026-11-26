@@ -377,6 +377,10 @@ impl BragiView {
             .flex_1()
             .overflow_y_scroll();
         col = col.child(div().text_size(px(18.)).child("Models"));
+        col = col.child(self.models_tabs(cx));
+        if self.training.open {
+            return col.child(self.training_section());
+        }
         if let Some(e) = &m.error {
             col = col.child(div().text_size(px(12.)).text_color(rgb(t.error)).child(e.clone()));
         }

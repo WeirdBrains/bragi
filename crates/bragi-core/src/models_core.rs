@@ -39,6 +39,23 @@ impl Core {
         Ok(ModelsManager::new(client, devices, hub).with_uploads(net.dialer.clone(), cert))
     }
 
+    /// The training view: every other device's training runs and jobs (Ymir's
+    /// `/ymir/train-status/1`, Ymir 0.15.5) and the inference nodes' rollouts with each
+    /// version's share, canary and the run that trained it. A read; nothing changes.
+    pub async fn training_overview(&self) -> Result<crate::models::training::TrainingOverview> {
+        let net = self.net()?;
+        let me = net.node.peer_id().to_string();
+        let nodes = net
+            .identity
+            .roster()
+            .active()
+            .filter(|c| c.peer_id != me)
+            .map(|c| ModelNode { peer: c.peer_id.clone(), label: c.label.clone() })
+            .collect::<Vec<_>>();
+        let cert = Some(encode_cert(&net.identity.our_cert()));
+        Ok(crate::models::training::overview(net.dialer.clone(), cert, nodes).await)
+    }
+
     /// What each of the user's other devices has, and whether it takes model management
     /// (`needs owner device` when it refuses this one).
     pub async fn models_overview(&self) -> Result<Vec<NodeModels>> {
