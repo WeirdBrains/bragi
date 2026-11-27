@@ -143,6 +143,10 @@ suite('Chat files, reactions, history, folders and link codes', () => {
 
     assert.strictEqual(await exec('bragi.sessions.open', 'c-old'), 3 * 2 - 2);
     assert.strictEqual(api.chat.controller.conversationId, 'c-old');
+    api.chat.controller.reset();
+    // Opening the chat shows the Bragi side bar, whose Connections view asks bragi serve for its lists
+    // (and starts it when none answers). Close it so later suites start their own servers in peace.
+    await vscode.commands.executeCommand('workbench.action.closeSidebar');
   });
 
   test('chats are filed in folders, which nest, rename, move and delete without losing a chat', async () => {
