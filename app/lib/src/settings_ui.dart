@@ -7,6 +7,7 @@ import 'api.dart';
 import 'controller.dart';
 import 'delete_ui.dart';
 import 'models_ui.dart';
+import 'on_device_ui.dart';
 import 'theme.dart';
 import 'wake_ui.dart';
 
@@ -211,6 +212,8 @@ class SettingsScreen extends StatelessWidget {
                 StoreClipsTile(api: c.api),
                 _heading('WAKE-UPS'),
                 WakeSection(api: c.api),
+                _heading('ON-DEVICE MODEL'),
+                OnDeviceSection(api: c.api, onChanged: c.refreshTargets),
                 _heading('HISTORY'),
                 ClearHistoryTile(controller: controller),
                 if (c.notice != null)

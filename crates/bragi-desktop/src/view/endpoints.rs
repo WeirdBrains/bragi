@@ -45,6 +45,8 @@ pub(super) struct Prefs {
     pub delete_folder: Option<(String, String)>,
     /// Relay wake is waiting for its battery-cost confirm (B4).
     pub wake_confirm: bool,
+    /// The on-device model whose download waits for its consent card's OK, and the card (B4).
+    pub on_device_consent: Option<(String, Vec<String>)>,
     /// Test results by endpoint id (and `form` for the card being edited): ok, words.
     pub tests: HashMap<String, (bool, String)>,
     /// Folders the user collapsed.
@@ -738,6 +740,9 @@ impl BragiView {
     pub(super) fn prefs_overlay(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         let t = self.theme;
         if let Some(o) = self.wake_overlay(cx) {
+            return Some(o);
+        }
+        if let Some(o) = self.on_device_overlay(cx) {
             return Some(o);
         }
         if let Some(form) = self.prefs.form.clone() {

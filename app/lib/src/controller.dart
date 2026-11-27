@@ -191,6 +191,12 @@ class BragiController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-reads Settings' lists and the targets (the on-device model came or went).
+  Future<void> refreshTargets() async {
+    await _refreshSettings();
+    notifyListeners();
+  }
+
   Future<void> _refreshSettings() async {
     endpoints = await api.endpoints();
     links = await api.links();

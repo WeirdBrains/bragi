@@ -5,6 +5,7 @@
 
 import 'api/bragi.dart';
 import 'api/code.dart';
+import 'api/on_device.dart';
 import 'api/video.dart';
 
 import 'dart:async';
@@ -246,6 +247,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<NotificationView> dco_decode_list_notification_view(dynamic raw);
 
   @protected
+  List<OnDeviceModelView> dco_decode_list_on_device_model_view(dynamic raw);
+
+  @protected
   List<PendingUploadView> dco_decode_list_pending_upload_view(dynamic raw);
 
   @protected
@@ -340,6 +344,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NotificationView dco_decode_notification_view(dynamic raw);
+
+  @protected
+  OnDeviceModelView dco_decode_on_device_model_view(dynamic raw);
+
+  @protected
+  OnDeviceView dco_decode_on_device_view(dynamic raw);
 
   @protected
   OpenedView dco_decode_opened_view(dynamic raw);
@@ -777,6 +787,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<OnDeviceModelView> sse_decode_list_on_device_model_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<PendingUploadView> sse_decode_list_pending_upload_view(
     SseDeserializer deserializer,
   );
@@ -897,6 +912,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NotificationView sse_decode_notification_view(SseDeserializer deserializer);
+
+  @protected
+  OnDeviceModelView sse_decode_on_device_model_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  OnDeviceView sse_decode_on_device_view(SseDeserializer deserializer);
 
   @protected
   OpenedView sse_decode_opened_view(SseDeserializer deserializer);
@@ -1431,6 +1454,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_on_device_model_view(
+    List<OnDeviceModelView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_pending_upload_view(
     List<PendingUploadView> self,
     SseSerializer serializer,
@@ -1597,6 +1626,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     NotificationView self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_on_device_model_view(
+    OnDeviceModelView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_on_device_view(OnDeviceView self, SseSerializer serializer);
 
   @protected
   void sse_encode_opened_view(OpenedView self, SseSerializer serializer);

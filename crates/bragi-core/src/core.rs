@@ -159,6 +159,9 @@ pub struct AppState {
     /// Push wake-ups on this device (B4).
     #[serde(default)]
     pub wake: crate::wake::WakeStatus,
+    /// The optional on-device model (B4).
+    #[serde(default)]
+    pub on_device: crate::on_device::OnDeviceStatus,
 }
 
 /// The last node address added with [`Core::add_node`]: looked for, found, or not found in
@@ -304,6 +307,8 @@ pub(crate) struct Inner {
     pub(crate) wake_gen: watch::Sender<u64>,
     /// The relay wake connection is up.
     pub(crate) wake_up: Arc<std::sync::atomic::AtomicBool>,
+    /// The optional on-device model: its engine, loaded model and download (B4).
+    pub(crate) on_device: crate::on_device::OnDevice,
 }
 
 /// The client core. Cheap to clone; every clone is the same core.
@@ -445,10 +450,12 @@ impl Core {
                 wakes,
                 wake_gen: watch::channel(0).0,
                 wake_up: Arc::default(),
+                on_device: crate::on_device::OnDevice::new(),
             }),
             _runtime: runtime,
         };
         core.publish_pool();
+        core.publish_on_device();
         // Copies of stored clips not played for a month, or over the cache's size, go (off the
         // caller's thread: it only reads one folder).
         let cache = core.clip_cache();

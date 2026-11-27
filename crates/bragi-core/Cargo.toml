@@ -12,6 +12,9 @@ publish = false
 [features]
 # Decoding WAV and MP3 for a shell that plays through its own audio output (the desktop).
 decode = ["dep:symphonia"]
+# The optional on-device model's engine: llama.cpp in-process (B4). Off here so everyday builds
+# skip llama.cpp's C++ build; release builds turn it on where llama.cpp builds.
+on-device = ["weirdnet-model/llama"]
 
 [dependencies]
 symphonia = { workspace = true, optional = true }

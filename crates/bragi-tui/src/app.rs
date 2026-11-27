@@ -409,6 +409,7 @@ impl App {
                     let name = self.settings.endpoints.iter().find(|e| &e.id == id).map(|e| e.name.clone()).unwrap_or_else(|| "endpoint".into());
                     if model.is_empty() { name } else { format!("{name} · {model}") }
                 }
+                Target::Device { .. } => bragi_core::on_device::LABEL.into(),
             }),
         }
     }
@@ -519,6 +520,48 @@ impl App {
         } else {
             "Storing clips: off. A clip plays only on the device it was attached on.".to_string()
         });
+    }
+
+    /// `/on-device` (status and models), `on|off`, `use ID`, `get ID` (shows what downloads),
+    /// `get ID yes` (the consent: downloads it), `stop`, `remove ID`: the optional on-device model.
+    fn on_device_command(&mut self, rest: &str) {
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        let done = match words.as_slice() {
+            [] => Ok(None),
+            ["on"] => self.core.set_on_device(true).map(|_| None),
+            ["off"] => self.core.set_on_device(false).map(|_| None),
+            ["use", id] => self.core.choose_on_device_model(id).map(|_| None),
+            ["get", id] => match self.core.on_device_consent(id) {
+                Ok(lines) => return self.say(format!("{} Type /on-device get {id} yes to download it.", lines.join(" "))),
+                Err(e) => Err(e),
+            },
+            ["get", id, "yes"] => self.core.download_on_device_model(id, true).map(|_| Some("Downloading; /on-device shows how far.".to_string())),
+            ["stop"] => Ok(Some(
+                if self.core.cancel_on_device_download() { "Download stopped; /on-device get resumes it." } else { "Nothing is downloading." }
+                    .to_string(),
+            )),
+            ["remove", id] => {
+                self.core.remove_on_device_model(id).map(|r| Some(if r { format!("Removed {id}.") } else { format!("{id} wasn't downloaded.") }))
+            }
+            _ => return self.fail("Use /on-device [on|off|use ID|get ID|stop|remove ID]."),
+        };
+        match done {
+            Err(e) => self.fail(e.message),
+            Ok(Some(s)) => self.say(s),
+            Ok(None) => {
+                self.targets = self.core.targets();
+                let st = self.core.state().on_device;
+                let models: Vec<String> = self
+                    .core
+                    .on_device_models()
+                    .into_iter()
+                    .map(|m| {
+                        format!("{}{} ({}{})", if m.chosen { "*" } else { "" }, m.id, m.size_label, if m.installed { ", downloaded" } else { "" })
+                    })
+                    .collect();
+                self.say(format!("On-device model: {} Models: {}.", st.line(), models.join(", ")))
+            }
+        }
     }
 
     /// `/video-limits` (show), `/video-limits key=value …` (set this device's limits for the
@@ -1225,6 +1268,8 @@ impl App {
     pub fn picker_models(&self) -> Vec<String> {
         match self.targets.get(self.picker_target).map(|t| &t.target) {
             Some(Target::Endpoint { .. }) => self.endpoint_models.clone(),
+            // The on-device models downloaded here.
+            Some(Target::Device { .. }) => self.core.on_device_models().into_iter().filter(|m| m.installed).map(|m| m.id).collect(),
             // A rollout's pinnable versions follow its name.
             _ => {
                 self.state.catalog.models.iter().flat_map(|m| std::iter::once(m.id.clone()).chain(m.versions.iter().map(|v| v.id.clone()))).collect()
@@ -1299,6 +1344,7 @@ impl App {
                 let Some(m) = models.get(self.model_sel).cloned() else { return };
                 match target {
                     Some(Target::Endpoint { id, .. }) => self.pick_target(Target::Endpoint { id, model: m }),
+                    Some(Target::Device { .. }) => self.pick_target(Target::Device { model: m }),
                     _ => {
                         if !matches!(self.effective_target(), None | Some(Target::Pool)) {
                             self.pick_target(Target::Pool);
@@ -1899,6 +1945,10 @@ impl App {
         if text == "/store-clips" || text.starts_with("/store-clips ") {
             self.input.take();
             return self.store_clips_command(text.trim_start_matches("/store-clips").trim());
+        }
+        if text == "/on-device" || text.starts_with("/on-device ") {
+            self.input.take();
+            return self.on_device_command(text.trim_start_matches("/on-device").trim());
         }
         if text == "/video-limits" || text.starts_with("/video-limits ") {
             self.input.take();

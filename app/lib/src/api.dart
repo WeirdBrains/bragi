@@ -3,7 +3,10 @@
 import 'dart:typed_data';
 
 import 'rust/api/bragi.dart' as rust;
+import 'rust/api/on_device.dart' as rod;
 import 'rust/api/video.dart' as rv;
+
+export 'rust/api/on_device.dart' show OnDeviceModelView, OnDeviceView;
 
 export 'rust/api/video.dart'
     show
@@ -210,6 +213,15 @@ abstract class BragiApi {
   rust.WakeView wakeStatus();
   rust.WakeView setWakeSettings(bool push, bool relayWake);
   String relayWakeCost();
+  // The optional on-device model (B4): off by default; a model downloads only with consent.
+  rod.OnDeviceView onDeviceStatus();
+  rod.OnDeviceView setOnDevice(bool enabled);
+  List<rod.OnDeviceModelView> onDeviceModels();
+  rod.OnDeviceView chooseOnDeviceModel(String id);
+  List<String> onDeviceConsent(String id);
+  rod.OnDeviceView downloadOnDeviceModel(String id, bool consent);
+  bool cancelOnDeviceDownload();
+  rod.OnDeviceView removeOnDeviceModel(String id);
   Future<List<rust.TargetView>> targets();
   Future<rust.ChatStarted> sendTo(
     String? conversation,
@@ -559,6 +571,23 @@ class RustBragiApi implements BragiApi {
       rust.setWakeSettings(push: push, relayWake: relayWake);
   @override
   String relayWakeCost() => rust.relayWakeCost();
+  @override
+  rod.OnDeviceView onDeviceStatus() => rod.onDeviceStatus();
+  @override
+  rod.OnDeviceView setOnDevice(bool enabled) => rod.setOnDevice(enabled: enabled);
+  @override
+  List<rod.OnDeviceModelView> onDeviceModels() => rod.onDeviceModels();
+  @override
+  rod.OnDeviceView chooseOnDeviceModel(String id) => rod.chooseOnDeviceModel(id: id);
+  @override
+  List<String> onDeviceConsent(String id) => rod.onDeviceConsent(id: id);
+  @override
+  rod.OnDeviceView downloadOnDeviceModel(String id, bool consent) =>
+      rod.downloadOnDeviceModel(id: id, consent: consent);
+  @override
+  bool cancelOnDeviceDownload() => rod.cancelOnDeviceDownload();
+  @override
+  rod.OnDeviceView removeOnDeviceModel(String id) => rod.removeOnDeviceModel(id: id);
   @override
   Future<List<rust.TargetView>> targets() => rust.targets();
   @override

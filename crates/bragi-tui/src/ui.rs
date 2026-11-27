@@ -70,6 +70,10 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
     ("/attach PATH · /detach", "attach a text, image, audio or video file · drop them"),
     ("/frames · /play", "the frames the model saw of the chat's video · open it in the system player"),
     ("/store-clips [on|off]", "copy attached clips into their messages so your other devices can play them"),
+    (
+        "/on-device [on|off|use|get|stop|remove]",
+        "the optional on-device model: off until you turn it on; get ID shows what downloads, get ID yes downloads it",
+    ),
     ("/video-limits [k=v… | clear]", "the model's video limits · set yours (fill gaps, only tighten) · clear them"),
     ("/train · /train off", "mark the open chat for training on your Ymir nodes · withdraw it"),
 ];
@@ -1402,9 +1406,9 @@ fn model_line(m: &bragi_core::ModelInfo, picked: bool) -> Line<'static> {
 fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let t = th();
     let current = app.effective_target();
-    let pool = !matches!(app.targets.get(app.picker_target).map(|x| &x.target), Some(bragi_core::Target::Endpoint { .. }));
+    let pool = matches!(app.targets.get(app.picker_target).map(|x| &x.target), None | Some(bragi_core::Target::Pool));
     let picked_model = match &current {
-        Some(bragi_core::Target::Endpoint { model, .. }) => Some(model.clone()),
+        Some(bragi_core::Target::Endpoint { model, .. } | bragi_core::Target::Device { model }) => Some(model.clone()),
         _ => None,
     };
     let t_items: Vec<ListItem> = app
@@ -1423,7 +1427,7 @@ fn draw_models(f: &mut Frame, app: &mut App, hits: &mut HitMap, area: Rect) {
     let m_items: Vec<ListItem> = if pool {
         app.state.catalog.models.iter().map(|m| ListItem::new(model_line(m, app.model.as_deref() == Some(m.id.as_str())))).collect()
     } else {
-        app.endpoint_models
+        app.picker_models()
             .iter()
             .map(|m| {
                 let on = picked_model.as_deref() == Some(m.as_str());

@@ -34,6 +34,7 @@ pub mod mcp_servers;
 pub mod models;
 mod models_core;
 pub mod notifications;
+pub mod on_device;
 pub mod openai;
 pub mod pools;
 pub mod project;
@@ -72,6 +73,7 @@ pub use crate::models::{
     HubHit, ModelNode, ModelsEvent, NodeFit, NodeModels, NodeStatus, PullSpec, PullTarget, PulledView, QuantFit, StoredView, Verdict, human_bytes,
 };
 pub use crate::models_core::ModelsRun;
+pub use crate::on_device::{OnDeviceDownload, OnDeviceModel, OnDeviceSettings, OnDeviceStatus};
 pub use crate::openai::TestReport;
 pub use crate::pools::{PoolRef, PoolView};
 pub use crate::reactions::{Feedback, QUICK_REACTIONS, ReactionEvent};
