@@ -2,6 +2,25 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 08:00 EST: release packaging bundles the LGPL ffmpeg everywhere, Linux builds with the on-device engine (merged `feature/packaging-on-device-ffmpeg`)
+
+Michael (11-27) asked for this after the release. It goes out with the next release (0.16.1 doesn't have it).
+
+**What:**
+- [.github/workflows/release.yml](.github/workflows/release.yml): every desktop job builds ffmpeg/ffprobe with [scripts/build-ffmpeg.sh](scripts/build-ffmpeg.sh) on its own runner and passes `BRAGI_FFMPEG_DIR` to its dist script. Linux: native on Ubuntu 22.04 (`nasm` added). macOS: arm64 native plus x86_64 cross (`--target=x86_64-apple-macos11`), both at macOS 11, joined with `lipo`, into `Contents/Helpers` and the tarball. Windows: MSYS2 (UCRT64 gcc on x86_64, CLANGARM64 clang on ARM64), `--extra-ldflags=-static`, beside `bragi.exe` in the zip and installers. Each job checks its bundle (Linux: tarballs have `bin/ffmpeg`, `bin/ffprobe`, `share/doc/ffmpeg/SOURCE.txt`; macOS: the app's Helpers and the tarball; Windows: the zip and the MSI's installed `ffmpeg.exe`). No binary is cached or committed, no keys.
+- On-device engine: [scripts/dist-linux.sh](scripts/dist-linux.sh) builds both binaries (GUI and terminal-only) with `BRAGI_FEATURES` (default `on-device`); [scripts/dist-macos.sh](scripts/dist-macos.sh) and [scripts/dist-windows.ps1](scripts/dist-windows.ps1) take `BRAGI_FEATURES` too (default none, so macOS and Windows releases don't have the engine yet). llama.cpp builds with `GGML_NATIVE=OFF` (no `target-cpu=native`), so the binary is portable. The Release check job runs clippy with `--features on-device`; the Linux job checks the engine is in the binary. deb/rpm packages now depend on libstdc++ (`libstdc++6`, `libstdc++`); Arch already has `gcc-libs`, and Nix already has `stdenv.cc.cc.lib`.
+- No build paths in the bundles: ffmpeg compiles its configure line into the binary, so build-ffmpeg.sh now uses a fixed `--prefix=/usr/local` with `DESTDIR` and an in-tree build (no `-ffile-prefix-map` on the line); the dist scripts pass `-ffile-prefix-map` in `CFLAGS`/`CXXFLAGS` for llama.cpp's C/C++. Fixed the `FFMPEG_CROSS` example in build-ffmpeg.sh (it's split on spaces, so quoting doesn't work).
+- Docs: [CHANGELOG.md](CHANGELOG.md), [docs/design/video.md](docs/design/video.md), [docs/RELEASES.md](docs/RELEASES.md), [roadmap.toml](roadmap.toml) B4 ([ROADMAP.md](ROADMAP.md), site regenerated).
+
+**Checks (alien-blue):**
+- `actionlint` on every workflow (clean), `cargo fmt --all --check`, `bash -n` on the scripts, the site link and roadmap checks.
+- `cargo clippy -D warnings`: `--workspace --all-targets`, `-p bragi-desktop --features on-device --all-targets`, and `-p bragi-desktop --no-default-features --features on-device --all-targets`.
+- `scripts/dist-linux.sh` end to end (x86_64, no nfpm here, so archives only), with a fresh `build-ffmpeg.sh` build and llama-cpp-sys rebuilt from clean. Both binaries have the engine (`ldd`: libstdc++, libgcc_s, libc, libm, plus the GUI libraries). Both tarballs bundle ffmpeg 9.0.2 (no libraries beyond libc/libm). The leak scan of the archives found 0 hits.
+- `cargo test --workspace`: no Rust code changed here; main's suite passed in the v0.16.1 cut.
+- Not run here: the macOS and Windows ffmpeg steps (no macOS or pwsh on alien-blue). They first run in the next Release run, or before that with `gh workflow run release.yml --ref main`.
+
+**Next:** the engine in the macOS (Metal), Windows and phone release builds, then the next release.
+
 ## 2026-11-27 06:03 EST: B7 checked against the real pool (on main)
 
 Michael (11-27) approved the live check with a test grant. B7 is **done**: its last item was a check against a real Ymir node.
