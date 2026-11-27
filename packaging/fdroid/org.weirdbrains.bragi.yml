@@ -7,6 +7,8 @@
 # reads QR codes with Google ML Kit, which is not free software), so they pair by typed code only.
 # One build per ABI; Flutter's --split-per-abi adds 1000 (armeabi-v7a), 2000 (arm64-v8a) or 4000
 # (x86_64) to the pubspec build number. The first tag with the swap is v0.15.0 (build 18).
+# Builds after 0.16.1 compile llama.cpp (the on-device model's engine, with CMake and the NDK) through the
+# Flutter build hook, so `cmake` needs adding to `sudo`.
 Categories:
   - AI Chat
   - Internet

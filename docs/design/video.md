@@ -21,7 +21,7 @@ Flutter app attaches a clip (gallery or files) with a limits chip and sheet; on 
 a Flutter build on a computer reads clips with ffmpeg through the core. The chat card plays the clip inline with `video_player` (one
 clip at a time with the audio files; Play/Pause, seek, elapsed / total, Mute, the frames strip plays from there) and otherwise says why
 (not on this device, no player in this build, the platform can't play it) and offers the system player (`url_launcher`). The native
-decoders are written but not yet built or run on a device. Video follow-ups (branch `feature/video-followups`, 2026-11-26): the LGPL
+decoders are built in the release apk and ipa but not yet run on a device. Video follow-ups (branch `feature/video-followups`, 2026-11-26): the LGPL
 ffmpeg recipe `scripts/build-ffmpeg.sh` (FFmpeg 9.0.2, pinned tarball and sha256, `--disable-gpl --disable-nonfree`, only the demuxers,
 decoders, parsers, filters and the MJPEG/WAV encoders Bragi runs; about 6 MiB each for ffmpeg and ffprobe), its notice and exact
 configure line in `THIRD_PARTY_NOTICES.md`, and the packaging wiring below (`Ffmpeg::locate` also looks in `Contents/Helpers` of the
@@ -31,8 +31,8 @@ comes back only if the player put it there; Escape or Exit fullscreen returns to
 preferences are in `video-prefs.json`): a clip up to 25 MiB is copied into its message (`Sampled.stored`: extension, BLAKE3, size,
 base64), syncs with it and goes when it is deleted; a linked device without the original writes the copy, checked against its hash,
 into `<data dir>/clips/<hash>.<ext>` and plays that (desktop, terminal app, and the Flutter card through `clip`/`clip_here`). Not yet:
-sound from phone clips, scene detection on phones, transcription, a Flutter switch for stored clips (phones keep the path only), a
-macOS universal and Windows ffmpeg built and shipped by CI, and pruning `<data dir>/clips`. None of it blocks v1. Ymir's side (the
+sound from phone clips, scene detection on phones and transcription (done since: the Flutter switch for stored clips, pruning
+`<data dir>/clips`, and the macOS universal and Windows ffmpeg built and shipped by CI). None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
 
