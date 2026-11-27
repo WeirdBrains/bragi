@@ -30,7 +30,8 @@ fn req(method: &str, path: &str) -> axum::http::request::Builder {
 
 async fn call(app: &Router, method: &str, path: &str, body: Option<Value>) -> (StatusCode, Value) {
     let body = body.map(|b| Body::from(b.to_string())).unwrap_or_else(Body::empty);
-    let res = tokio::time::timeout(Duration::from_secs(60), app.clone().oneshot(req(method, path).body(body).unwrap())).await.expect("answered").unwrap();
+    let res =
+        tokio::time::timeout(Duration::from_secs(60), app.clone().oneshot(req(method, path).body(body).unwrap())).await.expect("answered").unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
     (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
@@ -46,7 +47,13 @@ async fn servers_are_added_switched_allowed_tested_and_removed_and_secrets_never
     assert_eq!((s, v["servers"].as_array().map(Vec::len)), (StatusCode::OK, Some(0)), "{v}");
 
     // A web server with a bearer token: the token is stored, never shown.
-    let (s, v) = call(&app, "POST", "/v1/mcp-servers", Some(json!({"name": "Docs", "transport": "http", "url": "http://127.0.0.1:9/mcp", "secrets": {"bearer": "tok-secret-123456"}}))).await;
+    let (s, v) = call(
+        &app,
+        "POST",
+        "/v1/mcp-servers",
+        Some(json!({"name": "Docs", "transport": "http", "url": "http://127.0.0.1:9/mcp", "secrets": {"bearer": "tok-secret-123456"}})),
+    )
+    .await;
     assert_eq!(s, StatusCode::CREATED, "{v}");
     let id = v["id"].as_str().unwrap().to_string();
     assert_eq!(v["has_bearer"], true);
@@ -64,7 +71,11 @@ async fn servers_are_added_switched_allowed_tested_and_removed_and_secrets_never
     assert!(!call(&app, "GET", "/v1/mcp-servers", None).await.1.to_string().contains("env-secret-98765"));
 
     // Bad input is refused.
-    for bad in [json!({"name": "x", "transport": "stdio", "scope": "folder", "command": "c"}), json!({"name": "x", "transport": "http", "url": "http://example.com/mcp"}), json!({"name": "x", "transport": "pigeon"})] {
+    for bad in [
+        json!({"name": "x", "transport": "stdio", "scope": "folder", "command": "c"}),
+        json!({"name": "x", "transport": "http", "url": "http://example.com/mcp"}),
+        json!({"name": "x", "transport": "pigeon"}),
+    ] {
         let (s, v) = call(&app, "POST", "/v1/mcp-servers", Some(bad.clone())).await;
         assert!(s == StatusCode::BAD_REQUEST || s == StatusCode::UNPROCESSABLE_ENTITY, "{bad} -> {s} {v}");
     }
@@ -82,7 +93,9 @@ async fn servers_are_added_switched_allowed_tested_and_removed_and_secrets_never
     assert_eq!(v["always_allow"], json!([]));
 
     // An edit without secrets keeps the token.
-    let (s, v) = call(&app, "PUT", &format!("/v1/mcp-servers/{id}"), Some(json!({"name": "Docs", "transport": "http", "url": "http://127.0.0.1:9/v2/mcp"}))).await;
+    let (s, v) =
+        call(&app, "PUT", &format!("/v1/mcp-servers/{id}"), Some(json!({"name": "Docs", "transport": "http", "url": "http://127.0.0.1:9/v2/mcp"})))
+            .await;
     assert_eq!(s, StatusCode::OK, "{v}");
     assert_eq!(v["has_bearer"], true);
     assert!(v["target"].as_str().unwrap().contains("/v2/mcp"), "{v}");
@@ -152,9 +165,11 @@ async fn an_agent_chat_streams_its_approval_card_and_the_answer_lets_the_tool_ru
                 Some("approval") => {
                     assert_eq!(ev["tool"], "notes.search");
                     assert_eq!(ev["always"], false, "a node's own tool: always allow isn't offered");
-                    let (s, v) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": ev["ask"], "choice": "once"}))).await;
+                    let (s, v) =
+                        call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": ev["ask"], "choice": "once"}))).await;
                     assert_eq!(s, StatusCode::OK, "{v}");
-                    let (s, _) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": ev["ask"], "choice": "once"}))).await;
+                    let (s, _) =
+                        call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": ev["ask"], "choice": "once"}))).await;
                     assert_eq!(s, StatusCode::NOT_FOUND, "a card is answered once");
                     answered = true;
                 }
@@ -170,8 +185,7 @@ async fn an_agent_chat_streams_its_approval_card_and_the_answer_lets_the_tool_ru
     assert!(answered, "{events:?}");
     assert_eq!(events.last().unwrap()["type"], "done", "{events:?}");
     assert!(events.iter().any(|e| e["type"] == "tool" && e["state"] == "done"), "the tool ran: {events:?}");
-    let text = events.iter().filter(|e| e["type"] == "delta").last().map(|e| e["text"].as_str().unwrap().to_string()).unwrap_or_default();
-    assert!(events.iter().filter(|e| e["type"] == "delta").any(|e| e["text"].as_str().unwrap().contains("2 notes mention")) || text.contains("2 notes mention"), "{events:?}");
+    assert!(events.iter().filter(|e| e["type"] == "delta").any(|e| e["text"].as_str().unwrap().contains("2 notes mention")), "{events:?}");
     let (s, _) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": "nope", "ask": 1, "choice": "deny"}))).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     let (s, _) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": 1, "choice": "sometimes"}))).await;
