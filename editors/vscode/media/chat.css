@@ -17,3 +17,13 @@ button:hover { background: var(--vscode-button-hoverBackground); }
 .code .bar button { padding: 1px 6px; font-size: 0.85em; }
 pre { margin: 0; padding: 6px; overflow-x: auto; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); background: var(--vscode-textCodeBlock-background); }
 .error { color: var(--vscode-errorForeground); white-space: pre-wrap; margin-top: 4px; }
+
+.clip { gap: 6px; align-items: center; }
+.clip[hidden] { display: none; }
+.clip .warn { color: var(--vscode-editorWarning-foreground); }
+.video { margin: 6px 0; display: flex; flex-direction: column; gap: 4px; }
+.video video { max-width: 100%; max-height: 50vh; background: #000; }
+.video .fallback { color: var(--vscode-editorWarning-foreground); }
+.video .strip { display: flex; flex-wrap: wrap; gap: 4px; }
+.video .frame { display: flex; flex-direction: column; align-items: center; padding: 2px; font-size: 0.85em; }
+.video .frame img { width: 72px; height: 40px; object-fit: cover; }

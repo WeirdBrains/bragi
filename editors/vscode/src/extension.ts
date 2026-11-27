@@ -180,6 +180,18 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
     vscode.commands.registerCommand('bragi.showRewriteDiff', run((uri?: vscode.Uri) => rewrites.showDiff(uri instanceof vscode.Uri ? uri : undefined))),
     vscode.commands.registerCommand('bragi.openChat', () => vscode.commands.executeCommand(`${ChatView.id}.focus`)),
     vscode.commands.registerCommand(
+      'bragi.attachVideo',
+      run(async (uri?: vscode.Uri) => {
+        await vscode.commands.executeCommand(`${ChatView.id}.focus`);
+        if (uri instanceof vscode.Uri && uri.scheme === 'file') {
+          await chat.controller.attachVideo(uri.fsPath);
+        } else {
+          await chat.pickVideo();
+        }
+      }),
+    ),
+    vscode.commands.registerCommand('bragi.videoLimits', () => chat.editVideoLimits()),
+    vscode.commands.registerCommand(
       'bragi.askAboutSelection',
       run(async (question?: string) => {
         const editor = vscode.window.activeTextEditor;

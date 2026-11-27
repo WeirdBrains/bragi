@@ -19,6 +19,15 @@ that install from a VSIX or Open VSX.
 - **Chat panel** (the Bragi icon in the activity bar) that can include the current file, the
   selection, other open files and the file's problems. Code blocks in answers have Insert and Copy.
   On the Bragi target, chats are kept in Bragi's history like any other.
+- **Video in the chat** (Bragi target): **Video…** in the panel, **Bragi: Attach Video to Chat…**,
+  the Explorer's context menu on a clip, or a drop on the panel (hold Shift when dragging from the
+  Explorer). Bragi samples the clip into timestamped frames sized from the model's reported limits
+  (it needs `ffmpeg` where Bragi runs; the extension never runs it). A chip shows whether the model's
+  limits are known; **Limits…** (or **Bragi: Set Video Limits for the Model…**) sets this device's
+  override, which fills what isn't reported and only lowers what is. The chat plays the clip with
+  the webview's own player (mp4, m4v, mov, webm, ogv), with the frames the model saw under it (click
+  one to play from there). When the clip is gone, is a format the webview can't play, or fails to
+  play, the panel says why and offers **Open in system player**.
 - **Target and model picker** in the status bar: through Bragi, your Weirdnet pool (any model it
   lists, or its default) or an endpoint from Bragi's Settings; or a direct OpenAI-compatible server.
 
@@ -115,8 +124,11 @@ to Weird Brains. Inline suggestions are off in untrusted workspaces.
 
 - `GET /v1/health`, `GET /v1/state`, `GET /v1/targets` (the pool and Settings endpoints; requests
   take an optional `target`)
-- `POST /v1/code/suggest`, `POST /v1/code/rewrite`, `POST /v1/code/chat` (server-sent events),
-  `POST /v1/cancel`
+- `POST /v1/code/suggest`, `POST /v1/code/rewrite`, `POST /v1/code/chat` (server-sent events;
+  `video: {path, max_frames?, max_edge?, mode?, start_ms?, end_ms?}` attaches a clip on disk and
+  adds a `video` event with the frames), `POST /v1/cancel`
+- `POST /v1/video/limits` (a model's reported, own and effective video limits, and the chip) and
+  `POST /v1/video/limits/set` (this device's override, `key=value …`; empty clears it)
 - `POST /v1/code/hunks` (the hunks between two texts) and `POST /v1/code/apply` (a text with only
   the accepted hunks), for reviewing a rewrite hunk by hunk
 - Management routes behind the same token: `GET /v1/links`, `POST /v1/links/node`, `POST /v1/links/remove`,

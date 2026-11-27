@@ -89,6 +89,16 @@
         "category": "Bragi"
       },
       {
+        "command": "bragi.attachVideo",
+        "title": "Attach Video to Chat…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.videoLimits",
+        "title": "Set Video Limits for the Model…",
+        "category": "Bragi"
+      },
+      {
         "command": "bragi.askAboutSelection",
         "title": "Ask About Selection",
         "category": "Bragi"
@@ -297,6 +307,13 @@
       }
     ],
     "menus": {
+      "explorer/context": [
+        {
+          "command": "bragi.attachVideo",
+          "group": "bragi@1",
+          "when": "resourceScheme == file && resourceExtname =~ /^\\.(mp4|m4v|mov|webm|mkv|avi|ogv)$/i"
+        }
+      ],
       "editor/context": [
         {
           "command": "bragi.rewriteSelection",

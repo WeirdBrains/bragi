@@ -5,13 +5,15 @@ import * as vscode from 'vscode';
 import { chatContextText, cleanSuggestion, effectiveScope, PromptMessage, rewritePrompt, rewriteResult, suggestPrompt } from './prompts';
 import { Applied, applyHunks, computeHunks, HunkList } from './hunks';
 import { Secrets } from './tokens';
-import { BragiError, BragiTarget, ChatEvent, EditorContext, ModelList, RewriteResult, Scope, TargetOption } from './types';
+import { BragiError, BragiTarget, ChatEvent, EditorContext, ModelList, RewriteResult, Scope, TargetOption, VideoAttach, VideoLimits } from './types';
 
 export interface ChatTurn {
   prompt: string;
   context?: EditorContext;
   conversation?: string;
   model?: string;
+  /** A clip to go with the turn (Bragi target only). */
+  video?: VideoAttach;
 }
 
 export interface Backend {
@@ -203,7 +205,7 @@ export class BragiBackend implements Backend {
     const res = await this.request(
       'POST',
       '/v1/code/chat',
-      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target() },
+      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target(), video: turn.video },
       signal,
     );
     let conversation: string | undefined;
@@ -215,6 +217,16 @@ export class BragiBackend implements Backend {
       onEvent(e);
     });
     return conversation;
+  }
+
+  /** `model`'s video limits at the current target (its default model when absent). */
+  videoLimits(model?: string, signal?: AbortSignal): Promise<VideoLimits> {
+    return this.api<VideoLimits>('POST', '/v1/video/limits', { model: model || undefined, target: this.target() }, signal);
+  }
+
+  /** Sets this device's video limits for `model` (`key=value …`; empty clears them). */
+  setVideoLimits(model: string, limits: string, signal?: AbortSignal): Promise<VideoLimits> {
+    return this.api<VideoLimits>('POST', '/v1/video/limits/set', { model, limits, target: this.target() }, signal);
   }
 }
 
@@ -298,6 +310,9 @@ export class DirectBackend implements Backend {
   }
 
   async chat(turn: ChatTurn, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<string | undefined> {
+    if (turn.video) {
+      throw new BragiError('A video needs the Bragi target: bragi serve samples the clip for the model (the direct server gets text only).', 'bad_request');
+    }
     const id = turn.conversation && this.chats.has(turn.conversation) ? turn.conversation : `direct-${this.next++}`;
     const history = this.chats.get(id) ?? [];
     const content = turn.context ? `${chatContextText(turn.context)}${turn.prompt}` : turn.prompt;

@@ -2,6 +2,25 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 19:20 EST: video V2 slice 3, video in the VS Code extension through bragi serve (merged `feature/video-v2-vscode`, LF-43)
+
+Michael approved the next slices of [docs/design/video.md](docs/design/video.md): VS Code first, then the Flutter phone player (V3). The extension never runs ffmpeg. It sends the clip's path, and `bragi serve` samples it with the same limits and override as every other shell.
+
+- **bragi serve** ([video.rs](crates/bragi-serve/src/video.rs)): `/v1/code/chat` takes `video {path, max_frames?, max_edge?, mode?, start_ms?, end_ms?}`. The path must be absolute and a file. The clip is sampled off the async runtime (`attach_video_source`, with the budget counting the prompt, other attachments and earlier turns), and the original path is kept for playback. The SSE stream sends a `video` event right after `conversation`, carrying `name, bubble, summary, duration_ms, sound, clip` and the frames (`at_ms, label, mime, data`). `/v1/video/limits` and `/v1/video/limits/set` return reported, yours, effective, ready, the chip and the keys, and `set` also returns `ignored`. Both accept the extension's target. `router_with_clips` lets tests swap ffmpeg for a scripted source.
+- **Extension** ([video.ts](editors/vscode/src/video.ts), [chat.ts](editors/vscode/src/chat.ts), [media/chat.js](editors/vscode/media/chat.js)): there are several ways to attach a video, all for the Bragi target only: **Attach Video to Chat…** (`bragi.attachVideo`, also in the Explorer context menu for clip files), the footer's video button, or dragging a clip from the Explorer onto the chat. The direct target says it needs Bragi. A clip row shows the name and the limits chip, with **Limits…** (`bragi.videoLimits`, `key=value` text) and remove. After sending, the user's message gets a card with a `<video controls>` element, **Open in system player**, and the frames the model saw (a click seeks and plays). Safety: the only `localResourceRoots` added are the folders of clips the chat showed, the CSP allows `media-src` only from the webview source, frames must be image data URLs, and `openClip` opens only clips this chat showed that exist. Fallbacks: a clip that isn't on disk shows the frames and says so. `.mkv`/`.avi` (which VS Code's webview can't play) and a `<video>` error offer the system player.
+
+**Checks** (on alien-blue, in the scratch clone):
+- `cargo fmt --all --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean at a411899.
+- `cargo test --workspace --no-fail-fast` at a411899: 358 passed, 0 failed and 5 ignored, in 44 suites. That includes the new serve suite `tests/video.rs` (a clip on disk goes with a code chat, sized by the limits and the override, with the event's frames and labels checked) and the unit test `a_clip_must_be_an_absolute_file_and_a_range_must_run_forward`. bragi-serve now has 27 tests.
+- Extension: `npm run lint` was clean. `npm test` ran in a downloaded VS Code under `xvfb-run` inside `env -i`, with 61 passing and 1 pending, including 7 new video tests (helpers, player messages and fallbacks, attach, limits and sending against the mock server).
+- `flutter analyze`: only the 6 existing `curly_braces` infos. There are no Dart or bridge changes, so `flutter test` was not run.
+- No live GUI was opened. The webview player was checked by tests only and has not been watched on screen.
+
+**Not done:** the Flutter phone player and decoders (V3, next), copying clips into the attachment store so other devices can play them, a bundled LGPL ffmpeg, transcription after Ymir milestone 2, the Bragi status in Ymir `docs/DESIGN.md`, and the Weirdnet asks.
+
+**Next:** V3, `feature/video-v3-flutter`.
+
 ## 2026-11-26 17:40 EST: video V2 slice 2, the inline player and the terminal app's frames and play (merged `feature/video-v2-player`, LF-43)
 
 The rest of V2 in [docs/design/video.md](docs/design/video.md), on top of slice 1 (merge 54d6a27, entry below).
