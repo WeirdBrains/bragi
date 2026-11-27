@@ -12,7 +12,8 @@ url="https://github.com/WeirdBrains/bragi"
 license=('BSD-3-Clause')
 depends=('libxkbcommon' 'libxkbcommon-x11' 'libxcb' 'wayland' 'vulkan-icd-loader' 'fontconfig' 'freetype2' 'alsa-lib'
          'hicolor-icon-theme' 'glibc' 'gcc-libs')
-optdepends=('vulkan-driver: GPU rendering (mesa or the vendor driver)')
+optdepends=('vulkan-driver: GPU rendering (mesa or the vendor driver)'
+            'ffmpeg: attach and play videos')
 provides=('bragi' 'bragi-tui')
 conflicts=('bragi' 'bragi-standalone' 'bragi-tui')
 options=('!strip' '!debug')

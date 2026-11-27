@@ -18,8 +18,11 @@ description: "Chat with your private AI cloud (Ymir) over Weirdnet, in a termina
 conflicts: [bragi, bragi-standalone, bragi-bin]
 overrides:
   deb:
+    # Video attach and the inline player run the distro's ffmpeg; Bragi installs without it.
+    recommends: [ffmpeg]
     depends: [libc6, libgcc-s1]
   rpm:
+    recommends: ["(ffmpeg or ffmpeg-free)"]
     depends: [glibc, libgcc]
   archlinux:
     depends: [glibc, gcc-libs]
@@ -32,5 +35,7 @@ contents:
     type: symlink
   - src: "${BRAGI_BUNDLE}/LICENSE"
     dst: /usr/share/licenses/bragi-tui/LICENSE
+  - src: "${BRAGI_BUNDLE}/THIRD_PARTY_NOTICES.md"
+    dst: /usr/share/doc/bragi-tui/THIRD_PARTY_NOTICES.md
   - src: "${BRAGI_BUNDLE}/README.md"
     dst: /usr/share/doc/bragi-tui/README.md

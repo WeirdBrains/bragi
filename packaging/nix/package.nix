@@ -1,6 +1,6 @@
 # Bragi from the GitHub release tarball (prebuilt, no Rust), patched for Nix.
 # `desktop = true` keeps the desktop entry and icons; `false` is the standalone form with only bin/bragi.
-{ lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper
+{ lib, stdenv, fetchurl, autoPatchelfHook, makeWrapper, ffmpeg-headless
 , libxkbcommon, libxcb, libX11, wayland, vulkan-loader, fontconfig, freetype, zlib, alsa-lib, desktop ? true }:
 
 let
@@ -32,9 +32,11 @@ stdenv.mkDerivation {
     runHook postInstall
   '';
 
+  # Video attach and the inline player run ffmpeg and ffprobe: nixpkgs' build, after the user's own PATH.
   # GPUI loads Vulkan, Wayland and xkbcommon at run time (dlopen).
   postFixup = ''
-    wrapProgram $out/bin/bragi --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ vulkan-loader wayland libxkbcommon libX11 libxcb ]}
+    wrapProgram $out/bin/bragi --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ vulkan-loader wayland libxkbcommon libX11 libxcb ]} \
+      --suffix PATH : ${lib.makeBinPath [ ffmpeg-headless ]}
   '';
 
   meta = {

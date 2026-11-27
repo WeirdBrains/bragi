@@ -8,6 +8,8 @@
 # Needs wix.exe 7.x on PATH with WixToolset.UI.wixext and WixToolset.BootstrapperApplications.wixext in the
 # global cache. WiX 7 is used under the Open Source Maintenance Fee EULA v1.1, accepted by WeirdBrains on
 # 2026-11-12 (docs/RELEASES.md), so every wix command passes -acceptEula wix7. Nothing is code-signed.
+# With BRAGI_FFMPEG_DIR (ffmpeg.exe and ffprobe.exe from scripts/build-ffmpeg.sh, e.g. in MSYS2), both go
+# beside bragi.exe in the zip and the installer, with their licence, build config and source offer.
 param([string]$WixVersion = "7.0.1")
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -38,12 +40,23 @@ try {
   Copy-Item (Join-Path $root "LICENSE") (Join-Path $src "LICENSE.txt")
   Copy-Item (Join-Path $root "README.md") (Join-Path $src "README.md")
   Copy-Item (Join-Path $root "brand\png\windows\bragi.ico") (Join-Path $src "bragi.ico")
+  Copy-Item (Join-Path $root "THIRD_PARTY_NOTICES.md") (Join-Path $src "THIRD_PARTY_NOTICES.md")
+  $ffmpeg = 0
+  $zipFiles = @((Join-Path $src "bragi.exe"), (Join-Path $src "bragi-tui.exe"), (Join-Path $src "LICENSE.txt"), (Join-Path $src "README.md"), (Join-Path $src "THIRD_PARTY_NOTICES.md"))
+  if ($env:BRAGI_FFMPEG_DIR) {
+    foreach ($f in "bin\ffmpeg.exe", "bin\ffprobe.exe") { Copy-Item (Join-Path $env:BRAGI_FFMPEG_DIR $f) $src }
+    Copy-Item (Join-Path $env:BRAGI_FFMPEG_DIR "LICENSE.md") (Join-Path $src "FFMPEG-LICENSE.md")
+    Copy-Item (Join-Path $env:BRAGI_FFMPEG_DIR "CONFIG.txt") (Join-Path $src "FFMPEG-CONFIG.txt")
+    Copy-Item (Join-Path $env:BRAGI_FFMPEG_DIR "SOURCE.txt") (Join-Path $src "FFMPEG-SOURCE.txt")
+    $zipFiles += "ffmpeg.exe", "ffprobe.exe", "FFMPEG-LICENSE.md", "FFMPEG-CONFIG.txt", "FFMPEG-SOURCE.txt" | ForEach-Object { Join-Path $src $_ }
+    $ffmpeg = 1
+  }
 
   Copy-Item (Join-Path $src "bragi.exe") (Join-Path $dist "$name.exe") -Force
   Copy-Item (Join-Path $src "bragi-tui.exe") (Join-Path $dist "bragi-tui-$ver-$triple.exe") -Force
   $zipDir = Join-Path $stage $name
   New-Item -ItemType Directory -Force -Path $zipDir | Out-Null
-  Copy-Item (Join-Path $src "bragi.exe"), (Join-Path $src "bragi-tui.exe"), (Join-Path $src "LICENSE.txt"), (Join-Path $src "README.md") $zipDir
+  Copy-Item $zipFiles $zipDir
   Compress-Archive -Path $zipDir -DestinationPath (Join-Path $dist "$name.zip") -Force
 
   # The installer's license pane needs RTF; made from LICENSE so the two never drift.
@@ -58,11 +71,11 @@ try {
   if (-not $have.StartsWith($WixVersion)) { throw "wix.exe is $have, expected $WixVersion" }
   $msi = Join-Path $dist "$name.msi"
   & $wix build -nologo -acceptEula wix7 -arch $wixArch -ext "WixToolset.UI.wixext/$WixVersion" `
-    -d "Source=$src" -d "ProductVersion=$ver" -d "LicenseRtf=$rtf" -culture en-US -pdbtype none `
+    -d "Source=$src" -d "ProductVersion=$ver" -d "LicenseRtf=$rtf" -d "Ffmpeg=$ffmpeg" -culture en-US -pdbtype none `
     -o $msi (Join-Path $root "packaging\windows\bragi.wxs")
   if ($LASTEXITCODE -ne 0) { throw "wix build (msi) failed: $LASTEXITCODE" }
   & $wix build -nologo -acceptEula wix7 -arch $wixArch -ext "WixToolset.BootstrapperApplications.wixext/$WixVersion" `
-    -d "Source=$src" -d "ProductVersion=$ver" -d "LicenseRtf=$rtf" -d "Msi=$msi" -pdbtype none `
+    -d "Source=$src" -d "ProductVersion=$ver" -d "LicenseRtf=$rtf" -d "Msi=$msi" -d "Ffmpeg=$ffmpeg" -pdbtype none `
     -o (Join-Path $dist "$name-setup.exe") (Join-Path $root "packaging\windows\bundle.wxs")
   if ($LASTEXITCODE -ne 0) { throw "wix build (bundle) failed: $LASTEXITCODE" }
 } finally {

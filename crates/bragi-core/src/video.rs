@@ -871,7 +871,8 @@ impl FrameSource for FakeSource {
 }
 
 /// `ffmpeg` and `ffprobe`, found in this order: `BRAGI_FFMPEG` (the ffmpeg binary; ffprobe beside
-/// it), the copies beside Bragi's executable, then `PATH`.
+/// it), the copies beside Bragi's executable (or in `Contents/Helpers` of the macOS app bundle), then
+/// `PATH`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ffmpeg {
     pub ffmpeg: PathBuf,
@@ -884,18 +885,31 @@ fn exe(name: &str) -> String {
 
 impl Ffmpeg {
     pub fn locate() -> Option<Ffmpeg> {
+        Self::locate_from(
+            std::env::var_os("BRAGI_FFMPEG").map(PathBuf::from),
+            std::env::current_exe().ok().as_deref(),
+            std::env::var_os("PATH").as_deref(),
+        )
+    }
+
+    /// [`Ffmpeg::locate`] with its inputs given: `BRAGI_FFMPEG`, Bragi's executable and `PATH`.
+    pub fn locate_from(bragi_ffmpeg: Option<PathBuf>, current_exe: Option<&Path>, path: Option<&std::ffi::OsStr>) -> Option<Ffmpeg> {
         let pair = |dir: &Path| {
             let (f, p) = (dir.join(exe("ffmpeg")), dir.join(exe("ffprobe")));
             (f.is_file() && p.is_file()).then_some(Ffmpeg { ffmpeg: f, ffprobe: p })
         };
-        if let Some(f) = std::env::var_os("BRAGI_FFMPEG").map(PathBuf::from).filter(|p| p.is_file()) {
+        if let Some(f) = bragi_ffmpeg.filter(|p| p.is_file()) {
             let probe = f.parent().map(|d| d.join(exe("ffprobe"))).filter(|p| p.is_file())?;
             return Some(Ffmpeg { ffmpeg: f, ffprobe: probe });
         }
-        if let Some(found) = std::env::current_exe().ok().and_then(|e| e.parent().and_then(pair)) {
-            return Some(found);
+        // The bundled build (scripts/build-ffmpeg.sh): beside the executable in the archives and on
+        // Windows, Bragi.app/Contents/Helpers beside Contents/MacOS on macOS.
+        if let Some(dir) = current_exe.and_then(Path::parent) {
+            if let Some(found) = pair(dir).or_else(|| pair(&dir.join("..").join("Helpers"))) {
+                return Some(found);
+            }
         }
-        std::env::split_paths(&std::env::var_os("PATH")?).find_map(|d| pair(&d))
+        std::env::split_paths(path?).find_map(|d| pair(&d))
     }
 
     /// The sentence a shell shows where video attach is unavailable.
@@ -1081,6 +1095,39 @@ impl FrameSource for FfmpegCli {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn locate_order_env_then_beside_exe_then_helpers_then_path() {
+        let root = tempfile::tempdir().unwrap();
+        let mk = |dir: &Path| {
+            std::fs::create_dir_all(dir).unwrap();
+            for n in ["ffmpeg", "ffprobe"] {
+                std::fs::write(dir.join(exe(n)), b"").unwrap();
+            }
+            dir.to_path_buf()
+        };
+        let app = root.path().join("Bragi.app/Contents");
+        let bragi = app.join("MacOS").join(exe("bragi"));
+        std::fs::create_dir_all(app.join("MacOS")).unwrap();
+        let on_path = mk(&root.path().join("usr/bin"));
+        let path = std::env::join_paths([on_path.clone()]).unwrap();
+        let found = |env: Option<PathBuf>| Ffmpeg::locate_from(env, Some(&bragi), Some(&path)).map(|f| f.ffmpeg);
+
+        assert_eq!(found(None), Some(on_path.join(exe("ffmpeg"))));
+        let helpers = mk(&app.join("Helpers"));
+        assert_eq!(found(None), Some(app.join("MacOS").join("..").join("Helpers").join(exe("ffmpeg"))));
+        assert!(found(None).unwrap().starts_with(&app) && helpers.is_dir());
+        mk(&app.join("MacOS"));
+        assert_eq!(found(None), Some(app.join("MacOS").join(exe("ffmpeg"))));
+        let custom = mk(&root.path().join("custom"));
+        assert_eq!(found(Some(custom.join(exe("ffmpeg")))), Some(custom.join(exe("ffmpeg"))));
+        // BRAGI_FFMPEG without ffprobe beside it finds nothing rather than mixing builds.
+        let lone = root.path().join("lone");
+        std::fs::create_dir_all(&lone).unwrap();
+        std::fs::write(lone.join(exe("ffmpeg")), b"").unwrap();
+        assert_eq!(found(Some(lone.join(exe("ffmpeg")))), None);
+        assert_eq!(Ffmpeg::locate_from(None, None, None), None);
+    }
 
     fn limits(context: u32, image: u32) -> ModelLimits {
         ModelLimits::new(Some(context), MediaLimits::new().with_image_tokens(image))

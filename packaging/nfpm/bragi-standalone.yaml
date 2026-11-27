@@ -18,8 +18,11 @@ provides: [bragi, bragi-tui]
 conflicts: [bragi, bragi-bin, bragi-tui]
 overrides:
   deb:
+    # Video attach and the inline player run the distro's ffmpeg; Bragi installs without it.
+    recommends: [ffmpeg]
     depends: [libc6, libgcc-s1, libxkbcommon0, libxkbcommon-x11-0, libxcb1, libwayland-client0, libvulkan1, libfontconfig1, libfreetype6, "libasound2t64 | libasound2"]
   rpm:
+    recommends: ["(ffmpeg or ffmpeg-free)"]
     depends: [glibc, libgcc, libxkbcommon, libxkbcommon-x11, libxcb, libwayland-client, vulkan-loader, fontconfig, freetype, alsa-lib]
   archlinux:
     depends: [glibc, gcc-libs, libxkbcommon, libxkbcommon-x11, libxcb, wayland, vulkan-icd-loader, fontconfig, freetype2, alsa-lib]
@@ -32,3 +35,5 @@ contents:
     type: symlink
   - src: "${BRAGI_BUNDLE}/LICENSE"
     dst: /usr/share/licenses/bragi-standalone/LICENSE
+  - src: "${BRAGI_BUNDLE}/THIRD_PARTY_NOTICES.md"
+    dst: /usr/share/doc/bragi-standalone/THIRD_PARTY_NOTICES.md
