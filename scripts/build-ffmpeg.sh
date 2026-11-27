@@ -76,19 +76,22 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 tar -C "$work" -xJf "$tarball"
 cd "$work/ffmpeg-$FFMPEG_VERSION"
-# Reproducible: no build date or host path in the binaries.
+# Reproducible: no build date or host path in the binaries. ffmpeg compiles its configure line into the
+# binaries (`ffmpeg -version`), so nothing on it names this machine: a fixed --prefix with DESTDIR, and an
+# in-tree build (`./configure`), whose sources are compiled by relative path (no debug info).
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1764115200}"
-export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$work=/build"
+extra_cflags=()
+[[ -n "${CFLAGS:-}" ]] && extra_cflags=(--extra-cflags="$CFLAGS")
 # shellcheck disable=SC2086 # FFMPEG_CROSS is a list of flags on purpose.
-./configure --prefix="$work/install" --extra-cflags="$CFLAGS" "${CONFIGURE_FLAGS[@]}" ${FFMPEG_CROSS:-}
+./configure --prefix=/usr/local ${extra_cflags[@]+"${extra_cflags[@]}"} "${CONFIGURE_FLAGS[@]}" ${FFMPEG_CROSS:-}
 make -j"${JOBS:-6}"
-make install
+make install DESTDIR="$work/stage"
 
 ext=""
 case "$triple" in *windows*) ext=".exe" ;; esac
 mkdir -p "$out/bin"
-install -m755 "$work/install/bin/ffmpeg$ext" "$out/bin/ffmpeg$ext"
-install -m755 "$work/install/bin/ffprobe$ext" "$out/bin/ffprobe$ext"
+install -m755 "$work/stage/usr/local/bin/ffmpeg$ext" "$out/bin/ffmpeg$ext"
+install -m755 "$work/stage/usr/local/bin/ffprobe$ext" "$out/bin/ffprobe$ext"
 install -m644 COPYING.LGPLv2.1 "$out/LICENSE.md"
 {
   echo "ffmpeg $FFMPEG_VERSION, LGPL 2.1 or later, built by Bragi's scripts/build-ffmpeg.sh"

@@ -21,6 +21,9 @@ ver=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;
 arch=$(uname -m)
 target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home/user"
+# The same for C and C++ (llama.cpp's sources and its build directory, through cc and cmake).
+prefix_maps="-ffile-prefix-map=$target_dir=/target -ffile-prefix-map=$root=/build/bragi -ffile-prefix-map=${CARGO_HOME:-$HOME/.cargo}=/cargo -ffile-prefix-map=$HOME=/home/user"
+export CFLAGS="${CFLAGS:-} $prefix_maps" CXXFLAGS="${CXXFLAGS:-} $prefix_maps"
 features="${BRAGI_FEATURES-on-device}"
 feature_args=()
 [[ -n "$features" ]] && feature_args=(--features "$features")

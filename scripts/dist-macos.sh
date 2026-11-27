@@ -16,6 +16,8 @@ ver=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;
 target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')
 export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/Users/user"
+prefix_maps="-ffile-prefix-map=$target_dir=/target -ffile-prefix-map=$root=/build/bragi -ffile-prefix-map=${CARGO_HOME:-$HOME/.cargo}=/cargo -ffile-prefix-map=$HOME=/Users/user"
+export CFLAGS="${CFLAGS:-} $prefix_maps" CXXFLAGS="${CXXFLAGS:-} $prefix_maps"
 features="${BRAGI_FEATURES:-}"
 feature_args=()
 [[ -n "$features" ]] && feature_args=(--features "$features")
