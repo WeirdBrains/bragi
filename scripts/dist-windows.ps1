@@ -59,11 +59,14 @@ if ($features -contains "on-device") {
     $env:CXX_aarch64_pc_windows_msvc = $clang
     $env:CMAKE_GENERATOR = "Ninja"
     $maps = ($trim | ForEach-Object { "-Xclang -fmacro-prefix-map=$_=" }) -join " "
+    # cc turns on C++ exceptions (/EHsc) for cl.exe but not for clang-cl, and llama-cpp-sys-2's wrapper uses them.
+    $cxxOnly = "/EHsc"
   } else {
     $maps = ($trim | ForEach-Object { "/d1trimfile:$_" }) -join " "
+    $cxxOnly = ""
   }
   $env:CFLAGS = "$env:CFLAGS $maps".Trim()
-  $env:CXXFLAGS = "$env:CXXFLAGS $maps".Trim()
+  $env:CXXFLAGS = "$env:CXXFLAGS $maps $cxxOnly".Trim()
 }
 cargo build --release --locked -p bragi-desktop -p bragi-tui @featureArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
