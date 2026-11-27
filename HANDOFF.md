@@ -2,6 +2,39 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 21:44 EST: extension parity done, chat files, images and sound, reactions, delete, history, folders and link codes in VS Code (merged `feature/ext-parity-chat`, LF-40)
+
+The last open slice of [docs/design/extension-parity.md](docs/design/extension-parity.md), which now has nothing left open. It is on top of the MCP slice (merge 2298a51, entry below).
+
+- **bragi serve** ([chats.rs](crates/bragi-serve/src/chats.rs), thin routes over existing `Core` methods):
+  - `GET /v1/sessions/{id}`: `{conversation, folder, target, unbound}`.
+  - `POST /v1/sessions/{id}/messages/{m}/react {emoji}` (toggle, `{reactions}`); `DELETE /v1/sessions/{id}/messages/{m}?with_reply=true` (`{undo, messages, ids}`); `POST /v1/undo {undo}`.
+  - `GET|POST /v1/folders`, `POST /v1/folders/{id}/rename`, `/move`, `DELETE /v1/folders/{id}` (contents move up), `POST /v1/sessions/{id}/folder`.
+  - `POST /v1/link/offer` (`{link, expires_ms}`), `/v1/link/offer/confirm {matches}` (409 with nothing to confirm), `/v1/link/offer/cancel`. Progress is `pair` in `/v1/state`.
+  - `/v1/code/chat` takes `attachments: [{name, text} | {name, data}]` (base64), checked by `Attachment::from_bytes`. The route's body limit is 48 MiB (`MAX_CHAT_BODY`); the rest stay at 4 MiB. New dependency: `base64` (workspace).
+- **Extension** ([files.ts](editors/vscode/src/files.ts), [chat.ts](editors/vscode/src/chat.ts), [chat.js](editors/vscode/media/chat.js), [manage.ts](editors/vscode/src/manage.ts), [commands.ts](editors/vscode/src/commands.ts), [extension.ts](editors/vscode/src/extension.ts)):
+  - Panel buttons **File…** and **Selection**, and file drops. Commands **Attach File to Chat…** (Explorer menu) and **Attach Selection to Chat** (editor menu). Chips list what goes with the next message. Text, PNG, JPEG, GIF, WebP, WAV and MP3 are accepted, within bragi-core's limits. Images show and sound plays in the message. The direct target inlines text files and refuses media.
+  - After an answer the panel learns the question's and answer's ids. Each message then gets quick reactions and delete; a question can take its answer with it, and **Undo** redraws the chat.
+  - **Open Chat from History…** (grouped by folder) loads a chat, and the next message continues it.
+  - Folder commands: **New / Rename / Move / Delete Chat Folder…** and **Move Chat to Folder…**.
+  - **Link This Bragi to Another Device (Show a Code)…** copies the code and shows it in a cancellable notification, asks you to compare the short code, then confirms.
+- **Tests**:
+  - [tests/chats.rs](crates/bragi-serve/tests/chats.rs), on the demo cloud:
+    - files, a selection, an image and audio go with a turn, and bad attachments are refused;
+    - the chat opens with its attachments;
+    - a reaction toggles;
+    - a delete takes the answer with it, and undo brings both back;
+    - folders nest, rename, move and delete without losing the chat;
+    - a link code is shown, cancelled, then shown again, compared and linked.
+  - [chats.test.ts](editors/vscode/src/test/suite/chats.test.ts), 8 tests against the mock.
+  - That suite closes the side bar after opening the chat. When the side bar is open, the Connections view asks `bragi serve` for its lists and its revive hook starts a server with the next suite's half-set settings. Left open, it broke `Bragi server autostart: a request revives a server that stopped`.
+- **Checks** (alien-blue, scratch worktree, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf43-ext`, under `flock`/`nice`/`ionice`):
+  - `cargo fmt --all --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 365 passed, 0 failed, 5 ignored in 46 suites.
+  - Extension `npm run lint`: clean. `npm test` (xvfb-run, `env -i`, throwaway HOME): 75 passing, 1 pending.
+- **Left**: nothing in extension parity. Not tested by hand in a live VS Code window, because no GUI was opened on alien-blue.
+
 ## 2026-11-26 21:02 EST: extension parity, MCP servers and agent approvals in VS Code (merged `feature/ext-parity-mcp`, LF-40 on LF-37)
 
 The first of the two open slices of [docs/design/extension-parity.md](docs/design/extension-parity.md). The extension's MCP commands and Connections view already existed (LF-40) and called routes `bragi serve` didn't have; now it has them, and the chat panel can run agent turns with approval cards.

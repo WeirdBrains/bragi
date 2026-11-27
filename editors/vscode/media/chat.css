@@ -31,3 +31,15 @@ pre { margin: 0; padding: 6px; overflow-x: auto; font-family: var(--vscode-edito
 .approval .bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
 button:disabled { opacity: 0.5; cursor: default; }
+
+.files { flex-wrap: wrap; }
+.files[hidden] { display: none; }
+.chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 4px; border: 1px solid var(--vscode-panel-border); border-radius: 3px; font-size: 0.85em; }
+.attachments { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center; }
+.attachments img { max-width: 160px; max-height: 120px; }
+.attachments audio { max-width: 100%; }
+.actions { display: flex; gap: 2px; margin-top: 4px; align-items: center; flex-wrap: wrap; }
+.actions .quick { opacity: 0; }
+.msg:hover .actions .quick, .actions .quick:focus-within { opacity: 1; }
+button.react { background: transparent; color: inherit; padding: 0 3px; }
+button.react.on { border: 1px solid var(--vscode-focusBorder); border-radius: 3px; }

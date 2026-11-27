@@ -105,6 +105,24 @@ export function resourceRoots(media: string, clips: Iterable<string>): string[] 
 }
 
 /** The file a drop on the panel names (a `file:` URI from the explorer or the OS), if it's a clip. */
+/** Every local file in a dropped `text/uri-list`. */
+export function droppedFiles(uriList: string): string[] {
+  const out: string[] = [];
+  for (const line of uriList.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t || t.startsWith('#') || !t.startsWith('file:')) {
+      continue;
+    }
+    try {
+      const p = decodeURIComponent(new URL(t).pathname);
+      out.push(process.platform === 'win32' ? p.replace(/^\/([A-Za-z]:)/, '$1').replace(/\//g, '\\') : p);
+    } catch {
+      // Not a URI: skip it.
+    }
+  }
+  return out;
+}
+
 export function droppedClip(uriList: string): string | undefined {
   for (const line of uriList.split(/\r?\n/)) {
     const t = line.trim();

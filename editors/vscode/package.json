@@ -94,6 +94,16 @@
         "category": "Bragi"
       },
       {
+        "command": "bragi.chat.attachFile",
+        "title": "Attach File to Chat…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.chat.attachSelection",
+        "title": "Attach Selection to Chat",
+        "category": "Bragi"
+      },
+      {
         "command": "bragi.videoLimits",
         "title": "Set Video Limits for the Model…",
         "category": "Bragi"
@@ -150,6 +160,12 @@
         "icon": "$(link)"
       },
       {
+        "command": "bragi.link.offer",
+        "title": "Link This Bragi to Another Device (Show a Code)…",
+        "category": "Bragi",
+        "icon": "$(device-mobile)"
+      },
+      {
         "command": "bragi.link.addNode",
         "title": "Add an Inference Node by Address…",
         "category": "Bragi",
@@ -188,6 +204,36 @@
       {
         "command": "bragi.sessions.manage",
         "title": "Delete Chats…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.sessions.open",
+        "title": "Open Chat from History…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.sessions.moveToFolder",
+        "title": "Move Chat to Folder…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.folders.new",
+        "title": "New Chat Folder…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.folders.rename",
+        "title": "Rename Chat Folder…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.folders.move",
+        "title": "Move Chat Folder…",
+        "category": "Bragi"
+      },
+      {
+        "command": "bragi.folders.delete",
+        "title": "Delete Chat Folder…",
         "category": "Bragi"
       },
       {
@@ -317,6 +363,11 @@
           "command": "bragi.attachVideo",
           "group": "bragi@1",
           "when": "resourceScheme == file && resourceExtname =~ /^\\.(mp4|m4v|mov|webm|mkv|avi|ogv)$/i"
+        },
+        {
+          "command": "bragi.chat.attachFile",
+          "group": "bragi@2",
+          "when": "resourceScheme == file && !explorerResourceIsFolder"
         }
       ],
       "editor/context": [
@@ -328,6 +379,11 @@
         {
           "command": "bragi.askAboutSelection",
           "group": "bragi@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "bragi.chat.attachSelection",
+          "group": "bragi@3",
           "when": "editorHasSelection"
         }
       ],

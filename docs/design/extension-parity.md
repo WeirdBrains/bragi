@@ -1,6 +1,6 @@
 # Extension parity: the VS Code and Cursor extension does what Bragi does
 
-Status: design, 2026-11-22 (LF-40). Owner: [m3talsmith](https://github.com/m3talsmith).
+Status: done, 2026-11-26 (LF-40; designed 2026-11-22). Owner: [m3talsmith](https://github.com/m3talsmith).
 
 The extension (`editors/vscode`) today is a code assistant: inline suggestions, rewrites reviewed hunk
 by hunk, and a chat panel. It talks to the local `bragi serve` API on loopback, or to one direct
@@ -38,19 +38,19 @@ Legend: **done** = in the extension today or in this branch; **dep** = needs ano
 | Feature | GPUI desktop | TUI | CLI (`bragi ...`) | Flutter mobile | Extension today | Extension plan |
 |---|---|---|---|---|---|---|
 | Link to an inference node (enter a link code) | yes | yes | `bragi link CODE` | yes | no | command + panel: enter code, compare the short code, confirm. Serve routes `/v1/link/*` (new here) |
-| Link another device (show a code) | yes | yes | `bragi link` | yes | no | left: needs a QR/code view; same routes (`/v1/link/offer`) |
+| Link another device (show a code) | yes | yes | `bragi link` | yes | **done** (2026-11-26) | **Link This Bragi to Another Device (Show a Code)…**: the code (copied) in a notification, the short code to compare, confirm. `/v1/link/offer`, `/offer/confirm`, `/offer/cancel`; progress is `pair` in `/v1/state` |
 | List, edit, remove links | yes | yes | `bragi status` (list) | yes | no | Links view + commands. `/v1/links` (new here) |
 | Add an inference node by address | yes | yes | `bragi add-node ADDR` | yes | no | command; `/v1/links` POST |
 | OpenAI-compatible connections add / edit / remove / reorder / test | yes | yes | no | yes | one "direct" server (url, model, key in SecretStorage) | full list in the panel and commands; `/v1/endpoints` (new here). Keys go to Bragi's store, the direct server keeps SecretStorage |
 | Fallback to a direct server | yes | yes | no | yes | `bragi.fallbackToDirect` | kept |
 | Target and model selection | yes | yes | `--model` | yes | `Choose Target and Model`, status bar | kept; settings `bragi.target`, `bragi.model` get proper UI |
-| Sessions and history (list, open, delete, folders) | yes | yes | no | yes | the chat keeps a conversation in Bragi's history, no list | left for after parity slice: list + open + delete from `/v1/sessions` (new here, list and delete only); folders left |
+| Sessions and history (list, open, delete, folders) | yes | yes | no | yes | **done** (2026-11-26) | **Open Chat from History…** (grouped by folder) loads a chat into the panel; **Delete Chats…**; **New / Rename / Move / Delete Chat Folder…** and **Move Chat to Folder…**. `GET /v1/sessions/{id}`, `/v1/folders`, `/v1/sessions/{id}/folder` |
 | Chat: text answer, stop, new | yes | yes | no | yes | yes | kept |
-| Chat: attach files | yes | yes (picker) | `--context` | yes | editor context only | add "Attach file" and "Attach current selection" in the panel (left, after MCP) |
-| Chat: images, audio | yes | no | no | yes | no | left: needs the serve chat route to take image and audio parts |
-| Chat: reactions, delete a message | yes | yes | no | yes | no | left: needs serve routes |
+| Chat: attach files | yes | yes (picker) | `--context` | yes | **done** (2026-11-26) | **File…** and **Selection** in the panel, **Attach File to Chat…** (Explorer menu), **Attach Selection to Chat** (editor menu), or a drop; chips show what goes with the next message. `/v1/code/chat` `attachments` |
+| Chat: images, audio | yes | no | no | yes | **done** (2026-11-26) | PNG, JPEG, GIF, WebP and WAV, MP3 through the same attach; shown and playable in the message (and in an opened chat). Bragi target only; the direct target refuses them |
+| Chat: reactions, delete a message | yes | yes | no | yes | **done** (2026-11-26) | quick reactions and delete under each message once Bragi has its id; deleting a question offers its answer too, with **Undo**. `/v1/sessions/{id}/messages/{m}/react`, `DELETE …/messages/{m}`, `/v1/undo` |
 | Themes (editor, switcher) | yes (LF-33) | yes (LF-33) | no | yes (LF-33) | follows the editor theme | no change: the extension uses the editor's colours; documented as intentional |
-| `bragi serve` start / stop / status | yes (`--serve`) | yes (auto-start) | `bragi serve` | n/a | status only | **dep** LF-36 `ServeManager`; this branch adds Start / Stop / Show Status commands and the `bragi.serve.*` settings on top of it |
+| `bragi serve` start / stop / status | yes (`--serve`) | yes (auto-start) | `bragi serve` | n/a | **done** (LF-36 merged 2026-11-22) | `ServeManager`: started with the editor (`bragi.autoStartServer`), **Restart Server** (starts it when it is down), **Stop Server**, **Show Server Status** and the status bar item |
 | `bragi mcp` server start / stop | n/a | n/a | `bragi mcp` | n/a | no | command that runs `bragi mcp` in a terminal (stdio is the client's), plus **Copy MCP Client Config** (Cursor, VS Code, Claude Desktop snippets) |
 | MCP client servers (add, remove, enable, test, tool approval, "always allow") | yes (LF-37) | yes (LF-37) | n/a | yes (LF-37) | **done** (2026-11-26) | `/v1/mcp-servers` routes and `/v1/agent/approve`; the Connections view and commands (scope, edit, test, take back "always allow"); the chat's **Agent** switch and approval cards (allow once, for this task, always, deny) |
 | Inline suggestions, rewrites, hunks | no | yes | `bragi code` | no | yes | kept |
@@ -110,8 +110,21 @@ this task**, **Always allow** (outside MCP servers' tools only) and **Deny**; to
 answer, and a card left open when the answer ends says so. An older Bragi without the routes still says it
 can't manage MCP servers.
 
-Left: link offer (show a code for another device), chat images and audio, reactions, per-message
-delete, session open and folders, attaching files in the chat panel.
+The rest (2026-11-26, `feature/ext-parity-chat`): files, the selection, images and sound attached in the
+chat panel (`/v1/code/chat` takes `attachments: [{name, text} | {name, data}]`, checked by bragi-core's
+`Attachment::from_bytes`; the route takes up to 48 MiB); reactions and deleting a message with undo; opening
+a chat from history into the panel; chat folders; and showing a link code for another device. Serve routes
+in `crates/bragi-serve/src/chats.rs`:
+
+- `GET /v1/sessions/{id}`: `{conversation, folder, target, unbound}`.
+- `POST /v1/sessions/{id}/messages/{message}/react {emoji}` → `{reactions}`;
+  `DELETE /v1/sessions/{id}/messages/{message}?with_reply=true` → `{undo, messages, ids}`; `POST /v1/undo {undo}`.
+- `GET|POST /v1/folders`, `POST /v1/folders/{id}/rename {name}`, `/move {parent}`, `DELETE /v1/folders/{id}`,
+  `POST /v1/sessions/{id}/folder {folder}`.
+- `POST /v1/link/offer` → `{link, expires_ms}`, `POST /v1/link/offer/confirm {matches}` (409 with nothing to
+  confirm), `POST /v1/link/offer/cancel`; `GET /v1/state` has `pair`.
+
+Nothing in this document is left open.
 
 ## Tests
 

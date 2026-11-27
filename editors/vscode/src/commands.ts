@@ -3,7 +3,7 @@
 // argument too (for tests and other extensions); without one it asks.
 
 import * as vscode from 'vscode';
-import { Manage, type EndpointInput, type EndpointMode, type EndpointView, type McpServerInput } from './manage';
+import { Manage, type EndpointInput, type EndpointMode, type EndpointView, type FolderView, type McpServerInput, type PairView, type SessionSummary } from './manage';
 import { clientServersFrom, manifestProperties, mcpArgs, mcpClientConfig, mcpServerOptions, settingRows, type McpClientKind } from './settings';
 import type { ServeManager } from './serve';
 
@@ -66,6 +66,54 @@ export async function askEndpoint(existing?: EndpointView): Promise<EndpointInpu
   return { name: name.trim(), baseUrl: baseUrl.trim(), model: model.trim() || undefined, mode: mode.value, enabled: existing?.enabled ?? true, apiKey: key.trim() || undefined };
 }
 
+/** Each folder's full name, `Work / Bragi`. */
+export function folderPaths(folders: FolderView[]): Map<string, string> {
+  const byId = new Map(folders.map((f) => [f.id, f]));
+  const out = new Map<string, string>();
+  for (const f of folders) {
+    const names: string[] = [];
+    const seen = new Set<string>();
+    for (let at: FolderView | undefined = f; at && !seen.has(at.id); at = at.parent ? byId.get(at.parent) : undefined) {
+      seen.add(at.id);
+      names.unshift(at.name);
+    }
+    out.set(f.id, names.join(' / '));
+  }
+  return out;
+}
+
+/** Chats grouped under their folders (no folder first), for a quick pick. */
+export function sessionItems(sessions: SessionSummary[], folders: FolderView[]): (vscode.QuickPickItem & { s?: SessionSummary })[] {
+  const paths = folderPaths(folders);
+  const groups = new Map<string, SessionSummary[]>();
+  for (const s of sessions) {
+    const key = s.folder && paths.has(s.folder) ? paths.get(s.folder)! : '';
+    groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  const items: (vscode.QuickPickItem & { s?: SessionSummary })[] = [];
+  for (const key of [...groups.keys()].sort()) {
+    items.push({ label: key || 'No folder', kind: vscode.QuickPickItemKind.Separator });
+    for (const s of groups.get(key)!) {
+      items.push({ label: s.title || '(untitled)', description: s.target_label, detail: `${s.messages} messages`, s });
+    }
+  }
+  return items;
+}
+
+async function pickFolder(manage: Manage, title: string, none?: string): Promise<{ id: string | null } | undefined> {
+  const folders = await manage.folders();
+  const paths = folderPaths(folders);
+  const items: (vscode.QuickPickItem & { id: string | null })[] = [
+    ...(none ? [{ label: none, id: null }] : []),
+    ...folders.map((f) => ({ label: paths.get(f.id) ?? f.name, id: f.id })).sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+  if (items.length === 0) {
+    void vscode.window.showInformationMessage('Bragi has no chat folders yet. Run "Bragi: New Chat Folder…".');
+    return undefined;
+  }
+  return vscode.window.showQuickPick(items, { title });
+}
+
 async function pickEndpoint(manage: Manage, id?: string): Promise<EndpointView | undefined> {
   const all = await manage.endpoints();
   if (id) {
@@ -114,6 +162,53 @@ export function register(context: vscode.ExtensionContext, d: Deps): void {
       (await vscode.window.showInformationMessage(`Does ${device ? `"${device}"` : 'the other device'} show this code: ${sas}?`, { modal: true }, 'Yes, they match')) === 'Yes, they match';
     await manage.linkConfirm(same);
     done(same ? 'linked.' : "the codes didn't match, so nothing was linked.");
+  });
+  // Show a code for a device already in your Weirdnet; it reads the code, both screens show a
+  // short code to compare, and confirming here links this Bragi.
+  cmd('bragi.link.offer', async (matches?: boolean) => {
+    const { link, expires_ms } = await manage.linkOffer();
+    await vscode.env.clipboard.writeText(link);
+    const until = expires_ms ? ` It works until ${new Date(expires_ms).toLocaleTimeString()}.` : '';
+    const pair = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Bragi link code (copied): ${link}`, cancellable: true },
+      async (progress, cancel) => {
+        progress.report({ message: `Enter it on the device that is already linked (Morph, Ymir or another Bragi).${until}` });
+        for (;;) {
+          if (cancel.isCancellationRequested) {
+            return (await manage.linkOfferCancel()).pair;
+          }
+          const p = await manage.pair();
+          if (p.state !== 'offering') {
+            return p;
+          }
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      },
+    );
+    let now: PairView = pair;
+    if (now.state === 'confirm') {
+      const sas = now.sas;
+      const same = matches ?? (await vscode.window.showInformationMessage(`Does the other device show this code: ${sas}?`, { modal: true }, 'Yes, they match')) === 'Yes, they match';
+      now = (await manage.linkOfferConfirm(same)).pair;
+      for (let i = 0; i < 150 && now.state === 'waiting'; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        now = await manage.pair();
+      }
+    }
+    switch (now.state) {
+      case 'linked':
+        done(`linked${now.device ? ` as "${now.device}"` : ''}.`);
+        break;
+      case 'failed':
+        void vscode.window.showWarningMessage(`Bragi: ${now.message}`);
+        break;
+      case 'waiting':
+        void vscode.window.showInformationMessage('Bragi: confirmed here; finish on the other device.');
+        break;
+      default:
+        d.refresh();
+    }
+    return now;
   });
   cmd('bragi.link.addNode', async (address?: string) => {
     const a = address ?? (await ask('Address of an inference node (`ymirctl pool addresses` prints it)'));
@@ -198,6 +293,76 @@ export function register(context: vscode.ExtensionContext, d: Deps): void {
       await manage.deleteSession(pick.s.id);
       done('chat deleted.');
     }
+  });
+
+  // ---- chat folders ----
+  cmd('bragi.folders.new', async (name?: string, parent?: string | null) => {
+    const n = name ?? (await ask('Name for the new chat folder', { validateInput: (v) => (v.trim() ? undefined : 'A name is needed') }));
+    if (!n) {
+      return undefined;
+    }
+    let under = parent;
+    if (under === undefined && name === undefined && (await manage.folders()).length) {
+      const pick = await pickFolder(manage, 'Put it in…', 'Top level');
+      if (!pick) {
+        return undefined;
+      }
+      under = pick.id;
+    }
+    const f = await manage.createFolder(n.trim(), under ?? undefined);
+    done(`folder "${f.name}" made.`);
+    return f;
+  });
+  cmd('bragi.folders.rename', async (id?: string, name?: string) => {
+    const f = id ? { id } : await pickFolder(manage, 'Rename which folder?');
+    if (!f?.id) {
+      return;
+    }
+    const n = name ?? (await ask('New name', { validateInput: (v) => (v.trim() ? undefined : 'A name is needed') }));
+    if (!n) {
+      return;
+    }
+    await manage.renameFolder(f.id, n.trim());
+    done('folder renamed.');
+  });
+  cmd('bragi.folders.move', async (id?: string, parent?: string | null) => {
+    const f = id ? { id } : await pickFolder(manage, 'Move which folder?');
+    if (!f?.id) {
+      return;
+    }
+    const to = parent !== undefined ? { id: parent } : await pickFolder(manage, 'Into…', 'Top level');
+    if (!to) {
+      return;
+    }
+    await manage.moveFolder(f.id, to.id);
+    done('folder moved.');
+  });
+  cmd('bragi.folders.delete', async (id?: string) => {
+    const f = id ? { id } : await pickFolder(manage, 'Delete which folder? (its chats move up, none are deleted)');
+    if (!f?.id) {
+      return;
+    }
+    if (!id && (await vscode.window.showWarningMessage('Delete this folder? Its chats and folders move up one level.', { modal: true }, 'Delete')) !== 'Delete') {
+      return;
+    }
+    await manage.deleteFolder(f.id);
+    done('folder deleted.');
+  });
+  cmd('bragi.sessions.moveToFolder', async (session?: string, folder?: string | null) => {
+    let id = session;
+    if (!id) {
+      const pick = await vscode.window.showQuickPick(sessionItems(await manage.sessions(), await manage.folders()), { title: 'Move which chat?' });
+      id = pick?.s?.id;
+    }
+    if (!id) {
+      return;
+    }
+    const to = folder !== undefined ? { id: folder } : await pickFolder(manage, 'Move it to…', 'No folder');
+    if (!to) {
+      return;
+    }
+    await manage.setSessionFolder(id, to.id);
+    done(to.id ? 'chat moved.' : 'chat taken out of its folder.');
   });
 
   // ---- the local server ----

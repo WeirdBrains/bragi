@@ -6,7 +6,7 @@
 use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use bragi_core::{EndpointInput, EndpointMode, KeyChange, Target};
 use serde::Deserialize;
@@ -27,7 +27,7 @@ pub(crate) fn routes() -> Router<App> {
         .route("/v1/endpoints/{id}/test", post(test_endpoint))
         .route("/v1/endpoints/{id}/models", get(endpoint_models))
         .route("/v1/sessions", get(sessions))
-        .route("/v1/sessions/{id}", delete(delete_session))
+        .route("/v1/sessions/{id}", get(super::chats::open).delete(delete_session))
 }
 
 async fn links(State(app): State<App>) -> Json<serde_json::Value> {

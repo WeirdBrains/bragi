@@ -48,7 +48,47 @@ export interface SessionSummary {
   updated_ms: number;
   messages: number;
   target_label: string;
+  folder?: string | null;
 }
+
+/** A chat folder (bragi-core's `Folder`); `parent` nests it. */
+export interface FolderView {
+  id: string;
+  name: string;
+  parent?: string | null;
+}
+
+/** An attachment as Bragi stores it: text, or an image or sound in `media`. */
+export interface StoredAttachment {
+  name: string;
+  text: string;
+  media?: { kind: 'image'; mime: string; data: string } | { kind: 'audio'; format: string; data: string } | { kind: 'video'; [k: string]: unknown } | null;
+}
+
+/** A message as Bragi stores it (bragi-core's `ChatMessage`, the fields the editor draws). */
+export interface StoredMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  state: string;
+  model?: string | null;
+  attachments?: StoredAttachment[];
+  reactions?: string[];
+}
+
+export interface OpenedSession {
+  conversation: { id: string; title: string; messages: StoredMessage[] };
+  folder?: string | null;
+}
+
+/** Where linking stands (bragi-core's `PairState`, in `GET /v1/state`). */
+export type PairView =
+  | { state: 'unpaired' }
+  | { state: 'offering'; link: string; expires_ms: number }
+  | { state: 'confirm'; sas: string }
+  | { state: 'waiting'; sas: string }
+  | { state: 'linked'; user: string; device: string }
+  | { state: 'failed'; message: string };
 
 /**
  * An outside MCP server as Bragi lists it (`/v1/mcp-servers`, bragi-core's `McpServerView`): no
@@ -148,6 +188,68 @@ export class Manage {
 
   deleteSession(id: string): Promise<unknown> {
     return this.api('DELETE', `/v1/sessions/${encodeURIComponent(id)}`);
+  }
+
+  /** A chat with its messages. */
+  openSession(id: string): Promise<OpenedSession> {
+    return this.api('GET', `/v1/sessions/${encodeURIComponent(id)}`);
+  }
+
+  /** Toggles `emoji` on a message; returns its reactions. */
+  async react(session: string, message: string, emoji: string): Promise<string[]> {
+    return (await this.api<{ reactions: string[] }>('POST', `/v1/sessions/${encodeURIComponent(session)}/messages/${encodeURIComponent(message)}/react`, { emoji })).reactions;
+  }
+
+  /** Deletes a message (with the answer that followed it); `undo` puts it back for a short time. */
+  deleteMessage(session: string, message: string, withReply: boolean): Promise<{ undo: string; messages: number; ids: string[] }> {
+    return this.api('DELETE', `/v1/sessions/${encodeURIComponent(session)}/messages/${encodeURIComponent(message)}${withReply ? '?with_reply=true' : ''}`);
+  }
+
+  undo(token: string): Promise<unknown> {
+    return this.api('POST', '/v1/undo', { undo: token });
+  }
+
+  async folders(): Promise<FolderView[]> {
+    return (await this.api<{ folders: FolderView[] }>('GET', '/v1/folders')).folders;
+  }
+
+  createFolder(name: string, parent?: string): Promise<FolderView> {
+    return this.api('POST', '/v1/folders', { name, parent });
+  }
+
+  renameFolder(id: string, name: string): Promise<unknown> {
+    return this.api('POST', `/v1/folders/${encodeURIComponent(id)}/rename`, { name });
+  }
+
+  moveFolder(id: string, parent: string | null): Promise<unknown> {
+    return this.api('POST', `/v1/folders/${encodeURIComponent(id)}/move`, { parent });
+  }
+
+  /** Deletes a folder; the chats and folders in it move up one level. */
+  deleteFolder(id: string): Promise<unknown> {
+    return this.api('DELETE', `/v1/folders/${encodeURIComponent(id)}`);
+  }
+
+  /** Files a chat in `folder` (null: none). */
+  setSessionFolder(session: string, folder: string | null): Promise<unknown> {
+    return this.api('POST', `/v1/sessions/${encodeURIComponent(session)}/folder`, { folder });
+  }
+
+  /** A link code for a device already in your Weirdnet (Morph, Ymir, another Bragi). */
+  linkOffer(): Promise<{ link: string; expires_ms?: number | null }> {
+    return this.api('POST', '/v1/link/offer');
+  }
+
+  linkOfferConfirm(matches: boolean): Promise<{ ok: boolean; pair: PairView }> {
+    return this.api('POST', '/v1/link/offer/confirm', { matches });
+  }
+
+  linkOfferCancel(): Promise<{ ok: boolean; pair: PairView }> {
+    return this.api('POST', '/v1/link/offer/cancel');
+  }
+
+  async pair(): Promise<PairView> {
+    return (await this.api<{ pair: PairView }>('GET', '/v1/state')).pair;
   }
 
   // Outside MCP servers (`/v1/mcp-servers`). An older `bragi serve` without the routes answers
