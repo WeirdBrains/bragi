@@ -5,7 +5,9 @@
 # The desktop archives and installers bundle the LGPL ffmpeg and ffprobe that scripts/build-ffmpeg.sh builds
 # on each runner from the pinned, checksummed FFmpeg tarball (docs/design/video.md, "Platform packaging"):
 # Linux tarballs and zips (bin/), macOS Bragi.app (Contents/Helpers) and tarball, Windows zip and installers
-# (beside bragi.exe). The Linux builds have the on-device model's engine (Cargo feature `on-device`, llama.cpp).
+# (beside bragi.exe). The desktop builds have the on-device model's engine (Cargo feature `on-device`, llama.cpp):
+# Linux and Windows on a generic CPU, macOS with Metal. Each job checks the engine is in the binary and that no
+# runner path (the checkout, the cargo registry, the home folder) is in it.
 name: Release
 
 on:
@@ -134,6 +136,17 @@ jobs:
           "$u/bin/ffmpeg" -hide_banner -version | sed -n 1p
           echo "BRAGI_FFMPEG_DIR=$u" >> "$GITHUB_ENV"
       - run: scripts/dist-macos.sh
+        env:
+          BRAGI_FEATURES: on-device
+      - name: The on-device engine (llama.cpp with Metal) is in both slices, and no runner path is
+        run: |
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            grep -aq llama_model_load "target/$t/release/bragi" || { echo "::error::$t bragi was built without the on-device engine"; exit 1; }
+            otool -L "target/$t/release/bragi" | grep -q '/Metal.framework/' || { echo "::error::$t bragi does not link Metal"; exit 1; }
+          done
+          if strings -a target/aarch64-apple-darwin/release/bragi target/x86_64-apple-darwin/release/bragi | grep -E '/Users/runner|/private/var/folders|/Volumes/' | sort -u | head -20 | grep .; then
+            echo "::error::a runner path is in the binary"; exit 1
+          fi
       - name: The app and the tarball bundle ffmpeg
         run: |
           unzip -l dist/bragi-*-universal-apple-darwin.zip | grep -q 'Bragi.app/Contents/Helpers/ffprobe$'
@@ -198,7 +211,20 @@ jobs:
           echo "BRAGI_FFMPEG_DIR=$(cygpath -w "$out")" >> "$GITHUB_ENV"
       - name: exe, zip, msi and setup.exe
         shell: pwsh
+        env:
+          BRAGI_FEATURES: on-device
         run: ./scripts/dist-windows.ps1
+      - name: The on-device engine (llama.cpp) is in both exes, and no runner path is
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $runner = @([regex]::Escape($env:GITHUB_WORKSPACE), [regex]::Escape($env:USERPROFILE), "runneradmin") -join "|"
+          foreach ($exe in Get-ChildItem dist\bragi-*.exe | Where-Object { $_.Name -notlike "*-setup.exe" }) {
+            $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($exe.FullName))
+            if ($text -notmatch "llama_model_load") { throw "$($exe.Name) was built without the on-device engine" }
+            $hits = [regex]::Matches($text, "[ -~]*(?:$runner)[ -~]*", "IgnoreCase") | ForEach-Object { $_.Value } | Sort-Object -Unique
+            if ($hits) { $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }; throw "a runner path is in $($exe.Name)" }
+          }
       - name: The zip bundles ffmpeg
         shell: pwsh
         run: |

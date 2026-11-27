@@ -10,8 +10,13 @@
 # 2026-11-12 (docs/RELEASES.md), so every wix command passes -acceptEula wix7. Nothing is code-signed.
 # With BRAGI_FFMPEG_DIR (ffmpeg.exe and ffprobe.exe from scripts/build-ffmpeg.sh, e.g. in MSYS2), both go
 # beside bragi.exe in the zip and the installer, with their licence, build config and source offer.
-# BRAGI_FEATURES (default none) adds Cargo features to both binaries, e.g. `on-device` (the llama.cpp engine;
-# not turned on in the Release workflow for Windows yet).
+# BRAGI_FEATURES (default `on-device`, the optional on-device model's llama.cpp engine, B4) is the Cargo
+# features both binaries get; BRAGI_FEATURES=none builds without. llama.cpp is built for a generic CPU of the
+# architecture (GGML_NATIVE=OFF; weirdnet-model refuses to load on an x86 CPU without what the build needs).
+# x86_64 builds it with MSVC. ARM64 builds it with clang-cl and Ninja from Visual Studio (ggml's CPU backend
+# needs GGML_NATIVE=ON under MSVC proper on ARM, which would tie the exe to the build machine's CPU), in a
+# Visual Studio developer shell this script enters. Its __FILE__ paths are trimmed (MSVC: /d1trimfile;
+# clang-cl: -fmacro-prefix-map) so no build machine path ends up in the exe.
 param([string]$WixVersion = "7.0.1")
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -27,9 +32,38 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
 $env:RUSTFLAGS = "$env:RUSTFLAGS --remap-path-prefix=$root=C:\build\bragi --remap-path-prefix=$cargoHome=C:\cargo --remap-path-prefix=$env:USERPROFILE=C:\Users\user".Trim()
+$features = if ($env:BRAGI_FEATURES) { $env:BRAGI_FEATURES } else { "on-device" }
+$features = @($features -split "[ ,]+" | Where-Object { $_ -and $_ -ne "none" })
 $featureArgs = @()
-if ($env:BRAGI_FEATURES) {
-  $featureArgs = @("--features", (($env:BRAGI_FEATURES -split "[ ,]+" | Where-Object { $_ } | ForEach-Object { "bragi-desktop/$_,bragi-tui/$_" }) -join ","))
+if ($features.Count -gt 0) {
+  $featureArgs = @("--features", (($features | ForEach-Object { "bragi-desktop/$_,bragi-tui/$_" }) -join ","))
+}
+if ($features -contains "on-device") {
+  # llama.cpp's sources come from the cargo registry and its build from the target dir; both end up in
+  # __FILE__ (ggml's asserts), so both are trimmed, with the checkout and the user profile.
+  $trim = @($cargoHome, $targetDir, $root, $env:USERPROFILE) | ForEach-Object { $_.TrimEnd('\') + '\' }
+  if ($triple -like "aarch64-*") {
+    $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+    if (-not $vs) { throw "Visual Studio not found (vswhere)" }
+    Import-Module (Join-Path $vs "Common7\Tools\Microsoft.VisualStudio.DevShell.dll")
+    Enter-VsDevShell -VsInstallPath $vs -DevCmdArguments "-arch=arm64 -host_arch=arm64" -SkipAutomaticLocation | Out-Null
+    $clang = (Get-Command clang-cl.exe -ErrorAction SilentlyContinue).Source
+    if (-not $clang) {
+      $clang = @((Join-Path $env:ProgramFiles "LLVM\bin\clang-cl.exe"), (Join-Path $vs "VC\Tools\Llvm\ARM64\bin\clang-cl.exe")) |
+        Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
+    if (-not $clang) { throw "clang-cl not found (LLVM, or Visual Studio's C++ Clang tools)" }
+    if (-not (Get-Command ninja.exe -ErrorAction SilentlyContinue)) { throw "ninja not found in the developer shell" }
+    & $clang --version
+    $env:CC_aarch64_pc_windows_msvc = $clang
+    $env:CXX_aarch64_pc_windows_msvc = $clang
+    $env:CMAKE_GENERATOR = "Ninja"
+    $maps = ($trim | ForEach-Object { "-Xclang -fmacro-prefix-map=$_=" }) -join " "
+  } else {
+    $maps = ($trim | ForEach-Object { "/d1trimfile:$_" }) -join " "
+  }
+  $env:CFLAGS = "$env:CFLAGS $maps".Trim()
+  $env:CXXFLAGS = "$env:CXXFLAGS $maps".Trim()
 }
 cargo build --release --locked -p bragi-desktop -p bragi-tui @featureArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
