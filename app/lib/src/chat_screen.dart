@@ -447,12 +447,24 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (!c.code.on) ...[
                           IconButton(
                             key: const Key('attach'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
                             tooltip: 'Attach a file, image or audio',
                             onPressed: _attach,
                             icon: const Icon(Icons.attach_file),
                           ),
                           IconButton(
                             key: const Key('attach-video'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
                             tooltip: 'Attach a video',
                             onPressed: c.videoReading == null
                                 ? _attachVideo
@@ -461,6 +473,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           IconButton(
                             key: const Key('agent'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
                             tooltip: c.agent
                                 ? 'Agent mode: on'
                                 : 'Agent mode: off',
@@ -475,7 +493,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             icon: const Icon(Icons.smart_toy_outlined),
                           ),
                         ],
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Expanded(
                           child: Focus(
                             onKeyEvent: _historyKey,
@@ -504,6 +522,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           const SizedBox(width: 6),
                           OutlinedButton(
                             key: const Key('continue'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                            ),
                             onPressed: c.continueAnswer,
                             child: const Text('Continue'),
                           ),
