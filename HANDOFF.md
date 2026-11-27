@@ -2,7 +2,7 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
-## 2026-11-27 00:05 EST: stored clips polish: the Flutter switch and clip cache cleanup (merged `feature/video-clip-polish`, LF-43)
+## 2026-11-26 23:10 EST: stored clips polish: the Flutter switch and clip cache cleanup (merged `feature/video-clip-polish`, LF-43)
 
 The two loose ends of the stored clips follow-up.
 
