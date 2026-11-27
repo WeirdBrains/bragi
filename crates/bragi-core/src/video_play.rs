@@ -51,6 +51,21 @@ impl Fallback {
     }
 }
 
+/// Whether a message's clip can play on this device: its file is here, or a copy came with the
+/// message. Cheap (no reading), for drawing.
+pub fn clip_available(sampled: &Sampled) -> bool {
+    playable_clip(sampled).is_ok() || sampled.stored.as_ref().is_some_and(|s| s.file_name().is_some())
+}
+
+/// [`playable_clip`], else the copy stored with the message ([`crate::video::StoredClip`]),
+/// written into `cache` once.
+pub fn playable_clip_in(sampled: &Sampled, cache: &Path) -> std::result::Result<PathBuf, Fallback> {
+    playable_clip(sampled).or_else(|why| match &sampled.stored {
+        Some(s) => s.materialize(cache).map_err(|e| Fallback::CantDecode(e.message)),
+        None => Err(why),
+    })
+}
+
 /// The clip a message's video can be played from, when it is on this device: a regular file with
 /// a video extension (a synced conversation may name a path from another device).
 pub fn playable_clip(sampled: &Sampled) -> std::result::Result<PathBuf, Fallback> {
@@ -406,8 +421,32 @@ mod tests {
     }
 
     #[test]
+    fn a_linked_device_plays_the_stored_copy_when_the_original_is_not_here() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = dir.path().join("there.mp4");
+        std::fs::write(&clip, b"movie bytes").unwrap();
+        let stored = crate::video::StoredClip::read(&clip).unwrap();
+        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: Some(clip.clone()), stored: None };
+        let cache = dir.path().join("clips");
+        assert!(clip_available(&s));
+        assert_eq!(playable_clip_in(&s, &cache), Ok(clip.clone()), "the original first");
+        s.clip = Some(PathBuf::from("/elsewhere/there.mp4"));
+        assert!(!clip_available(&s));
+        assert_eq!(playable_clip_in(&s, &cache), Err(Fallback::NotHere));
+        s.stored = stored.clone();
+        assert!(clip_available(&s), "a copy came with the message");
+        let played = playable_clip_in(&s, &cache).unwrap();
+        assert!(played.starts_with(&cache) && is_video_path(&played));
+        assert_eq!(std::fs::read(&played).unwrap(), b"movie bytes");
+        assert_eq!(playable_clip(&s), Err(Fallback::NotHere), "the original is still not here");
+        s.stored = stored.map(|st| crate::video::StoredClip { hash: "f".repeat(64), ..st });
+        std::fs::remove_dir_all(&cache).unwrap();
+        assert!(matches!(playable_clip_in(&s, &cache), Err(Fallback::CantDecode(_))), "a damaged copy says so");
+    }
+
+    #[test]
     fn fallback_when_the_clip_is_not_here_and_how_the_system_player_is_asked() {
-        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: None };
+        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: None, stored: None };
         assert_eq!(playable_clip(&s), Err(Fallback::NotHere));
         let dir = tempfile::tempdir().unwrap();
         s.clip = Some(dir.path().join("gone.mp4"));

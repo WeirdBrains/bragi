@@ -450,7 +450,7 @@ impl App {
             let r = async {
                 let plan = core.video_plan(target.as_ref(), &model).await?;
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                let prefs = bragi_core::video::VideoPrefs::default();
+                let prefs = core.video_prefs();
                 tokio::task::spawn_blocking(move || {
                     let source = core.video_source(&path)?;
                     core.attach_video_source(&name, &source, &model, &plan, &prefs, reserved)
@@ -479,7 +479,7 @@ impl App {
         let Some(c) = &self.current else { return self.fail("Open a chat with a video first.") };
         let Some((name, v)) = bragi_core::video_play::last_video(c) else { return self.fail("No video in this chat.") };
         let name = name.to_string();
-        match bragi_core::video_play::playable_clip(v) {
+        match self.core.playable_clip(v) {
             Ok(path) => match bragi_core::video_play::open_externally(&path) {
                 Ok(()) => self.say(format!("Opened {name} in the system player.")),
                 Err(e) => self.fail(e.message),
@@ -495,6 +495,29 @@ impl App {
         self.core.handle().spawn(async move {
             let r = core.video_limits_view(target.as_ref(), &model).await.map_err(|e| e.message);
             let _ = tx.send(Job::VideoLimits(r, Some(String::new())));
+        });
+    }
+
+    /// `/store-clips` (show), `/store-clips on|off`: whether clips attached here are copied into
+    /// their message so linked devices can play them (this device's video preference).
+    fn store_clips_command(&mut self, rest: &str) {
+        let mut prefs = self.core.video_prefs();
+        match rest {
+            "" => {}
+            "on" => prefs.store_clip = true,
+            "off" => prefs.store_clip = false,
+            _ => return self.fail("Use /store-clips on or /store-clips off."),
+        }
+        if !rest.is_empty()
+            && let Err(e) = self.core.set_video_prefs(&prefs)
+        {
+            return self.fail(e.message);
+        }
+        let mib = bragi_core::video::MAX_STORED_CLIP_BYTES >> 20;
+        self.say(if prefs.store_clip {
+            format!("Storing clips: on. Clips you attach here (up to {mib} MiB) go with their message, so your linked devices can play them.")
+        } else {
+            "Storing clips: off. A clip plays only on the device it was attached on.".to_string()
         });
     }
 
@@ -1872,6 +1895,10 @@ impl App {
         if text == "/play" {
             self.input.take();
             return self.play_video();
+        }
+        if text == "/store-clips" || text.starts_with("/store-clips ") {
+            self.input.take();
+            return self.store_clips_command(text.trim_start_matches("/store-clips").trim());
         }
         if text == "/video-limits" || text.starts_with("/video-limits ") {
             self.input.take();

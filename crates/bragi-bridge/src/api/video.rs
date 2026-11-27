@@ -8,7 +8,7 @@
 use flutter_rust_bridge::frb;
 use std::path::{Path, PathBuf};
 
-use bragi_core::video::{self, Frame, ModelLimits, Probe, Sampled, VideoPrefs};
+use bragi_core::video::{self, Frame, ModelLimits, Probe, Sampled};
 use bragi_core::{Core, Media, Target};
 
 use super::bragi::{AttachmentView, TargetView, attachment_view, core, err, target_of};
@@ -125,7 +125,7 @@ pub async fn video_frame_plan(
     let c = core.clone();
     let p = core
         .handle()
-        .spawn(async move { c.video_frame_plan(target.as_ref(), &model, &name, &probe_of(probe), &VideoPrefs::default(), reserved(&history)).await })
+        .spawn(async move { c.video_frame_plan(target.as_ref(), &model, &name, &probe_of(probe), &c.video_prefs(), reserved(&history)).await })
         .await
         .map_err(|e| e.to_string())?
         .map_err(err)?;
@@ -151,17 +151,8 @@ pub async fn attach_video_frames(
         .handle()
         .spawn(async move {
             let path = path.map(PathBuf::from);
-            c.attach_video_frames(
-                target.as_ref(),
-                &model,
-                &name,
-                path.as_deref(),
-                probe_of(probe),
-                frames,
-                &VideoPrefs::default(),
-                reserved(&history),
-            )
-            .await
+            c.attach_video_frames(target.as_ref(), &model, &name, path.as_deref(), probe_of(probe), frames, &c.video_prefs(), reserved(&history))
+                .await
         })
         .await
         .map_err(|e| e.to_string())?
@@ -184,7 +175,7 @@ pub async fn attach_video_file(
             let plan = c.video_plan(target.as_ref(), &model).await?;
             let c2 = c.clone();
             tokio::task::spawn_blocking(move || {
-                c2.attach_video_with(Path::new(&path), &model, &plan.limits, plan.audio_ok, &VideoPrefs::default(), reserved(&history))
+                c2.attach_video_with(Path::new(&path), &model, &plan.limits, plan.audio_ok, &c2.video_prefs(), reserved(&history))
             })
             .await
             .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, format!("reading the clip stopped: {e}")))?
@@ -196,14 +187,17 @@ pub async fn attach_video_file(
 }
 
 fn info(name: &str, s: &Sampled) -> VideoInfoView {
+    // The original on this device, else the copy stored with the message, written out to play.
+    let here =
+        bragi_core::video_play::playable_clip(s).ok().or_else(|| s.stored.as_ref().and_then(|_| core().ok()).and_then(|c| c.playable_clip(s).ok()));
     VideoInfoView {
         name: name.to_string(),
         bubble: bragi_core::video_play::bubble(name, s),
         summary: s.summary.clone(),
         duration_ms: s.duration_ms,
         sound: s.audio.is_some(),
-        clip: s.clip.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        clip_here: s.clip.as_ref().is_some_and(|p| p.is_file()),
+        clip: here.as_ref().or(s.clip.as_ref()).map(|p| p.to_string_lossy().into_owned()),
+        clip_here: here.is_some(),
         frames: s
             .frames
             .iter()
@@ -288,6 +282,7 @@ mod tests {
             frames: vec![bragi_core::video::VideoFrame { at_ms: 7_500, mime: "image/jpeg".into(), data: "AAAA".into() }],
             audio: None,
             clip: Some(PathBuf::from("/nowhere/clip.mp4")),
+            stored: None,
         };
         let v = video_info("clip.mp4".into(), s.to_json()).unwrap();
         assert_eq!(v.bubble, "video  clip.mp4  0:42  1 frame  no sound sent");

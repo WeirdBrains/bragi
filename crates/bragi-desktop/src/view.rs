@@ -135,6 +135,8 @@ pub struct BragiView {
     video_opening: Option<String>,
     video_fallbacks: HashMap<String, bragi_core::video_play::Fallback>,
     video_tick: Option<Task<()>>,
+    /// The player put the window fullscreen (and puts it back when it leaves fullscreen).
+    video_window_fullscreen: bool,
     /// Deleting history (see `delete`): the delete waiting to be confirmed, the typed word Clear
     /// all history wants, the last delete while it can be undone, and the Settings view.
     confirm: Option<delete::Confirm>,
@@ -291,6 +293,7 @@ impl BragiView {
             video_opening: None,
             video_fallbacks: HashMap::new(),
             video_tick: None,
+            video_window_fullscreen: false,
             attachments: Vec::new(),
             attach_input,
             attach_open: false,
@@ -660,7 +663,7 @@ impl BragiView {
             self.tick_video(cx);
             return cx.notify();
         }
-        let clip = match bragi_core::video_play::playable_clip(sampled) {
+        let clip = match self.core.playable_clip(sampled) {
             Ok(p) => p,
             Err(why) => {
                 self.video_fallbacks.insert(key.to_string(), why);
@@ -764,6 +767,29 @@ impl BragiView {
         }
     }
 
+    /// The clip fills the window, or back to its card.
+    pub fn fullscreen_video(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(p) = self.video.as_mut() {
+            p.toggle_fullscreen();
+            self.sync_window_fullscreen(window);
+            cx.notify();
+        }
+    }
+
+    /// Puts the window fullscreen with the player, and back when the player leaves fullscreen
+    /// (Escape, the button, a fallback, another chat), unless the user made it fullscreen.
+    fn sync_window_fullscreen(&mut self, window: &mut Window) {
+        let want = self.video.as_ref().is_some_and(|p| p.fullscreen);
+        match crate::video::window_fullscreen(want, self.video_window_fullscreen, window.is_fullscreen()) {
+            Some(on) => {
+                window.toggle_fullscreen();
+                self.video_window_fullscreen = on;
+            }
+            None if !want => self.video_window_fullscreen = false,
+            None => {}
+        }
+    }
+
     pub fn mute_video(&mut self, cx: &mut Context<Self>) {
         if let Some(p) = self.video.as_mut() {
             p.toggle_mute(!std::env::var("BRAGI_AUDIO").is_ok_and(|x| x == "null"));
@@ -773,7 +799,9 @@ impl BragiView {
 
     /// The clip in the system player (`xdg-open`, `open`, `start`).
     pub fn open_video_externally(&mut self, sampled: &bragi_core::video::Sampled, cx: &mut Context<Self>) {
-        let r = bragi_core::video_play::playable_clip(sampled)
+        let r = self
+            .core
+            .playable_clip(sampled)
             .map_err(|why| why.message())
             .and_then(|p| bragi_core::video_play::open_externally(&p).map_err(|e| e.message));
         if let Some(p) = self.video.as_mut().filter(|p| p.playing()) {
@@ -891,7 +919,7 @@ impl BragiView {
         let job = self.core.handle().spawn(async move {
             let plan = core.video_plan(target.as_ref(), &model).await?;
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            let prefs = bragi_core::video::VideoPrefs::default();
+            let prefs = core.video_prefs();
             let core2 = core.clone();
             let model2 = model.clone();
             let a = tokio::task::spawn_blocking(move || {
@@ -1038,7 +1066,11 @@ impl BragiView {
         cx.notify();
     }
 
+    /// Escape (or ■ Stop): leaves a fullscreen clip first, otherwise stops the answer.
     pub fn stop(&mut self, cx: &mut Context<Self>) {
+        if self.video.as_mut().is_some_and(|p| p.exit_fullscreen()) {
+            return cx.notify();
+        }
         if let Some(s) = &self.streaming {
             self.core.cancel(&s.request_id);
         }
@@ -1691,26 +1723,13 @@ impl BragiView {
     }
 
     /// A clip in the chat: the inline player (picture, Play/Pause, a seek bar, elapsed / total,
-    /// Mute, System player) or why it can't play here, then the frames the model saw (a click
+    /// Mute, Fullscreen, System player) or why it can't play here, then the frames the model saw (a click
     /// plays from there).
     fn video_card(&self, m: &ChatMessage, n: usize, name: &str, v: &bragi_core::video::Sampled, cx: &mut Context<Self>) -> gpui::Div {
-        const STEPS: usize = 48;
         let t = self.theme;
         let key = format!("{}#a{n}", m.id);
         let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
         let mine = self.video.as_ref().filter(|p| p.key == key && p.conversation == conv);
-        let (playing, pos, total) = match mine {
-            Some(p) => (p.playing(), p.position_ms(), p.duration_ms),
-            None => (false, 0, v.duration_ms),
-        };
-        let fallback = self.video_fallbacks.get(&key);
-        let label = if self.video_opening.as_deref() == Some(key.as_str()) {
-            "…"
-        } else if playing {
-            "❚❚ Pause"
-        } else {
-            "▶ Play"
-        };
         let mut card = div()
             .flex()
             .flex_col()
@@ -1726,46 +1745,7 @@ impl BragiView {
         if let Some(i) = picture {
             card = card.child(img(i).max_w(px(480.)).max_h(px(270.)).object_fit(ObjectFit::Contain));
         }
-        let sampled = v.clone();
-        let external = v.clone();
-        let mut controls = div().flex().flex_row().gap(px(10.)).items_center();
-        if fallback.is_none() {
-            let filled = (bragi_core::audio::progress(pos, total) * STEPS as f64).round() as usize;
-            let k2 = key.clone();
-            controls = controls.child(
-                self.button(SharedString::from(format!("vplay-{key}")), label, false)
-                    .on_click(cx.listener(move |view, _, _, cx| view.play_video(&k2, &sampled, None, cx))),
-            );
-            if mine.is_some() {
-                controls = controls.child(div().flex().flex_row().flex_1().min_w(px(80.)).h(px(16.)).items_center().children((0..STEPS).map(|k| {
-                    div()
-                        .id(SharedString::from(format!("vseek-{key}-{k}")))
-                        .flex_1()
-                        .h(px(16.))
-                        .flex()
-                        .items_center()
-                        .cursor_pointer()
-                        .child(div().w_full().h(px(4.)).bg(rgb(if k < filled { t.accent } else { t.border })))
-                        .on_click(cx.listener(move |view, _, _, cx| view.seek_video((k as f64 + 0.5) / STEPS as f64, cx)))
-                })));
-            }
-            controls = controls.child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(bragi_core::audio::times(pos, total)));
-            if let Some(p) = mine.filter(|p| p.has_sound) {
-                controls = controls.child(
-                    self.button(SharedString::from(format!("vmute-{key}")), if p.muted { "Unmute" } else { "Mute" }, false)
-                        .on_click(cx.listener(|view, _, _, cx| view.mute_video(cx))),
-                );
-            }
-        } else if let Some(why) = fallback {
-            controls = controls.child(div().flex_1().text_size(px(12.)).text_color(rgb(t.warning)).child(why.message()));
-        }
-        if bragi_core::video_play::playable_clip(v).is_ok() {
-            controls = controls.child(
-                self.button(SharedString::from(format!("vopen-{key}")), "Open in system player", fallback.is_some())
-                    .on_click(cx.listener(move |view, _, _, cx| view.open_video_externally(&external, cx))),
-            );
-        }
-        card = card.child(controls);
+        card = card.child(self.video_controls(&key, v, false, cx));
         // The frames the model saw; a click plays from there.
         let mut strip = div().flex().flex_row().flex_wrap().gap(px(4.));
         for (i, f) in v.frames.iter().enumerate() {
@@ -1784,6 +1764,112 @@ impl BragiView {
             );
         }
         card.child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("Frames the model saw")).child(strip)
+    }
+
+    /// A clip's controls: Play/Pause, the seek bar, elapsed / total, Mute, Fullscreen and System
+    /// player, or why it can't play here. The card and the fullscreen player share them.
+    fn video_controls(&self, key: &str, v: &bragi_core::video::Sampled, fullscreen: bool, cx: &mut Context<Self>) -> gpui::Div {
+        const STEPS: usize = 48;
+        // The fullscreen copy of the controls draws over the card's: its own element ids.
+        let tag = if fullscreen { "fs-" } else { "" };
+        let t = self.theme;
+        let conv = self.current.as_ref().map(|c| c.id.as_str()).unwrap_or("");
+        let mine = self.video.as_ref().filter(|p| p.key == key && p.conversation == conv);
+        let (playing, pos, total) = match mine {
+            Some(p) => (p.playing(), p.position_ms(), p.duration_ms),
+            None => (false, 0, v.duration_ms),
+        };
+        let fallback = self.video_fallbacks.get(key);
+        let label = if self.video_opening.as_deref() == Some(key) {
+            "…"
+        } else if playing {
+            "❚❚ Pause"
+        } else {
+            "▶ Play"
+        };
+        let sampled = v.clone();
+        let external = v.clone();
+        let mut controls = div().flex().flex_row().gap(px(10.)).items_center();
+        if fallback.is_none() {
+            let filled = (bragi_core::audio::progress(pos, total) * STEPS as f64).round() as usize;
+            let k2 = key.to_string();
+            controls = controls.child(
+                self.button(SharedString::from(format!("{tag}vplay-{key}")), label, false)
+                    .on_click(cx.listener(move |view, _, _, cx| view.play_video(&k2, &sampled, None, cx))),
+            );
+            if mine.is_some() {
+                controls = controls.child(div().flex().flex_row().flex_1().min_w(px(80.)).h(px(16.)).items_center().children((0..STEPS).map(|k| {
+                    div()
+                        .id(SharedString::from(format!("{tag}vseek-{key}-{k}")))
+                        .flex_1()
+                        .h(px(16.))
+                        .flex()
+                        .items_center()
+                        .cursor_pointer()
+                        .child(div().w_full().h(px(4.)).bg(rgb(if k < filled { t.accent } else { t.border })))
+                        .on_click(cx.listener(move |view, _, _, cx| view.seek_video((k as f64 + 0.5) / STEPS as f64, cx)))
+                })));
+            }
+            controls = controls.child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(bragi_core::audio::times(pos, total)));
+            if let Some(p) = mine.filter(|p| p.has_sound) {
+                controls = controls.child(
+                    self.button(SharedString::from(format!("{tag}vmute-{key}")), if p.muted { "Unmute" } else { "Mute" }, false)
+                        .on_click(cx.listener(|view, _, _, cx| view.mute_video(cx))),
+                );
+            }
+            if mine.is_some() {
+                let (id, text) = if fullscreen { ("vfull-exit", "Exit fullscreen (Esc)") } else { ("vfull", "⛶ Fullscreen") };
+                controls = controls.child(
+                    self.button(SharedString::from(format!("{tag}{id}-{key}")), text, false)
+                        .on_click(cx.listener(|view, _, window, cx| view.fullscreen_video(window, cx))),
+                );
+            }
+        } else if let Some(why) = fallback {
+            controls = controls.child(div().flex_1().text_size(px(12.)).text_color(rgb(t.warning)).child(why.message()));
+        }
+        if bragi_core::video_play::clip_available(v) {
+            controls = controls.child(
+                self.button(SharedString::from(format!("{tag}vopen-{key}")), "Open in system player", fallback.is_some())
+                    .on_click(cx.listener(move |view, _, _, cx| view.open_video_externally(&external, cx))),
+            );
+        }
+        controls
+    }
+
+    /// The clip playing fullscreen: the picture filling the window over the chat, the controls
+    /// under it. Escape or Exit fullscreen comes back to the card.
+    fn video_fullscreen(&self, cx: &mut Context<Self>) -> Option<gpui::Stateful<gpui::Div>> {
+        let conv = self.current.as_ref()?;
+        let p = self.video.as_ref().filter(|p| p.fullscreen && p.conversation == conv.id)?;
+        let (id, n) = p.key.rsplit_once("#a")?;
+        let n: usize = n.parse().ok()?;
+        let m = conv.messages.iter().find(|m| m.id == id)?;
+        let Some(bragi_core::Media::Video(v)) = m.attachments.get(n)?.media.as_ref() else { return None };
+        let picture = p.frame.as_ref().map(|(_, i)| i.clone()).or_else(|| self.video_thumb(&p.key, v, 0));
+        Some(
+            div()
+                .id("video-fullscreen")
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .flex()
+                .flex_col()
+                .bg(rgb(0x000000))
+                .occlude()
+                .p(px(12.))
+                .gap(px(8.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .items_center()
+                        .justify_center()
+                        .children(picture.map(|i| img(i).size_full().object_fit(ObjectFit::Contain))),
+                )
+                .child(self.video_controls(&p.key, v, true, cx)),
+        )
     }
 
     /// Frame `i` of a clip as a picture, decoded once.
@@ -2158,7 +2244,7 @@ impl BragiView {
 }
 
 impl Render for BragiView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         // A clip stops when the chat on screen changes.
         if self.deck.shown(self.current.as_ref().map(|c| c.id.as_str())) {
@@ -2167,6 +2253,7 @@ impl Render for BragiView {
             self.video = None;
             self.video_opening = None;
         }
+        self.sync_window_fullscreen(window);
         if std::mem::take(&mut self.recheck) {
             self.stick = self.at_bottom();
         }
@@ -2208,6 +2295,7 @@ impl Render for BragiView {
             .children(self.prefs_overlay(cx))
             .children(self.models_overlay(cx))
             .children(self.upload_overlay(cx))
+            .children(self.video_fullscreen(cx))
     }
 }
 

@@ -30,6 +30,9 @@ use crate::error::{CoreError, ErrorKind, Result};
 
 /// Largest clip read from disk. A limit on what is *read*; what travels is bounded by the plan.
 pub const MAX_CLIP_BYTES: u64 = 500 * 1024 * 1024;
+/// Largest clip copied into its message for linked devices ([`VideoPrefs::store_clip`]). Larger
+/// clips keep only the path; the other devices show the frames and say the clip isn't there.
+pub const MAX_STORED_CLIP_BYTES: u64 = 25 * 1024 * 1024;
 /// Longest clip, in milliseconds (10 minutes).
 pub const MAX_CLIP_MS: u64 = 10 * 60 * 1000;
 /// Scene changes closer than this to a frame already chosen are the same moment (hybrid mode).
@@ -329,6 +332,11 @@ pub struct VideoPrefs {
     /// Keep the clip itself with the message for playback.
     #[serde(default = "yes")]
     pub keep_original: bool,
+    /// Also copy the clip into the message (up to [`MAX_STORED_CLIP_BYTES`]) so linked devices can
+    /// play it; it syncs and is deleted with the message. Off unless the user turns it on, and only
+    /// with `keep_original`.
+    #[serde(default)]
+    pub store_clip: bool,
 }
 
 fn scene_threshold() -> f32 {
@@ -350,6 +358,7 @@ impl Default for VideoPrefs {
             audio: AudioPref::Auto,
             range: None,
             keep_original: true,
+            store_clip: false,
         }
     }
 }
@@ -600,6 +609,75 @@ pub struct Sampled {
     /// Never sent to a model; on another device it is usually not there, and the player says so.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clip: Option<PathBuf>,
+    /// A copy of the clip kept with the message ([`VideoPrefs::store_clip`]), so a linked device
+    /// can play it. Never sent to a model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stored: Option<StoredClip>,
+}
+
+/// A clip's bytes stored with its message ([`VideoPrefs::store_clip`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoredClip {
+    /// The container's file extension (`mp4`, `webm`, …), one of the video extensions.
+    pub ext: String,
+    /// BLAKE3 of the bytes, hex: the name of the copy a device plays, and its check.
+    pub hash: String,
+    pub size: u64,
+    /// The bytes, base64.
+    pub data: String,
+}
+
+impl StoredClip {
+    /// A copy of the clip at `path`: `None` when it isn't a video file or is over
+    /// [`MAX_STORED_CLIP_BYTES`].
+    pub fn read(path: &Path) -> Result<Option<StoredClip>> {
+        use base64::Engine as _;
+        let ext = match path.extension().and_then(|e| e.to_str()) {
+            Some(e) if is_video_path(path) => e.to_ascii_lowercase(),
+            _ => return Ok(None),
+        };
+        let storage = |e: std::io::Error| CoreError::new(ErrorKind::Storage, format!("{}: {e}", path.display()));
+        if std::fs::metadata(path).map_err(storage)?.len() > MAX_STORED_CLIP_BYTES {
+            return Ok(None);
+        }
+        let bytes = std::fs::read(path).map_err(storage)?;
+        if bytes.len() as u64 > MAX_STORED_CLIP_BYTES {
+            return Ok(None);
+        }
+        Ok(Some(StoredClip {
+            ext,
+            hash: blake3::hash(&bytes).to_hex().to_string(),
+            size: bytes.len() as u64,
+            data: base64::engine::general_purpose::STANDARD.encode(&bytes),
+        }))
+    }
+
+    /// The file name its copy is played from: `<hash>.<ext>`, or `None` when the record is not
+    /// one this device wrote the way it expects (it came from another device: checked, never trusted).
+    pub fn file_name(&self) -> Option<String> {
+        let ext_ok = VIDEO_EXTENSIONS.iter().any(|v| v.eq_ignore_ascii_case(&self.ext));
+        let hash_ok = self.hash.len() == 64 && self.hash.bytes().all(|b| b.is_ascii_hexdigit());
+        (ext_ok && hash_ok && self.size <= MAX_STORED_CLIP_BYTES)
+            .then(|| format!("{}.{}", self.hash.to_ascii_lowercase(), self.ext.to_ascii_lowercase()))
+    }
+
+    /// Writes the copy into `dir` (once: a copy already there with the right size is reused) and
+    /// returns its path. Refuses bytes that don't match the hash.
+    pub fn materialize(&self, dir: &Path) -> Result<PathBuf> {
+        use base64::Engine as _;
+        let name = self.file_name().ok_or_else(|| bad("the stored clip is damaged"))?;
+        let path = dir.join(name);
+        if std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() == self.size) {
+            return Ok(path);
+        }
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&self.data).map_err(|_| bad("the stored clip is damaged (not base64)"))?;
+        if bytes.len() as u64 != self.size || !blake3::hash(&bytes).to_hex().eq_ignore_ascii_case(&self.hash) {
+            return Err(bad("the stored clip is damaged (its check doesn't match)"));
+        }
+        std::fs::create_dir_all(dir).map_err(|e| CoreError::new(ErrorKind::Storage, format!("{}: {e}", dir.display())))?;
+        crate::files::write_atomic(&path, &bytes)?;
+        Ok(path)
+    }
 }
 
 impl Sampled {
@@ -679,7 +757,7 @@ pub fn sample(
         clock(end - start),
         if n == 1 { "" } else { "s" }
     );
-    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None })
+    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None, stored: None })
 }
 
 /// The range, budget and frame times [`sample`] works from.
@@ -904,10 +982,10 @@ impl Ffmpeg {
         }
         // The bundled build (scripts/build-ffmpeg.sh): beside the executable in the archives and on
         // Windows, Bragi.app/Contents/Helpers beside Contents/MacOS on macOS.
-        if let Some(dir) = current_exe.and_then(Path::parent) {
-            if let Some(found) = pair(dir).or_else(|| pair(&dir.join("..").join("Helpers"))) {
-                return Some(found);
-            }
+        if let Some(dir) = current_exe.and_then(Path::parent)
+            && let Some(found) = pair(dir).or_else(|| pair(&dir.join("..").join("Helpers")))
+        {
+            return Some(found);
         }
         std::env::split_paths(path?).find_map(|d| pair(&d))
     }
@@ -1095,6 +1173,67 @@ impl FrameSource for FfmpegCli {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_stored_clip_round_trips_is_capped_and_never_trusted() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = dir.path().join("Clip.MP4");
+        std::fs::write(&clip, b"not really a movie").unwrap();
+        let st = StoredClip::read(&clip).unwrap().unwrap();
+        assert_eq!((st.ext.as_str(), st.size), ("mp4", 18));
+        assert_eq!(st.hash, blake3::hash(b"not really a movie").to_hex().to_string());
+        let cache = dir.path().join("cache");
+        let out = st.materialize(&cache).unwrap();
+        assert_eq!(out, cache.join(format!("{}.mp4", st.hash)));
+        assert_eq!(std::fs::read(&out).unwrap(), b"not really a movie");
+        assert_eq!(st.materialize(&cache).unwrap(), out, "written once, then reused");
+
+        let notes = dir.path().join("notes.txt");
+        std::fs::write(&notes, b"x").unwrap();
+        assert_eq!(StoredClip::read(&notes).unwrap(), None, "only video files");
+        let big = dir.path().join("big.webm");
+        std::fs::File::create(&big).unwrap().set_len(MAX_STORED_CLIP_BYTES + 1).unwrap();
+        assert_eq!(StoredClip::read(&big).unwrap(), None, "over the cap: path only");
+        assert!(StoredClip::read(&dir.path().join("gone.mp4")).is_err());
+
+        // From another device: a name that escapes the cache, a hash that doesn't match, or not base64.
+        let escape = StoredClip { ext: "mp4/../../x".into(), ..st.clone() };
+        assert_eq!(escape.file_name(), None);
+        assert!(escape.materialize(&cache).is_err());
+        let bad_hash = StoredClip { hash: "../".repeat(21) + "a", ..st.clone() };
+        assert_eq!(bad_hash.file_name(), None);
+        let other = StoredClip { hash: "0".repeat(64), ..st.clone() };
+        assert!(other.materialize(&cache).unwrap_err().message.contains("check"));
+        assert!(!cache.join(format!("{}.mp4", "0".repeat(64))).exists(), "nothing written");
+        let junk = StoredClip { data: "%%%".into(), hash: "1".repeat(64), ..st.clone() };
+        assert!(junk.materialize(&cache).is_err());
+        let huge = StoredClip { size: MAX_STORED_CLIP_BYTES + 1, ..st.clone() };
+        assert_eq!(huge.file_name(), None);
+    }
+
+    #[test]
+    fn a_stored_clip_rides_in_the_message_but_never_goes_to_the_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = dir.path().join("a.webm");
+        std::fs::write(&clip, b"WEBMDATA-not-for-the-model").unwrap();
+        let stored = StoredClip::read(&clip).unwrap();
+        let s = Sampled {
+            summary: "Video".into(),
+            duration_ms: 1_000,
+            frames: vec![VideoFrame { at_ms: 0, mime: "image/jpeg".into(), data: "AAAA".into() }],
+            audio: None,
+            clip: Some(clip.clone()),
+            stored: stored.clone(),
+        };
+        let back: Sampled = serde_json::from_str(&s.to_json()).unwrap();
+        assert_eq!(back.stored, stored, "it syncs with the message");
+        let old: Sampled = serde_json::from_str(r#"{"summary":"","duration_ms":1,"frames":[]}"#).unwrap();
+        assert_eq!(old.stored, None, "messages from before read as before");
+        let a = crate::attach::Attachment::from_video("a.webm", s);
+        let sent = serde_json::to_string(&crate::attach::content("hi", &[a])).unwrap();
+        let data = &stored.unwrap().data;
+        assert!(!sent.contains(data.as_str()), "the clip itself is never sent");
+    }
 
     #[test]
     fn locate_order_env_then_beside_exe_then_helpers_then_path() {
