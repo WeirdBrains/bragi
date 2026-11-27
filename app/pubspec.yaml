@@ -14,6 +14,8 @@ dependencies:
     sdk: flutter
   flutter_rust_bridge: 2.13.0
   flutter_rust_bridge_hooks: 2.13.0
+  # The build hook reads the target (hook/build.dart).
+  code_assets: ^2.2.0
   path_provider: ^2.1.5
   # 2.3.x pulls package:jni into desktop FFI plugin lists.
   path_provider_android: '>=2.2.5 <2.3.0'

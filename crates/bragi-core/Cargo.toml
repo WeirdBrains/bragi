@@ -14,7 +14,7 @@ publish = false
 decode = ["dep:symphonia"]
 # The optional on-device model's engine: llama.cpp in-process (B4). Off here so everyday builds
 # skip llama.cpp's C++ build; release builds turn it on where llama.cpp builds.
-on-device = ["weirdnet-model/llama"]
+on-device = ["weirdnet-model/llama", "dep:llama-cpp-2"]
 
 [dependencies]
 symphonia = { workspace = true, optional = true }
@@ -51,6 +51,12 @@ keyring.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Only to choose llama.cpp's C++ runtime on Android (on-device): the static libc++, since a Flutter apk
+# ships no libc++_shared.so for the bridge to load. weirdnet-model builds llama-cpp-2 without its default
+# features, so nothing else changes. Keep the version at weirdnet-model's.
+[target.'cfg(target_os = "android")'.dependencies]
+llama-cpp-2 = { version = "0.1.161", default-features = false, features = ["android-static-stdcxx"], optional = true }
 
 [dev-dependencies]
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1"] }

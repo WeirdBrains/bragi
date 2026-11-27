@@ -6,7 +6,7 @@
 # on each runner from the pinned, checksummed FFmpeg tarball (docs/design/video.md, "Platform packaging"):
 # Linux tarballs and zips (bin/), macOS Bragi.app (Contents/Helpers) and tarball, Windows zip and installers
 # (beside bragi.exe). The desktop builds have the on-device model's engine (Cargo feature `on-device`, llama.cpp):
-# Linux and Windows on a generic CPU, macOS with Metal. Each job checks the engine is in the binary and that no
+# Linux and Windows on a generic CPU, macOS with Metal; the Android and iOS apps' bridge too (app/hook/build.dart). Each job checks the engine is in the binary and that no
 # runner path (the checkout, the cargo registry, the home folder) is in it.
 name: Release
 
@@ -312,6 +312,20 @@ jobs:
             echo "BRAGI_ANDROID_KEY_PASSWORD=$KEY_PASSWORD"
           } >> "$GITHUB_ENV"
       - run: scripts/dist-android.sh
+      - name: The on-device engine (llama.cpp) is in every apk's bridge, with the static libc++ and no runner path
+        run: |
+          readelf=$(ls "$ANDROID_HOME"/ndk/*/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf | sort -V | tail -1)
+          for f in dist/*.apk; do
+            d=$(mktemp -d) && unzip -q "$f" 'lib/*/libbragi_bridge.so' -d "$d"
+            for so in "$d"/lib/*/libbragi_bridge.so; do
+              grep -aq llama_model_load "$so" || { echo "::error::$f: $so has no on-device engine"; exit 1; }
+              if "$readelf" -d "$so" | grep -q 'libc++_shared'; then echo "::error::$f: $so needs libc++_shared.so"; exit 1; fi
+              if strings -a "$so" | grep -E '/home/runner|/opt/hostedtoolcache' | sort -u | head -5 | grep .; then
+                echo "::error::$f: a runner path is in $so"; exit 1
+              fi
+            done
+            rm -rf "$d"
+          done
       - name: APK signer
         run: |
           apksigner="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)"
@@ -345,6 +359,16 @@ jobs:
           xcodebuild -version
       - run: flutter config --enable-swift-package-manager
       - run: scripts/dist-ios.sh
+      - name: The on-device engine (llama.cpp with Metal) is in the bridge, and no runner path is
+        run: |
+          d=$(mktemp -d) && unzip -q dist/*.ipa -d "$d"
+          so=$(find "$d/Payload/Runner.app/Frameworks" -type f -perm -u+x -path '*bragi_bridge*' | head -1)
+          [ -n "$so" ] || { find "$d/Payload/Runner.app/Frameworks" -maxdepth 2; echo "::error::no bridge framework in the ipa"; exit 1; }
+          grep -aq llama_model_load "$so" || { echo "::error::$so has no on-device engine"; exit 1; }
+          otool -L "$so" | grep -q '/Metal.framework/' || { echo "::error::$so does not link Metal"; exit 1; }
+          if strings -a "$so" | grep -E '/Users/runner|/private/var/folders' | sort -u | head -5 | grep .; then
+            echo "::error::a runner path is in $so"; exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: bragi-ios
