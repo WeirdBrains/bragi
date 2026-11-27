@@ -2,6 +2,18 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 08:25 EST: v0.16.0 tagged (its builds failed), v0.16.1 released
+
+**v0.16.0** (`release: v0.16.0`, 531ed7b, tag `v0.16.0`; video, VS Code parity, the on-device model): Release run 45989613482 failed, so no GitHub release was made and the tag was left as it is (never moved). There were three failures. Linux: the terminal-only `bragi` (`--no-default-features`) didn't compile, because the inline player's `mod video` had taken `mod view`'s `#[cfg(feature = "gui")]`. iOS: video_player_avfoundation 2.12.5 calls `AVAsset.load(_:isolation:)` from the iOS 26 SDK, which the default Xcode 16.4 on macos-15 doesn't have. macOS: `hdiutil create` ran out of image space.
+
+**Fixes** (merged `fix/v0.16-release-builds`, 726911e; a `workflow_dispatch` Release run on the branch, 45992335229, was green on every job first): `mod view` is gui-only again, and the Release check job runs clippy on `-p bragi-desktop --no-default-features`. The iOS jobs (Release and Platforms) select the newest Xcode 26. [scripts/dist-macos.sh](scripts/dist-macos.sh) sizes the dmg from the app folder and retries hdiutil.
+
+**v0.16.1:** [v0.16.1](https://github.com/WeirdBrains/bragi/releases/tag/v0.16.1) (`release: v0.16.1`, 3a6ed79, app `0.16.1`). The Release run 45997887799 was green after re-running Android once, which first failed on a Gradle plugin-portal download error (network). Release flow:
+- Leak scan of the 41 files: 0 hits.
+- `github` and `assets` ok. `minisign` passed, but no key is set, so there are no `.minisig` files.
+- The six Arch `.sig` files are uploaded (`sign-bragi.sh 0.16.1`, EXIT 0), for 48 assets.
+- This commit sets bragi-bin's PKGBUILD/.SRCINFO, Nix `release.json` and the site's `latestVersion` to 0.16.1, then TAUR bragi-bin 0.16.1-1 (dry-run first).
+
 ## 2026-11-27 06:03 EST: B7 checked against the real pool (on main)
 
 Michael (11-27) approved the live check with a test grant. B7 is **done**: its last item was a check against a real Ymir node.
