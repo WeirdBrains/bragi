@@ -68,7 +68,8 @@ the **Connections** view in the Bragi activity bar (inline buttons on each row).
 | Chats | **Delete Chats…**; the chat panel's chats are in Bragi's history. |
 | Local server | **Start/Restart Server**, **Stop Server** (only one this editor started), **Show Server Status** |
 | Bragi as an MCP server | **Start MCP Server** (runs `bragi mcp` in a terminal), **Stop MCP Server**, **Copy MCP Client Config…** (Cursor, VS Code, Claude Desktop) |
-| Outside MCP servers | **Add MCP Server…**, **Turn MCP Server On or Off…**, **Test MCP Server**, **Remove MCP Server…**, **Apply MCP Servers from Settings**. Needs a Bragi with the MCP client; with an older one the commands say so. |
+| Outside MCP servers | **Add MCP Server…** (and where its tools may be used: every chat, or code chats in this folder), **Turn MCP Server On or Off…**, **Test MCP Server**, **Remove MCP Server…**, **Take Back "Always Allow" for an MCP Tool…**, **Apply MCP Servers from Settings**. With an older Bragi the commands say so. |
+| Agent mode | The chat panel's **Agent** switch: the model may use tools, and each call shows a card (**Allow once**, **Allow for this task**, **Always allow** for an outside MCP server's tool, **Deny**). Bragi target only. |
 
 ### Settings, user and workspace
 
