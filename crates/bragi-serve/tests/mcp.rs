@@ -185,7 +185,13 @@ async fn an_agent_chat_streams_its_approval_card_and_the_answer_lets_the_tool_ru
     assert!(answered, "{events:?}");
     assert_eq!(events.last().unwrap()["type"], "done", "{events:?}");
     assert!(events.iter().any(|e| e["type"] == "tool" && e["state"] == "done"), "the tool ran: {events:?}");
-    assert!(events.iter().filter(|e| e["type"] == "delta").any(|e| e["text"].as_str().unwrap().contains("2 notes mention")), "{events:?}");
+    // The answer as shown: each delta replaces the text from its offset on.
+    let mut text = String::new();
+    for e in events.iter().filter(|e| e["type"] == "delta") {
+        let keep: String = text.chars().take(e["offset"].as_u64().unwrap() as usize).collect();
+        text = keep + e["text"].as_str().unwrap();
+    }
+    assert!(text.contains("2 notes mention"), "{text}");
     let (s, _) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": "nope", "ask": 1, "choice": "deny"}))).await;
     assert_eq!(s, StatusCode::NOT_FOUND);
     let (s, _) = call(&app, "POST", "/v1/agent/approve", Some(json!({"request_id": request_id, "ask": 1, "choice": "sometimes"}))).await;
