@@ -7,8 +7,10 @@
 # With BRAGI_FFMPEG_DIR (universal ffmpeg and ffprobe from scripts/build-ffmpeg.sh, built per arch with
 # FFMPEG_CROSS and joined with lipo), they go in Bragi.app/Contents/Helpers, signed with the app, and
 # beside bragi in the tarball; Bragi finds them there before PATH.
-# BRAGI_FEATURES (default none) adds Cargo features, e.g. `on-device` (the llama.cpp engine; not turned on
-# in the Release workflow for macOS yet).
+# Cargo features: BRAGI_FEATURES (default `on-device`, the optional on-device model's llama.cpp engine, B4)
+# goes into both slices; BRAGI_FEATURES= builds without. llama.cpp is built for a generic CPU of each arch
+# (GGML_NATIVE=OFF) with its Metal backend, whose shaders are embedded in the binary (GGML_METAL_EMBED_LIBRARY),
+# so the model runs on the GPU of any Mac with Metal and on the CPU otherwise.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
@@ -18,7 +20,7 @@ export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/Users/user"
 prefix_maps="-ffile-prefix-map=$target_dir=/target -ffile-prefix-map=$root=/build/bragi -ffile-prefix-map=${CARGO_HOME:-$HOME/.cargo}=/cargo -ffile-prefix-map=$HOME=/Users/user"
 export CFLAGS="${CFLAGS:-} $prefix_maps" CXXFLAGS="${CXXFLAGS:-} $prefix_maps"
-features="${BRAGI_FEATURES:-}"
+features="${BRAGI_FEATURES-on-device}"
 feature_args=()
 [[ -n "$features" ]] && feature_args=(--features "$features")
 for t in aarch64-apple-darwin x86_64-apple-darwin; do

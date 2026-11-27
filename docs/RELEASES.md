@@ -24,8 +24,8 @@ Bragi releases with the shared [Weird Brains](https://weirdbrains.com) release s
 | Platform | Files | Signing |
 | --- | --- | --- |
 | Linux x86_64, ARM64 | `tar.gz`, `zip`; `deb`, `rpm`, Arch `pkg.tar.zst` as `bragi` (desktop entry, icons) and `bragi-standalone` (binary only); TAUR `bragi-bin`; Nix flake (`bragi`, `bragi-standalone`). Built with the on-device engine (`on-device`); the tarballs and zips bundle the LGPL ffmpeg | none |
-| macOS (universal) | `Bragi.app` in a `zip` and a `dmg`; the bare binary in a `tar.gz`; both bundle the LGPL ffmpeg (`Contents/Helpers`, beside `bragi`) | ad-hoc only, not notarized |
-| Windows x86_64, ARM64 | standalone `exe` and `zip`; per-user `msi` and a `setup.exe` built with WiX 7; the zip and installers bundle the LGPL ffmpeg beside `bragi.exe` | none |
+| macOS (universal) | `Bragi.app` in a `zip` and a `dmg`; the bare binary in a `tar.gz`; both bundle the LGPL ffmpeg (`Contents/Helpers`, beside `bragi`). Built with the on-device engine (`on-device`, llama.cpp with Metal) | ad-hoc only, not notarized |
+| Windows x86_64, ARM64 | standalone `exe` and `zip`; per-user `msi` and a `setup.exe` built with WiX 7; the zip and installers bundle the LGPL ffmpeg beside `bragi.exe`. Built with the on-device engine (`on-device`; llama.cpp with MSVC on x86_64, clang-cl on ARM64) | none |
 | Android | one `apk` per ABI; an `aab` when the release key is set | release key from the `BRAGI_ANDROID_*` secrets, else the debug key (`*-debug-signed.apk`) |
 | iOS | unsigned `ipa` for AltStore, SideStore or Sideloadly | none (you sign it with your own Apple ID) |
 
