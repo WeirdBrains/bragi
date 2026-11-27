@@ -14,7 +14,14 @@ export interface ChatTurn {
   model?: string;
   /** A clip to go with the turn (Bragi target only). */
   video?: VideoAttach;
+  /** Agent mode (Bragi target only): tool calls ask first with `approval` events. */
+  agent?: boolean;
+  /** The workspace folder, for MCP servers scoped to a folder. */
+  folder?: string;
 }
+
+/** The answer to an agent's approval card. */
+export type ApprovalChoice = 'deny' | 'once' | 'this_task' | 'always';
 
 export interface Backend {
   readonly id: 'bragi' | 'direct';
@@ -160,6 +167,11 @@ export class BragiBackend implements Backend {
     await this.request('POST', '/v1/cancel', { request_id: requestId });
   }
 
+  /** Answers approval card `ask` of agent request `requestId`. */
+  async approve(requestId: string, ask: number, choice: ApprovalChoice): Promise<void> {
+    await this.request('POST', '/v1/agent/approve', { request_id: requestId, ask, choice });
+  }
+
   async health(signal?: AbortSignal): Promise<boolean> {
     try {
       const res = await fetch(this.url('/v1/health'), { signal });
@@ -205,7 +217,7 @@ export class BragiBackend implements Backend {
     const res = await this.request(
       'POST',
       '/v1/code/chat',
-      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target(), video: turn.video },
+      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target(), video: turn.video, agent: turn.agent || undefined, folder: turn.folder },
       signal,
     );
     let conversation: string | undefined;
@@ -310,6 +322,9 @@ export class DirectBackend implements Backend {
   }
 
   async chat(turn: ChatTurn, onEvent: (e: ChatEvent) => void, signal?: AbortSignal): Promise<string | undefined> {
+    if (turn.agent) {
+      throw new BragiError('Agent mode needs the Bragi target: bragi serve runs the tools and asks before each call.', 'bad_request');
+    }
     if (turn.video) {
       throw new BragiError('A video needs the Bragi target: bragi serve samples the clip for the model (the direct server gets text only).', 'bad_request');
     }

@@ -27,3 +27,7 @@ pre { margin: 0; padding: 6px; overflow-x: auto; font-family: var(--vscode-edito
 .video .strip { display: flex; flex-wrap: wrap; gap: 4px; }
 .video .frame { display: flex; flex-direction: column; align-items: center; padding: 2px; font-size: 0.85em; }
 .video .frame img { width: 72px; height: 40px; object-fit: cover; }
+.approval { margin: 6px 0; padding: 6px; border: 1px solid var(--vscode-editorWarning-foreground); border-radius: 4px; }
+.approval .bar { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
+button:disabled { opacity: 0.5; cursor: default; }

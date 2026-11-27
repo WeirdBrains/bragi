@@ -2,6 +2,12 @@
 
 ## 0.2.0 (unreleased)
 
+- Agent mode and outside MCP servers in full (LF-40 on LF-37): the chat panel's **Agent** switch lets the
+  model use tools (a node's, or the outside MCP servers that apply on an endpoint); each call shows a card
+  with **Allow once**, **Allow for this task**, **Always allow** (outside MCP servers' tools) and **Deny**.
+  Adding a server asks where its tools may be used (every chat, or code chats in this folder); servers can be
+  edited (the stored token stays unless you type a new one) and tested, and **Take Back "Always Allow" for an
+  MCP Tool…** makes a tool ask again. Needs `bragi serve` with `/v1/mcp-servers` and `/v1/agent/approve`.
 - Video in the chat (LF-43, V2): attach a clip with **Video…**, **Bragi: Attach Video to Chat…**, the
   Explorer's context menu or a drop on the panel; Bragi samples it for the model (the extension runs
   no ffmpeg). A chip shows the model's video limits and **Limits…** / **Bragi: Set Video Limits for

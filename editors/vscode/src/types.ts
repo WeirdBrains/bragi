@@ -56,6 +56,10 @@ export type ChatEvent =
   | { type: 'retry'; attempt: number; message: string }
   | { type: 'done'; finish_reason?: string }
   | { type: 'error'; kind: string; message: string; partial?: string }
+  /** Agent mode: answer with `POST /v1/agent/approve`; `always` when "always allow" means something (an outside MCP server's tool). */
+  | { type: 'approval'; ask: number; tool: string; tier: string; site?: string | null; summary: string; always?: boolean }
+  | { type: 'tool'; call_id: string; tool: string; state: 'started' | 'done' | 'failed' }
+  | { type: 'notice'; text: string }
   | { type: string; [k: string]: unknown };
 
 export class BragiError extends Error {

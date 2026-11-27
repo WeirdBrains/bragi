@@ -28,6 +28,10 @@ export class MockServer {
   linked: boolean | undefined;
   /** The video override set through /v1/video/limits/set. */
   videoUser = '';
+  /** Answers to agent approval cards, in order. */
+  approvals: { request_id: string; ask: number; choice: string }[] = [];
+  /** An agent chat waiting at its card: called with the choice. */
+  private waitingCard?: (choice: string) => void;
   private nextId = 1;
 
   get url(): string {
@@ -55,6 +59,49 @@ export class MockServer {
   private json(res: http.ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(body));
+  }
+
+  /** A server as bragi-core's McpServerView draws it (no secrets). */
+  private mcpView(body: any, old?: any): any {
+    return {
+      name: body.name,
+      transport: body.transport,
+      enabled: body.enabled ?? true,
+      target: body.transport === 'stdio' ? [body.command, ...(body.args ?? [])].join(' ') : body.url,
+      env_names: Object.keys(body.secrets?.env ?? {}),
+      header_names: Object.keys(body.secrets?.headers ?? {}),
+      has_bearer: body.secrets ? !!body.secrets.bearer : (old?.has_bearer ?? false),
+      scope: body.scope === 'folder' ? { kind: 'folder', value: body.folder } : { kind: 'all' },
+      always_allow: old?.always_allow ?? [],
+      warning: body.transport === 'stdio' ? 'runs as you, with your permissions' : null,
+    };
+  }
+
+  /** An agent turn: some text, a card for `docs.search`, then what the answer let happen. */
+  private agentChat(res: http.ServerResponse, body: any): void {
+    const send = (e: unknown) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+    send({ type: 'conversation', id: body.conversation ?? 'c-agent', request_id: 'r-agent' });
+    send({ type: 'started', node: 'node-1', model: 'gemma-4-e4b' });
+    send({ type: 'delta', offset: 0, text: 'Let me look. ' });
+    send({ type: 'approval', ask: 1, tool: 'docs.search', tier: 'read', site: null, summary: 'Search the docs for "add"', always: true });
+    this.waitingCard = (choice) => {
+      if (choice === 'deny') {
+        send({ type: 'notice', text: 'docs.search was declined' });
+        send({ type: 'delta', offset: 13, text: 'I could not search.' });
+      } else {
+        if (choice === 'always') {
+          const s = this.mcpServers[0];
+          if (s) {
+            s.always_allow = [...s.always_allow, 'docs.search'];
+          }
+        }
+        send({ type: 'tool', call_id: 't1', tool: 'docs.search', state: 'started' });
+        send({ type: 'tool', call_id: 't1', tool: 'docs.search', state: 'done' });
+        send({ type: 'delta', offset: 13, text: 'The docs say add sums.' });
+      }
+      send({ type: 'done', finish_reason: 'stop' });
+      res.end();
+    };
   }
 
   private handle(req: http.IncomingMessage, res: http.ServerResponse, raw: string): void {
@@ -100,14 +147,24 @@ export class MockServer {
       Object.assign(e, { name: body.name, base_url: body.base_url, model: body.model ?? null, mode: body.mode, enabled: body.enabled, has_key: body.clear_key ? false : body.api_key ? true : e.has_key });
       return this.json(res, 200, e);
     }
-    const ms = /^\/v1\/mcp-servers\/([^/]+)(\/enabled)?$/.exec(path);
+    const ms = /^\/v1\/mcp-servers\/([^/]+)(\/enabled|\/always-allow|\/test)?$/.exec(path);
     if (ms && this.mcpClient) {
       const s = this.mcpServers.find((x) => x.id === ms[1]);
       if (!s) {
         return this.json(res, 404, { error: { kind: 'not_found', message: 'no such server' } });
       }
-      if (ms[2]) {
-        s.enabled = body.enabled;
+      switch (ms[2]) {
+        case '/enabled':
+          s.enabled = body.enabled;
+          return this.json(res, 200, s);
+        case '/always-allow':
+          s.always_allow = body.allow ? [...new Set([...s.always_allow, body.tool])] : s.always_allow.filter((t: string) => t !== body.tool);
+          return this.json(res, 200, s);
+        case '/test':
+          return this.json(res, 200, { ok: true, tools: ['docs.search'], message: 'ok' });
+      }
+      if (req.method === 'PUT') {
+        Object.assign(s, this.mcpView(body, s));
         return this.json(res, 200, s);
       }
       this.mcpServers = this.mcpServers.filter((x) => x !== s);
@@ -136,8 +193,21 @@ export class MockServer {
         return this.json(res, 200, computeHunks(body.old, body.new));
       case '/v1/code/apply':
         return this.json(res, 200, applyHunks(body.old, body.new, body.accepted));
+      case '/v1/agent/approve': {
+        this.approvals.push(body);
+        const go = this.waitingCard;
+        if (!go || body.request_id !== 'r-agent' || body.ask !== 1) {
+          return this.json(res, 404, { error: { kind: 'not_found', message: "that card isn't waiting any more" } });
+        }
+        this.waitingCard = undefined;
+        go(body.choice);
+        return this.json(res, 200, { ok: true });
+      }
       case '/v1/code/chat': {
         res.writeHead(200, { 'content-type': 'text/event-stream' });
+        if (body.agent) {
+          return this.agentChat(res, body);
+        }
         const id = body.conversation ?? 'c-test';
         const name = body.video ? String(body.video.path).split(/[\\/]/).pop() : '';
         const video = body.video
@@ -202,7 +272,7 @@ export class MockServer {
           return this.json(res, 404, { error: { kind: 'not_found', message: path } });
         }
         if (req.method === 'POST') {
-          const s = { id: 'm-' + this.nextId++, name: body.name, transport: body.transport, enabled: body.enabled ?? true, command: body.command, args: body.args, url: body.url, has_bearer: !!body.secrets?.bearer };
+          const s = { id: 'm-' + this.nextId++, ...this.mcpView(body) };
           this.mcpServers.push(s);
           return this.json(res, 201, s);
         }

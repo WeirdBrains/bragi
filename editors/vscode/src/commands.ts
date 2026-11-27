@@ -290,6 +290,20 @@ export function register(context: vscode.ExtensionContext, d: Deps): void {
         const bearer = await ask('Bearer token (optional; kept in Bragi\'s secret store)', { password: true });
         i = { name: name.trim(), transport: 'http', url: url.trim(), secrets: bearer?.trim() ? { bearer: bearer.trim() } : undefined };
       }
+      const root = workspaceRoot();
+      if (root) {
+        const where = await vscode.window.showQuickPick(
+          [
+            { label: 'Every chat', s: 'all' as const },
+            { label: 'Only code chats in this folder', description: root, s: 'folder' as const },
+          ],
+          { title: `Where may the model use ${i.name}'s tools?` },
+        );
+        if (!where) {
+          return;
+        }
+        i = { ...i, scope: where.s, folder: where.s === 'folder' ? root : undefined };
+      }
     }
     const v = await manage.addMcpServer(i);
     done(`added MCP server ${v.name}. Tool calls ask before they run.`);
@@ -323,6 +337,20 @@ export function register(context: vscode.ExtensionContext, d: Deps): void {
     void vscode.window.showInformationMessage(`Bragi: ${r.ok ? `${r.tools.length} tool(s): ${r.tools.slice(0, 8).join(', ')}` : r.message}`);
     return r;
   });
+  cmd('bragi.mcpServer.alwaysAllow', async (idOrItem?: string | { key?: string }, tool?: string) => {
+    const id = typeof idOrItem === 'string' ? idOrItem : idOrItem?.key;
+    const all = await manage.mcpServers();
+    const s = id ? all.find((x) => x.id === id) : (await vscode.window.showQuickPick(all.filter((x) => x.always_allow?.length).map((x) => ({ label: x.name, description: x.always_allow.join(', '), x })), { title: 'Which server\'s "always allow"?' }))?.x;
+    if (!s) {
+      return;
+    }
+    const t = tool ?? (await vscode.window.showQuickPick(s.always_allow ?? [], { title: `Ask again before running…`, placeHolder: s.always_allow?.length ? undefined : 'Nothing is always allowed' }));
+    if (!t) {
+      return;
+    }
+    await manage.setMcpToolAlwaysAllowed(s.id, t, false);
+    done(`${t} asks before it runs again.`);
+  });
   cmd('bragi.mcp.applySettings', async () => {
     const { servers, problems } = clientServersFrom(vscode.workspace.getConfiguration('bragi').get('mcp.clientServers', []));
     if (problems.length) {
@@ -332,7 +360,8 @@ export function register(context: vscode.ExtensionContext, d: Deps): void {
     let added = 0;
     for (const s of servers) {
       if (!have.has(s.name)) {
-        await manage.addMcpServer({ ...s, scope: s.scope ?? 'all' });
+        const scope = s.scope ?? 'all';
+        await manage.addMcpServer({ ...s, scope, folder: scope === 'folder' ? workspaceRoot() : undefined });
         added++;
       }
     }

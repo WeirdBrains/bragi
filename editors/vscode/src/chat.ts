@@ -3,7 +3,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { Backend, Router } from './backends';
+import { ApprovalChoice, Backend, Router } from './backends';
 import { editorContext } from './context';
 import { BragiError, ChatEvent, EditorContext, VideoLimits } from './types';
 import { droppedClip, isVideoPath, PlayerMessage, playerMessage, resourceRoots, VIDEO_EXTENSIONS, VideoEvent, withSource } from './video';
@@ -22,7 +22,26 @@ export type ViewMessage =
   /** A clip waits to go with the next message; `chip` is the model's video limits line. */
   | { type: 'attached'; name: string; chip?: string; ready?: boolean }
   | { type: 'detached' }
+  /** Agent mode: the model asks to run a tool; `always` offers "always allow" (an outside MCP server's tool). */
+  | { type: 'approval'; ask: number; tool: string; tier: string; site?: string; summary: string; always: boolean }
+  | { type: 'approved'; ask: number; choice: ApprovalChoice }
+  | { type: 'tool'; tool: string; state: 'started' | 'done' | 'failed' }
+  | { type: 'notice'; text: string }
   | PlayerMessage;
+
+/** How a choice reads on an answered card. */
+export const CHOICE_TEXT: Record<ApprovalChoice, string> = {
+  deny: 'Denied',
+  once: 'Allowed once',
+  this_task: 'Allowed for this task',
+  always: 'Always allowed',
+};
+
+/** Options for one message. */
+export interface SendOptions {
+  /** Agent mode: tool calls ask first. */
+  agent?: boolean;
+}
 
 /** The chat's logic, without the webview (so it can be tested). */
 export class ChatController {
@@ -39,7 +58,29 @@ export class ChatController {
     private readonly router: Router,
     private readonly post: (m: ViewMessage) => void,
     private readonly exists: (p: string) => boolean = (p) => fs.existsSync(p),
+    private readonly folder: () => string | undefined = () => undefined,
   ) {}
+
+  /** Approval cards of the running request still waiting for an answer. */
+  readonly waiting = new Set<number>();
+
+  /** Answers approval card `ask` of the running request. */
+  async approve(ask: number, choice: ApprovalChoice): Promise<boolean> {
+    const id = this.requestId;
+    if (!id || !this.waiting.has(ask)) {
+      return false;
+    }
+    this.waiting.delete(ask);
+    // Shown at once: what the answer lets happen streams in while the request is still out.
+    this.post({ type: 'approved', ask, choice });
+    try {
+      await this.router.bragi.approve(id, ask, choice);
+    } catch (e) {
+      this.post({ type: 'notice', text: `That card couldn't be answered: ${e instanceof Error ? e.message : String(e)}` });
+      return false;
+    }
+    return true;
+  }
 
   /** The clip waiting to go with the next message. */
   get pendingVideo(): string | undefined {
@@ -125,7 +166,7 @@ export class ChatController {
   }
 
   /** Sends `prompt`, with `context` when given; resolves when the answer is over. Returns its text. */
-  async send(prompt: string, context?: EditorContext): Promise<string> {
+  async send(prompt: string, context?: EditorContext, options: SendOptions = {}): Promise<string> {
     prompt = prompt.trim();
     if (!prompt || this.busy) {
       return '';
@@ -179,6 +220,20 @@ export class ChatController {
             this.post({ type: 'answer', text });
             break;
           }
+          case 'approval': {
+            const a = e as unknown as { ask: number; tool: string; tier: string; site?: string | null; summary: string; always?: boolean };
+            this.waiting.add(a.ask);
+            this.post({ type: 'approval', ask: a.ask, tool: a.tool, tier: a.tier, site: a.site ?? undefined, summary: a.summary, always: a.always === true });
+            break;
+          }
+          case 'tool': {
+            const t = e as unknown as { tool: string; state: 'started' | 'done' | 'failed' };
+            this.post({ type: 'tool', tool: t.tool, state: t.state });
+            break;
+          }
+          case 'notice':
+            this.post({ type: 'notice', text: (e as unknown as { text: string }).text });
+            break;
           case 'error': {
             const er = e as { kind: string; message: string };
             throw new BragiError(er.message, er.kind);
@@ -187,7 +242,7 @@ export class ChatController {
             break;
         }
       };
-      await backend.chat({ prompt, context, conversation: this.conversation, model: this.router.modelFor(backend), video: video ? { path: video } : undefined }, onEvent, abort.signal);
+      await backend.chat({ prompt, context, conversation: this.conversation, model: this.router.modelFor(backend), video: video ? { path: video } : undefined, agent: options.agent || undefined, folder: options.agent ? this.folder() : undefined }, onEvent, abort.signal);
       this.post({ type: 'done' });
     } catch (e) {
       const err = e instanceof BragiError ? e : new BragiError(e instanceof Error ? e.message : String(e), e instanceof Error && e.name === 'AbortError' ? 'cancelled' : 'other');
@@ -197,6 +252,7 @@ export class ChatController {
         this.abort = undefined;
       }
       this.requestId = undefined;
+      this.waiting.clear();
     }
     return text;
   }
@@ -224,7 +280,12 @@ export class ChatView implements vscode.WebviewViewProvider {
     private readonly routes: Router,
     private readonly targetLabel: () => string,
   ) {
-    this.controller = new ChatController(routes, (m) => this.post(m));
+    this.controller = new ChatController(
+      routes,
+      (m) => this.post(m),
+      (p) => fs.existsSync(p),
+      () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    );
   }
 
   private router() {
@@ -331,12 +392,12 @@ export class ChatView implements vscode.WebviewViewProvider {
 <footer>
 <textarea id="input" rows="3" placeholder="Ask about your code (Enter sends, Shift+Enter is a new line)"></textarea>
 <div id="clip" class="row clip" hidden><span id="clip-name"></span><span id="clip-chip" class="meta grow"></span><button id="clip-limits" title="Set this model's video limits">Limits…</button><button id="clip-remove" title="Don't send the clip">✕</button></div>
-<div class="row"><label><input type="checkbox" id="ctx" checked> Include editor context</label><button id="video" title="Attach a video (or drop one here)">Video…</button>
+<div class="row"><label><input type="checkbox" id="ctx" checked> Include editor context</label><label title="The model may use tools (a node's, or your MCP servers'); each call asks first"><input type="checkbox" id="agent"> Agent</label><button id="video" title="Attach a video (or drop one here)">Video…</button>
 <span class="grow"></span><button id="stop" hidden>Stop</button><button id="send">Send</button></div>
 </footer>
 <script nonce="${n}" src="${script}"></script>
 </body></html>`;
-    view.webview.onDidReceiveMessage(async (m: { type: string; prompt?: string; context?: boolean; code?: string; uris?: string; path?: string }) => {
+    view.webview.onDidReceiveMessage(async (m: { type: string; prompt?: string; context?: boolean; agent?: boolean; code?: string; uris?: string; path?: string; ask?: number; choice?: ApprovalChoice }) => {
       switch (m.type) {
         case 'ready':
           this.refreshTarget();
@@ -370,9 +431,14 @@ export class ChatView implements vscode.WebviewViewProvider {
         case 'send': {
           const editor = vscode.window.activeTextEditor;
           const ctx = m.context && editor ? editorContext(editor) : undefined;
-          await this.controller.send(m.prompt ?? '', ctx);
+          await this.controller.send(m.prompt ?? '', ctx, { agent: m.agent === true });
           break;
         }
+        case 'approve':
+          if (m.ask !== undefined && m.choice && m.choice in CHOICE_TEXT) {
+            await this.controller.approve(m.ask, m.choice);
+          }
+          break;
         case 'stop':
           this.controller.stop();
           break;

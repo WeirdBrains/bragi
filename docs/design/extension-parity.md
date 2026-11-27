@@ -52,7 +52,7 @@ Legend: **done** = in the extension today or in this branch; **dep** = needs ano
 | Themes (editor, switcher) | yes (LF-33) | yes (LF-33) | no | yes (LF-33) | follows the editor theme | no change: the extension uses the editor's colours; documented as intentional |
 | `bragi serve` start / stop / status | yes (`--serve`) | yes (auto-start) | `bragi serve` | n/a | status only | **dep** LF-36 `ServeManager`; this branch adds Start / Stop / Show Status commands and the `bragi.serve.*` settings on top of it |
 | `bragi mcp` server start / stop | n/a | n/a | `bragi mcp` | n/a | no | command that runs `bragi mcp` in a terminal (stdio is the client's), plus **Copy MCP Client Config** (Cursor, VS Code, Claude Desktop snippets) |
-| MCP client servers (add, remove, enable, test, tool approval, "always allow") | yes (LF-37) | yes (LF-37) | n/a | yes (LF-37) | no | **dep** LF-37: `mcp-servers.json` and `McpServer` in `bragi-core`. Serve routes `/v1/mcp-servers` and the approval flow are added once that branch is in main; until then the panel shows a notice |
+| MCP client servers (add, remove, enable, test, tool approval, "always allow") | yes (LF-37) | yes (LF-37) | n/a | yes (LF-37) | **done** (2026-11-26) | `/v1/mcp-servers` routes and `/v1/agent/approve`; the Connections view and commands (scope, edit, test, take back "always allow"); the chat's **Agent** switch and approval cards (allow once, for this task, always, deny) |
 | Inline suggestions, rewrites, hunks | no | yes | `bragi code` | no | yes | kept |
 
 ## Settings contributed (package.json `contributes.configuration`)
@@ -87,7 +87,13 @@ apps already use; no new logic in core.
 - `GET|POST /v1/endpoints`, `PUT|DELETE /v1/endpoints/{id}`, `POST /v1/endpoints/{id}/test`,
   `GET /v1/endpoints/{id}/models`. Responses are `EndpointView` (never a key).
 - `GET /v1/sessions?offset&limit`, `DELETE /v1/sessions/{id}`.
-- Later, with LF-37: `/v1/mcp-servers` (list, add, edit, remove, enable, test) and the approval stream.
+- With LF-37 (built 2026-11-26, `feature/ext-parity-mcp`): `GET|POST /v1/mcp-servers`, `PUT|DELETE /v1/mcp-servers/{id}`,
+  `POST /v1/mcp-servers/{id}/enabled {enabled}`, `…/{id}/test`, `…/{id}/always-allow {tool, allow}`, responses
+  `McpServerView` (never a secret; `secrets {env, headers, bearer}` taken on add and edit, an edit without them
+  keeps what is stored; `scope` is `"all"`, `"folder"` with `folder`, or `{kind, value}`). `/v1/code/chat` takes
+  `agent` (a task on a node for the pool, Bragi's own tool-call loop with the MCP servers that apply for an
+  endpoint) and `folder`; its `approval` events carry `always` (an outside MCP server's tool) and are answered with
+  `POST /v1/agent/approve {request_id, ask, choice}` (`deny`, `once`, `this_task`, `always`).
 
 ## Status (2026-11-22)
 
@@ -96,13 +102,13 @@ Done on `feature/extension-parity`: the settings sections and scopes, the serve 
 chats, server stop and status, `bragi mcp` start, stop and copy config, and the MCP client server
 commands with `bragi.mcp.clientServers`.
 
-Depends on LF-37 (`feature/mcp-client`): the `/v1/mcp-servers` routes. The extension calls
-`GET|POST /v1/mcp-servers`, `DELETE /v1/mcp-servers/{id}`, `POST /v1/mcp-servers/{id}/enabled`
-(`{enabled}`) and `POST /v1/mcp-servers/{id}/test`, with `McpServerView` as in `mcp_servers.rs`
-(no secrets; `secrets {env, headers, bearer}` accepted on add). Those routes are a thin layer on
-`bragi-core::mcp_servers` and are the first thing to add after that branch merges; until then the
-extension reports that this Bragi has no MCP client. The tool approval card and "always allow" need
-the same branch's approval stream and are not in the extension yet.
+MCP client servers and approvals (2026-11-26, `feature/ext-parity-mcp`): the `/v1/mcp-servers` routes and
+`/v1/agent/approve` in `bragi serve`; in the extension, the server's scope (every chat, or code chats in this
+folder) when adding, edit, test, **Take Back "Always Allow" for an MCP Tool…**, and the chat panel's **Agent**
+switch: tool calls show a card (the tool, its tier and site, what it will do) with **Allow once**, **Allow for
+this task**, **Always allow** (outside MCP servers' tools only) and **Deny**; tool runs and notices show in the
+answer, and a card left open when the answer ends says so. An older Bragi without the routes still says it
+can't manage MCP servers.
 
 Left: link offer (show a code for another device), chat images and audio, reactions, per-message
 delete, session open and folders, attaching files in the chat panel.
