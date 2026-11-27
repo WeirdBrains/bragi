@@ -14,7 +14,14 @@ V2 slice 3 (branch `feature/video-v2-vscode`): the VS Code extension attaches a 
 Explorer menu, a drop on the chat panel) and `bragi serve` samples it (`video` on `/v1/code/chat`, a `video` event with the frames,
 `/v1/video/limits` and `/v1/video/limits/set` for the chip and the override); the chat webview plays it with `<video>` (only the played
 clips' folders are local resource roots; `media-src` limited to the webview), the frames strip seeks, and a missing clip, a format the
-webview won't try (mkv, avi) or a playback error shows why and **Open in system player**. Not yet: the phone player (V3), transcription,
+webview won't try (mkv, avi) or a playback error shows why and **Open in system player**. V3 (branch `feature/video-v3-flutter`): the
+Flutter app attaches a clip (gallery or files) with a limits chip and sheet; on Android and iOS the core plans the frames
+(`video_frame_plan`, uniform, no sound) and the platform decodes them (`MediaMetadataRetriever` / `AVAssetImageGenerator` on the
+`org.weirdbrains.bragi/video` channel, JPEG) into `attach_video_frames` (`ProvidedSource`, so the plan and the attachment are the core's);
+a Flutter build on a computer reads clips with ffmpeg through the core. The chat card plays the clip inline with `video_player` (one
+clip at a time with the audio files; Play/Pause, seek, elapsed / total, Mute, the frames strip plays from there) and otherwise says why
+(not on this device, no player in this build, the platform can't play it) and offers the system player (`url_launcher`). The native
+decoders are written but not yet built or run on a device. Not yet: sound from phone clips, scene detection on phones, transcription,
 packaging ffmpeg. None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
@@ -252,7 +259,7 @@ Where ffmpeg is missing, video attach is hidden or disabled with one sentence of
 
 1. **V1**: `FrameSource` with `FfmpegCli`, the sampling plan, `Media::Video` grouping, attach in `bragi-core` and `bragi-mcp` (`video` input, `video_probe`, `video_frames`), settings. No player yet; the chat shows the frame strip.
 2. **V2** (built 2026-11-26): GPUI desktop inline player with the system-player fallback, and its attach UI; TUI bubble, picker and open-externally; the VS Code attach and webview player.
-3. **V3**: Flutter (Android and iOS) player and platform decoders.
+3. **V3** (built 2026-11-26, not yet run on a device): Flutter (Android and iOS) player and platform decoders.
 4. **V4**: native video when Ymir's capability flag exists (Ymir doc, phase 2): the sampler becomes the fallback.
 5. Packaging for each platform is part of V1 (bundled ffmpeg builds), not an afterthought.
 
