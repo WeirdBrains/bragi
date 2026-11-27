@@ -266,7 +266,11 @@ impl BragiTools {
         let (path, name) = (clip.path.clone(), clip.name.clone());
         let a = tokio::task::spawn_blocking(move || {
             let source = open(&path)?;
-            core.attach_video_source(&name, source.as_ref(), &model, &plan, &prefs, reserved)
+            let mut a = core.attach_video_source(&name, source.as_ref(), &model, &plan, &prefs, reserved)?;
+            // The clip stays on this device for the player, and goes whole when the model reads
+            // video and it fits (Native video V4).
+            core.finish_video_attach(&mut a, &plan, &prefs, &path)?;
+            Ok::<_, CoreError>(a)
         })
         .await
         .map_err(blocking_error)??;

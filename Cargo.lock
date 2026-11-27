@@ -10044,11 +10044,12 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "weirdnet-agent"
-version = "0.5.7"
+version = "0.5.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5369631584d4d6b9fe3d4003a8aff5b9ebe956a691c40295d4a62b52733d7967"
+checksum = "13c8dbc31882825f067841d4818bf40579b3177733cff9e57788d40e91d86577"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "cbor4ii",
  "futures",
  "serde",

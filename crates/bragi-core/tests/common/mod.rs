@@ -66,7 +66,13 @@ pub enum Chat {
     /// Asks for the tool `name` with `args` (a JSON object as text) until a request carries a tool
     /// result, then answers with the words.
     Tools(&'static str, &'static str, Vec<&'static str>),
+    /// A request carrying a whole clip (`video_url`) gets the status and body; others get the words.
+    RefuseVideo(u16, &'static str, Vec<&'static str>),
 }
+
+/// What a `video-*` model says in `/v1/models` (the mock's Ymir bridge with a model that reads
+/// video): `weirdnet.video`, the context, the request size and the media limits, video included.
+pub const VIDEO_MODEL_META: &str = r#"{"video":true,"vision":true,"context":32768,"max_request_bytes":4194304,"limits":{"image_tokens":256,"max_images":8,"video_max_seconds":60,"video_max_bytes":1000000,"video_frames_per_minute":120}}"#;
 
 #[derive(Clone, Debug)]
 pub struct Seen {
@@ -142,7 +148,16 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                     return;
                 }
                 if path.ends_with("/models") {
-                    let data: Vec<String> = models.iter().map(|m| format!(r#"{{"id":"{m}","object":"model"}}"#)).collect();
+                    let data: Vec<String> = models
+                        .iter()
+                        .map(|m| {
+                            if m.starts_with("video-") {
+                                format!(r#"{{"id":"{m}","object":"model","weirdnet":{VIDEO_MODEL_META}}}"#)
+                            } else {
+                                format!(r#"{{"id":"{m}","object":"model"}}"#)
+                            }
+                        })
+                        .collect();
                     let b = format!(r#"{{"object":"list","data":[{}]}}"#, data.join(","));
                     let _ = sock
                         .write_all(
@@ -173,6 +188,11 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
                         body.len()
                     ),
                     Chat::Words(w) => format!("{head}{}{done}", words(&w, "content")),
+                    Chat::RefuseVideo(code, reply, _) if body_has_video(&body) => format!(
+                        "HTTP/1.1 {code} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+                        reply.len()
+                    ),
+                    Chat::RefuseVideo(_, _, w) => format!("{head}{}{done}", words(&w, "content")),
                     Chat::Reasoning(r, w) => format!("{head}{}{}{done}", words(&r, "reasoning_content"), words(&w, "content")),
                     Chat::CutOff(w) => format!("{head}{}", words(&w, "content")),
                     Chat::Tools(_, _, w) if body.contains("\"role\":\"tool\"") => format!("{head}{}{done}", words(&w, "content")),
@@ -187,4 +207,9 @@ pub async fn mock_openai(key: Option<&'static str>, models: Vec<&'static str>, c
         }
     });
     Mock { url, seen }
+}
+
+/// Whether a chat request body carries a whole clip.
+fn body_has_video(body: &str) -> bool {
+    body.contains("\"video_url\"")
 }

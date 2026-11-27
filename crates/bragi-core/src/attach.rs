@@ -157,9 +157,11 @@ impl Attachment {
         Ok(Self { name, text, media: None })
     }
 
-    /// How a shell names it: `notes.md (3 lines)`, `shot.png (image)`, `hi.wav (audio)`.
+    /// How a shell names it: `notes.md (3 lines)`, `shot.png (image)`, `hi.wav (audio)`, and a
+    /// clip with how it goes: `clip.mp4 (video, whole clip (12.5 MiB))`, `clip.mp4 (video, 6 frames)`.
     pub fn label(&self) -> String {
         match &self.media {
+            Some(Media::Video(v)) => format!("{} (video, {})", self.name, v.send_label()),
             Some(m) => format!("{} ({})", self.name, m.kind()),
             None => format!("{} ({} lines)", self.name, self.text.lines().count()),
         }
@@ -249,6 +251,31 @@ pub fn content(prompt: &str, attachments: &[Attachment]) -> Content {
         parts.push(ContentPart::text(text));
     }
     parts.extend(media);
+    Content::Parts(parts)
+}
+
+/// [`content`] with the clip sent whole (Native video V4): the video attachment that goes whole
+/// ([`crate::video::Sampled::whole`]) becomes its leading line and one `video_url` part with
+/// `data_url` (`data:video/...;base64,...`) instead of its frames and soundtrack. Other
+/// attachments are as in [`content`].
+pub fn content_whole(prompt: &str, attachments: &[Attachment], data_url: &str) -> Content {
+    let text = render(prompt, attachments);
+    let mut parts = Vec::new();
+    if !text.is_empty() {
+        parts.push(ContentPart::text(text));
+    }
+    let mut sent = false;
+    for a in attachments {
+        match &a.media {
+            Some(Media::Video(v)) if v.whole.is_some() && !sent => {
+                sent = true;
+                parts.push(ContentPart::text(v.whole_summary(&a.name)));
+                parts.push(ContentPart::video(data_url));
+            }
+            Some(m) => parts.extend(m.parts()),
+            None => {}
+        }
+    }
     Content::Parts(parts)
 }
 
@@ -389,5 +416,38 @@ mod tests {
         let empty = d.path().join("empty");
         std::fs::create_dir_all(&empty).unwrap();
         assert!(Attachment::from_path(&empty).unwrap_err().message.contains("no text files"));
+    }
+
+    #[test]
+    fn a_whole_clip_goes_as_one_video_part_beside_the_other_attachments() {
+        let frames = vec![crate::video::VideoFrame { at_ms: 0, mime: "image/jpeg".into(), data: "AAAA".into() }; 3];
+        let v = crate::video::Sampled {
+            summary: "Video \"c.mp4\", 00:10, 3 frames sampled, with sound.".into(),
+            duration_ms: 10_000,
+            frames,
+            audio: Some("UklGRg==".into()),
+            clip: None,
+            stored: None,
+            whole: Some(crate::video::Whole { mime: "video/mp4".into(), bytes: 4, max_request_bytes: 1 << 20 }),
+        };
+        let clip = Attachment::from_video("c.mp4", v);
+        let notes = Attachment::from_bytes("notes.md", b"# hi\n").unwrap();
+        let img = Attachment::from_bytes("shot.png", PNG).unwrap();
+        assert_eq!(clip.label(), "c.mp4 (video, whole clip (4 bytes))");
+        let url = "data:video/mp4;base64,AQIDBA==";
+        let Content::Parts(parts) = content_whole("what?", &[notes, clip.clone(), img], url) else { panic!("parts") };
+        let videos: Vec<_> = parts.iter().filter(|p| matches!(p, ContentPart::VideoUrl { .. })).collect();
+        assert_eq!(videos, vec![&ContentPart::video(url)]);
+        assert_eq!(parts.iter().filter(|p| matches!(p, ContentPart::ImageUrl { .. })).count(), 1, "the picture, not the frames");
+        assert!(!parts.iter().any(|p| matches!(p, ContentPart::InputAudio { .. })), "the sound is in the clip");
+        assert!(matches!(&parts[0], ContentPart::Text { text } if text.contains("[attached file: notes.md]") && text.ends_with("what?")));
+        assert!(parts.iter().any(|p| matches!(p, ContentPart::Text { text } if text == "Video \"c.mp4\", 00:10, sent whole.")));
+        assert!(Content::Parts(parts.clone()).check().is_ok(), "a data:video URL passes weirdnet-agent's check");
+        let needs = parts.iter().fold(Modalities::TEXT, |n, p| n.union(p.needs()));
+        assert!(needs.video && needs.vision);
+        // The frames version is unchanged.
+        let Content::Parts(frames) = content("what?", &[clip]) else { panic!("parts") };
+        assert_eq!(frames.iter().filter(|p| matches!(p, ContentPart::ImageUrl { .. })).count(), 3);
+        assert!(!frames.iter().any(|p| matches!(p, ContentPart::VideoUrl { .. })));
     }
 }

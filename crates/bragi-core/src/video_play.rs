@@ -382,6 +382,9 @@ impl Drop for Decoder {
 
 /// The bubble line for a message's clip: `video  clip.mp4  0:42  6 frames  sound`.
 pub fn bubble(name: &str, v: &Sampled) -> String {
+    if v.sends_whole() {
+        return format!("video  {name}  {}  {}", crate::audio::clock(v.duration_ms), v.send_label());
+    }
     let n = v.frames.len();
     format!(
         "video  {name}  {}  {n} frame{}  {}",
@@ -498,7 +501,7 @@ mod tests {
         let video = |stored| {
             crate::attach::Attachment::from_video(
                 "c.mp4",
-                Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored },
+                Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored, whole: None },
             )
         };
         let mut m = ChatMessage::new(Role::User, "look", Mode::Chat);
@@ -507,9 +510,11 @@ mod tests {
         assert_eq!(clip_files([&m, &plain]), vec![name.clone()], "one name per copy, none for a clip without one");
 
         let cache = dir.path().join("clips");
-        let played =
-            playable_clip_in(&Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored: st }, &cache)
-                .unwrap();
+        let played = playable_clip_in(
+            &Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored: st, whole: None },
+            &cache,
+        )
+        .unwrap();
         let outside = dir.path().join("keep.mp4");
         std::fs::write(&outside, b"x").unwrap();
         assert_eq!(remove_clip_files(&cache, &["../keep.mp4".into(), "notes.txt".into()]), 0);
@@ -558,7 +563,15 @@ mod tests {
         let clip = dir.path().join("there.mp4");
         std::fs::write(&clip, b"movie bytes").unwrap();
         let stored = crate::video::StoredClip::read(&clip).unwrap();
-        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: Some(clip.clone()), stored: None };
+        let mut s = Sampled {
+            summary: String::new(),
+            duration_ms: 1_000,
+            frames: Vec::new(),
+            audio: None,
+            clip: Some(clip.clone()),
+            stored: None,
+            whole: None,
+        };
         let cache = dir.path().join("clips");
         assert!(clip_available(&s));
         assert_eq!(playable_clip_in(&s, &cache), Ok(clip.clone()), "the original first");
@@ -578,7 +591,7 @@ mod tests {
 
     #[test]
     fn fallback_when_the_clip_is_not_here_and_how_the_system_player_is_asked() {
-        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: None, stored: None };
+        let mut s = Sampled { summary: String::new(), duration_ms: 1_000, frames: Vec::new(), audio: None, clip: None, stored: None, whole: None };
         assert_eq!(playable_clip(&s), Err(Fallback::NotHere));
         let dir = tempfile::tempdir().unwrap();
         s.clip = Some(dir.path().join("gone.mp4"));

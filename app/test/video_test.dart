@@ -188,7 +188,11 @@ void main() {
       expect(times, hasLength(6), reason: 'max_images=6');
       expect(times.first, greaterThan(0));
       expect(width * 1080, height * 1920, reason: 'the shape kept');
-      expect(find.textContaining('sample-clip.mp4 (video)'), findsOneWidget);
+      // V4: the chip says how it goes (frames here: no video limits reported).
+      expect(
+        find.textContaining('sample-clip.mp4 (video, 6 frames)'),
+        findsOneWidget,
+      );
 
       await tester.enterText(
         find.byKey(const Key('prompt')),

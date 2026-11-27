@@ -450,14 +450,10 @@ impl App {
         self.core.handle().spawn(async move {
             let r = async {
                 let plan = core.video_plan(target.as_ref(), &model).await?;
-                let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 let prefs = core.video_prefs();
-                tokio::task::spawn_blocking(move || {
-                    let source = core.video_source(&path)?;
-                    core.attach_video_source(&name, &source, &model, &plan, &prefs, reserved)
-                })
-                .await
-                .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))?
+                tokio::task::spawn_blocking(move || core.attach_video_file(&path, &model, &plan, &prefs, reserved))
+                    .await
+                    .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))?
             }
             .await;
             let _ = tx.send(Job::Video(r.map_err(|e| e.message)));

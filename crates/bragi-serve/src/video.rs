@@ -108,16 +108,18 @@ pub async fn attach(
     let plan = core.video_plan(target, model).await?;
     let reserved = video::history_tokens(history.iter().copied());
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "clip".into());
-    let (core, open, model, p) = (core.clone(), open.clone(), model.to_string(), path.clone());
+    let (c, open, model, p, pr) = (core.clone(), open.clone(), model.to_string(), path.clone(), prefs.clone());
     let mut a = tokio::task::spawn_blocking(move || {
         let source = open(&p)?;
-        core.attach_video_source(&name, source.as_ref(), &model, &plan, &prefs, reserved)
+        c.attach_video_source(&name, source.as_ref(), &model, &plan, &pr, reserved)
     })
     .await
     .map_err(|e| CoreError::new(ErrorKind::Other, format!("reading the clip stopped: {e}")))??;
     if let Some(Media::Video(s)) = &mut a.media {
-        s.clip = Some(path);
+        s.clip = Some(path.clone());
     }
+    // Native video (V4): the clip goes whole when the model reads video and it fits.
+    core.decide_video_whole(&mut a, &plan, &prefs, &path);
     Ok(a)
 }
 
@@ -130,6 +132,8 @@ pub fn event(name: &str, s: &Sampled) -> Value {
         "summary": s.summary,
         "duration_ms": s.duration_ms,
         "sound": s.audio.is_some(),
+        "whole": s.sends_whole(),
+        "send_as": s.send_label(),
         "clip": s.clip,
         "frames": s.frames.iter().map(|f| json!({"at_ms": f.at_ms, "label": video::label(f.at_ms), "mime": f.mime, "data": f.data})).collect::<Vec<_>>(),
     })

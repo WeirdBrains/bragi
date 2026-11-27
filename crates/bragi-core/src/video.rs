@@ -109,6 +109,9 @@ pub const OVERRIDE_KEYS: &[(&str, &str)] = &[
     ("audio_seconds", "longest sound one request may carry"),
     ("audio_tokens_per_minute", "tokens one minute of sound costs"),
     ("max_request_bytes", "largest request the server takes, in bytes"),
+    ("video_seconds", "longest clip the model takes whole, in seconds"),
+    ("video_bytes", "largest clip the model takes whole, in bytes"),
+    ("video_frames_per_minute", "frames per minute the model reads from a whole clip"),
 ];
 
 impl ModelLimits {
@@ -124,6 +127,9 @@ impl ModelLimits {
             ("audio_seconds", m.audio_max_seconds.map(u64::from)),
             ("audio_tokens_per_minute", m.audio_tokens_per_minute.map(u64::from)),
             ("max_request_bytes", m.max_request_bytes),
+            ("video_seconds", m.video_max_seconds.map(u64::from)),
+            ("video_bytes", m.video_max_bytes),
+            ("video_frames_per_minute", m.video_frames_per_minute.map(u64::from)),
         ];
         all.into_iter().filter_map(|(k, v)| v.map(|v| (k, v))).collect()
     }
@@ -157,6 +163,9 @@ impl ModelLimits {
                 "audio_seconds" => m.audio_max_seconds = Some(small()?),
                 "audio_tokens_per_minute" => m.audio_tokens_per_minute = Some(small()?),
                 "max_request_bytes" => m.max_request_bytes = Some(n),
+                "video_seconds" => m.video_max_seconds = Some(small()?),
+                "video_bytes" => m.video_max_bytes = Some(n),
+                "video_frames_per_minute" => m.video_frames_per_minute = Some(small()?),
                 other => return Err(bad(format!("no limit `{other}` (keys: {})", keys()))),
             }
         }
@@ -176,11 +185,46 @@ pub struct LimitsView {
     pub reported: ModelLimits,
     pub user: ModelLimits,
     pub effective: ModelLimits,
+    /// The model reads video itself (catalog/1 `inputs.video`, or an endpoint's `/v1/models`
+    /// `weirdnet.video`), so a clip may go whole (V4, [`whole_clip`]).
+    pub video: bool,
 }
 
 impl LimitsView {
     pub fn new(model: impl Into<String>, reported: ModelLimits, user: ModelLimits) -> Self {
-        Self { model: model.into(), effective: reported.with_override(&user), reported, user }
+        Self { model: model.into(), effective: reported.with_override(&user), reported, user, video: false }
+    }
+
+    /// With whether the model reads video itself.
+    pub fn with_video(mut self, video: bool) -> Self {
+        self.video = video;
+        self
+    }
+
+    /// What the chip says about sending clips whole: empty for a model that doesn't read video,
+    /// else the limits a whole clip must fit, or which of them are missing (then clips go as frames).
+    pub fn whole_note(&self) -> String {
+        if !self.video {
+            return String::new();
+        }
+        let m = &self.effective.media;
+        match (m.video_max_seconds, m.video_max_bytes) {
+            (Some(s), Some(b)) => format!(" · whole clips up to {s} s and {}", size_label(b)),
+            (s, b) => {
+                let mut missing = Vec::new();
+                if s.is_none() {
+                    missing.push("video_seconds");
+                }
+                if b.is_none() {
+                    missing.push("video_bytes");
+                }
+                format!(
+                    " · reads video, but its {} {} reported: clips go as frames",
+                    join_and(&missing),
+                    if missing.len() == 1 { "isn't" } else { "aren't" }
+                )
+            }
+        }
     }
 
     /// Whether a clip can be planned for this model.
@@ -194,10 +238,11 @@ impl LimitsView {
         let yours = self.user.fields();
         let yours =
             if yours.is_empty() { String::new() } else { format!(" · yours: {}", yours.iter().map(|(k, _)| *k).collect::<Vec<_>>().join(", ")) };
+        let whole = self.whole_note();
         if self.ready() {
-            format!("video ready ({}{yours})", self.effective.describe())
+            format!("video ready ({}{yours}){whole}", self.effective.describe())
         } else {
-            format!("video needs {}: set limits for {}{yours}", join_and(&self.effective.missing()), self.model)
+            format!("video needs {}: set limits for {}{yours}{whole}", join_and(&self.effective.missing()), self.model)
         }
     }
 
@@ -613,6 +658,13 @@ pub struct Sampled {
     /// can play it. Never sent to a model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stored: Option<StoredClip>,
+    /// Native video (V4): the clip goes to the model whole, as a `video_url` part, instead of the
+    /// frames (decided at attach by [`whole_clip`]; the frames stay for the player, later turns
+    /// and the fallback). Only the newest message's clip goes whole, read from `clip` (or the
+    /// stored copy) when it is sent; when it isn't there any more, or the server refuses it, the
+    /// frames go instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub whole: Option<Whole>,
 }
 
 /// A clip's bytes stored with its message ([`VideoPrefs::store_clip`]).
@@ -761,7 +813,7 @@ pub fn sample(
         clock(end - start),
         if n == 1 { "" } else { "s" }
     );
-    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None, stored: None })
+    Ok(Sampled { summary, duration_ms: probe.duration_ms, frames, audio, clip: None, stored: None, whole: None })
 }
 
 /// The range, budget and frame times [`sample`] works from.
@@ -1174,6 +1226,148 @@ impl FrameSource for FfmpegCli {
     }
 }
 
+// ---- Native video (V4) ----
+
+/// How a clip that goes whole travels (Native video V4, `docs/design/video.md`): what it was
+/// checked against when it was attached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Whole {
+    /// `video/mp4`, `video/webm`, … (from the file's extension).
+    pub mime: String,
+    /// The clip's size in bytes (the file, before base64).
+    pub bytes: u64,
+    /// The request limit the clip was checked against, in bytes of the request: the model's
+    /// `max_request_bytes` (and, through the pool, the link's message limit).
+    pub max_request_bytes: u64,
+}
+
+/// The MIME type a clip goes with, from its extension (one of [`VIDEO_EXTENSIONS`]).
+pub fn video_mime(path: &Path) -> Option<&'static str> {
+    let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "mp4" | "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "avi" => "video/x-msvideo",
+        _ => return None,
+    })
+}
+
+/// The bytes a clip of `bytes` takes in a request as a `data:{mime};base64,` URL.
+pub fn data_url_len(mime: &str, bytes: u64) -> u64 {
+    ("data:".len() + mime.len() + ";base64,".len()) as u64 + bytes.div_ceil(3) * 4
+}
+
+/// `12.5 MiB`, `640 KiB`, `900 bytes`.
+pub fn size_label(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MiB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{} KiB", bytes.div_ceil(1024))
+    } else {
+        format!("{bytes} bytes")
+    }
+}
+
+/// What [`whole_clip`] decides from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WholeCheck<'a> {
+    /// The model reads video itself (catalog/1 `inputs.video`, `/v1/models` `weirdnet.video`).
+    pub takes_video: bool,
+    /// The model's limits with the user's override.
+    pub limits: &'a ModelLimits,
+    /// The largest request that can carry it: the model's `max_request_bytes`, through the pool
+    /// no more than the link's message limit. `None` when nobody says.
+    pub max_request_bytes: Option<u64>,
+    /// The whole clip's length.
+    pub duration_ms: u64,
+    /// The clip's size on disk.
+    pub bytes: u64,
+    /// Its MIME type ([`video_mime`]); `None` for a container Bragi can't name.
+    pub mime: Option<&'a str>,
+    /// The user picked a range: the model must see only that, so the frames go.
+    pub trimmed: bool,
+    /// The clip stays on this device (`keep_original`), so it can be read when the message is sent.
+    pub kept: bool,
+}
+
+/// Whether a clip goes to the model whole (`Ok`) or as its frames (`Err`, saying why). It goes
+/// whole only when the model reads video, the clip is on this device and not trimmed, and its
+/// length, size and request size are all within limits the model (or the user's override)
+/// reports. **A missing limit means frames**: nothing is guessed.
+pub fn whole_clip(c: &WholeCheck) -> std::result::Result<Whole, String> {
+    let m = &c.limits.media;
+    if !c.takes_video {
+        return Err("the model doesn't read video itself".into());
+    }
+    if c.trimmed {
+        return Err("only part of the clip was picked".into());
+    }
+    if !c.kept {
+        return Err("the clip isn't kept on this device".into());
+    }
+    let Some(mime) = c.mime else { return Err("Bragi can't name the clip's format".into()) };
+    let (Some(secs), Some(max_bytes)) = (m.video_max_seconds, m.video_max_bytes) else {
+        let missing: Vec<&str> = [m.video_max_seconds.is_none().then_some("video_seconds"), m.video_max_bytes.is_none().then_some("video_bytes")]
+            .into_iter()
+            .flatten()
+            .collect();
+        return Err(format!("the model's {} {} reported", join_and(&missing), if missing.len() == 1 { "isn't" } else { "aren't" }));
+    };
+    if let Err(which) = m.check_video(c.duration_ms, c.bytes) {
+        return Err(match which {
+            "video_max_seconds" => format!("it is longer than the {secs} s the model takes whole"),
+            _ => format!("it is bigger than the {} the model takes whole", size_label(max_bytes)),
+        });
+    }
+    let Some(cap) = c.max_request_bytes else { return Err("the server's request size isn't reported".into()) };
+    let need = data_url_len(mime, c.bytes);
+    if need > cap {
+        return Err(format!("as base64 it is {}, over the {} a request takes", size_label(need), size_label(cap)));
+    }
+    Ok(Whole { mime: mime.into(), bytes: c.bytes, max_request_bytes: cap })
+}
+
+/// The server turned a whole clip down: catalog/1 routing said send frames
+/// ([`weirdnet_agent::remote::catalog::VIDEO_FALLBACK`]), the model doesn't take video, the
+/// request was too large (HTTP 413, the link's message limit), or the request carrying it was
+/// refused as malformed. The frames go instead.
+pub fn whole_refused(e: &CoreError) -> bool {
+    let m = e.message.as_str();
+    (e.kind == ErrorKind::BadRequest
+        && (m.contains(weirdnet_agent::remote::catalog::VIDEO_FALLBACK)
+            || m.contains("take video")
+            || m.contains("video_url")
+            || m.contains("(413)")
+            || m.contains("too large")))
+        || m.contains("-byte limit")
+}
+
+impl Sampled {
+    /// It goes to the model whole.
+    pub fn sends_whole(&self) -> bool {
+        self.whole.is_some()
+    }
+
+    /// How it goes, for the chip before sending and the bubble after: `whole clip (12.5 MiB)` or
+    /// `6 frames`.
+    pub fn send_label(&self) -> String {
+        match &self.whole {
+            Some(w) => format!("whole clip ({})", size_label(w.bytes)),
+            None => {
+                let n = self.frames.len();
+                format!("{n} frame{}", if n == 1 { "" } else { "s" })
+            }
+        }
+    }
+
+    /// The leading line when it goes whole: `Video "name.mp4", 00:42, sent whole.`
+    pub fn whole_summary(&self, name: &str) -> String {
+        format!("Video \"{}\", {}, sent whole.", crate::attach::clean_name(name), clock(self.duration_ms))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1228,6 +1422,7 @@ mod tests {
             audio: None,
             clip: Some(clip.clone()),
             stored: stored.clone(),
+            whole: None,
         };
         let back: Sampled = serde_json::from_str(&s.to_json()).unwrap();
         assert_eq!(back.stored, stored, "it syncs with the message");
@@ -1610,5 +1805,149 @@ mod tests {
         let playlist = dir.path().join("list.mp4");
         std::fs::write(&playlist, format!("ffconcat version 1.0\nfile '{}'\n", clip.display())).unwrap();
         assert!(FfmpegCli::open(bin, &playlist).unwrap().probe().is_err());
+    }
+
+    // ---- Native video (V4) ----
+
+    fn video_limits(secs: Option<u32>, bytes: Option<u64>) -> ModelLimits {
+        let mut m = MediaLimits::new().with_image_tokens(256);
+        if let Some(s) = secs {
+            m = m.with_video_max_seconds(s);
+        }
+        if let Some(b) = bytes {
+            m = m.with_video_max_bytes(b);
+        }
+        ModelLimits::new(Some(32_768), m)
+    }
+
+    fn check(limits: &ModelLimits) -> WholeCheck<'_> {
+        WholeCheck {
+            takes_video: true,
+            limits,
+            max_request_bytes: Some(1_000_000),
+            duration_ms: 30_000,
+            bytes: 300_000,
+            mime: Some("video/mp4"),
+            trimmed: false,
+            kept: true,
+        }
+    }
+
+    #[test]
+    fn a_clip_goes_whole_only_within_every_reported_limit() {
+        let l = video_limits(Some(60), Some(500_000));
+        let w = whole_clip(&check(&l)).unwrap();
+        assert_eq!(w, Whole { mime: "video/mp4".into(), bytes: 300_000, max_request_bytes: 1_000_000 });
+
+        let why = |c: WholeCheck| whole_clip(&c).unwrap_err();
+        assert!(why(WholeCheck { takes_video: false, ..check(&l) }).contains("doesn't read video"));
+        assert!(why(WholeCheck { trimmed: true, ..check(&l) }).contains("part of the clip"));
+        assert!(why(WholeCheck { kept: false, ..check(&l) }).contains("isn't kept"));
+        assert!(why(WholeCheck { mime: None, ..check(&l) }).contains("format"));
+        assert!(why(WholeCheck { duration_ms: 60_001, ..check(&l) }).contains("longer than the 60 s"));
+        assert!(whole_clip(&WholeCheck { duration_ms: 60_000, ..check(&l) }).is_ok(), "exactly the limit fits");
+        assert!(why(WholeCheck { bytes: 500_001, ..check(&l) }).contains("bigger than"));
+        assert!(why(WholeCheck { max_request_bytes: None, ..check(&l) }).contains("request size isn't reported"));
+        // 300 000 bytes are 400 000 as base64, plus the `data:` prefix.
+        assert!(why(WholeCheck { max_request_bytes: Some(400_000), ..check(&l) }).contains("over the"));
+        assert!(whole_clip(&WholeCheck { max_request_bytes: Some(data_url_len("video/mp4", 300_000)), ..check(&l) }).is_ok());
+
+        // A missing limit means frames, never a guess, and the reason names it.
+        let none = video_limits(None, None);
+        assert_eq!(why(check(&none)), "the model's video_seconds and video_bytes aren't reported");
+        let no_bytes = video_limits(Some(60), None);
+        assert_eq!(why(check(&no_bytes)), "the model's video_bytes isn't reported");
+        let no_secs = video_limits(None, Some(500_000));
+        assert_eq!(why(check(&no_secs)), "the model's video_seconds isn't reported");
+    }
+
+    #[test]
+    fn data_url_size_mime_and_labels() {
+        assert_eq!(data_url_len("video/mp4", 0), "data:video/mp4;base64,".len() as u64);
+        assert_eq!(data_url_len("video/mp4", 3), 22 + 4);
+        assert_eq!(data_url_len("video/mp4", 4), 22 + 8);
+        let part = weirdnet_agent::ContentPart::video_bytes(&[1, 2, 3, 4], "video/mp4");
+        let weirdnet_agent::ContentPart::VideoUrl { video_url } = part else { panic!("a video part") };
+        assert_eq!(video_url.url.len() as u64, data_url_len("video/mp4", 4));
+        assert_eq!(video_url.data_len(), Some(4));
+        for (name, mime) in [
+            ("a.MP4", Some("video/mp4")),
+            ("a.m4v", Some("video/mp4")),
+            ("a.mov", Some("video/quicktime")),
+            ("a.webm", Some("video/webm")),
+            ("a.mkv", Some("video/x-matroska")),
+            ("a.avi", Some("video/x-msvideo")),
+            ("a.gif", None),
+            ("a", None),
+        ] {
+            assert_eq!(video_mime(Path::new(name)), mime, "{name}");
+        }
+        assert_eq!(size_label(900), "900 bytes");
+        assert_eq!(size_label(3000), "3 KiB");
+        assert_eq!(size_label(13_107_200), "12.5 MiB");
+    }
+
+    #[test]
+    fn video_limits_are_override_keys_that_only_tighten() {
+        let user = ModelLimits::parse("video_seconds=30 video_bytes=1000 video_frames_per_minute=60").unwrap();
+        assert_eq!((user.media.video_max_seconds, user.media.video_max_bytes, user.media.video_frames_per_minute), (Some(30), Some(1000), Some(60)));
+        assert_eq!(ModelLimits::parse(&user.to_text()).unwrap(), user, "round trip");
+        let reported = video_limits(Some(60), Some(500));
+        let eff = reported.with_override(&user);
+        assert_eq!((eff.media.video_max_seconds, eff.media.video_max_bytes, eff.media.video_frames_per_minute), (Some(30), Some(500), Some(60)));
+        let view = LimitsView::new("m", reported, user);
+        assert_eq!(view.ignored(&user), vec!["video_bytes"], "a looser number than reported is ignored");
+        assert!(ModelLimits::parse("video_seconds=0").is_err());
+        assert!(OVERRIDE_KEYS.iter().any(|(k, _)| *k == "video_seconds"));
+    }
+
+    #[test]
+    fn the_chip_says_whether_clips_go_whole() {
+        let reported = limits(32_768, 256);
+        let plain = LimitsView::new("m", reported, ModelLimits::default());
+        assert_eq!(plain.whole_note(), "");
+        let reads = plain.clone().with_video(true);
+        assert!(reads.chip().ends_with("reads video, but its video_seconds and video_bytes aren't reported: clips go as frames"), "{}", reads.chip());
+        let full = LimitsView::new("m", video_limits(Some(60), Some(20 * 1024 * 1024)), ModelLimits::default()).with_video(true);
+        assert!(full.chip().ends_with(" · whole clips up to 60 s and 20.0 MiB"), "{}", full.chip());
+    }
+
+    #[test]
+    fn refusals_that_send_the_frames_instead() {
+        let bad = |m: &str| CoreError::new(ErrorKind::BadRequest, m);
+        assert!(whole_refused(&bad(&format!("`gemma` does not take video, or {}", weirdnet_agent::remote::catalog::VIDEO_FALLBACK))));
+        assert!(whole_refused(&bad(&format!("no model in the pool takes video; {}", weirdnet_agent::remote::catalog::VIDEO_FALLBACK))));
+        assert!(whole_refused(&bad("the request is too large for the endpoint (413): over 4194304 bytes")));
+        assert!(whole_refused(&CoreError::new(ErrorKind::Other, "protocol error: message of 40000000 bytes is over the 33554432-byte limit")));
+        assert!(!whole_refused(&bad("the endpoint has no such address or model (404)")));
+        assert!(!whole_refused(&CoreError::new(ErrorKind::Unavailable, "the endpoint failed (500)")));
+        assert!(!whole_refused(&CoreError::new(ErrorKind::Refused, "the endpoint refused the API key")));
+    }
+
+    #[test]
+    fn a_whole_clip_is_labelled_and_old_messages_read_as_frames() {
+        let mut s = Sampled {
+            summary: "Video".into(),
+            duration_ms: 42_000,
+            frames: vec![VideoFrame { at_ms: 0, mime: "image/jpeg".into(), data: "AAAA".into() }; 6],
+            audio: None,
+            clip: None,
+            stored: None,
+            whole: None,
+        };
+        assert_eq!(s.send_label(), "6 frames");
+        assert_eq!(crate::video_play::bubble("c.mp4", &s), "video  c.mp4  0:42  6 frames  no sound sent");
+        s.whole = Some(Whole { mime: "video/mp4".into(), bytes: 13_107_200, max_request_bytes: 33_554_432 });
+        assert_eq!(s.send_label(), "whole clip (12.5 MiB)");
+        assert_eq!(crate::video_play::bubble("c.mp4", &s), "video  c.mp4  0:42  whole clip (12.5 MiB)");
+        assert_eq!(s.whole_summary("dir/c.mp4"), "Video \"c.mp4\", 00:42, sent whole.");
+        let back: Sampled = serde_json::from_str(&s.to_json()).unwrap();
+        assert_eq!(back.whole, s.whole, "it syncs with the message");
+        let old: Sampled = serde_json::from_str(r#"{"summary":"","duration_ms":1,"frames":[]}"#).unwrap();
+        assert_eq!(old.whole, None, "messages from before V4 go as frames");
+        // In a later turn the clip goes as its frames: `content` never carries a video part.
+        let a = crate::attach::Attachment::from_video("c.mp4", s);
+        let sent = serde_json::to_string(&crate::attach::content("hi", &[a])).unwrap();
+        assert!(!sent.contains("video_url") && sent.contains("image_url"));
     }
 }

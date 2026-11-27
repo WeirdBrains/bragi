@@ -365,7 +365,7 @@ impl Core {
                     Ok((net, model)) => {
                         let req = weirdnet_agent::remote::infer::v2::Request::messages(messages.clone()).with_model(model);
                         let fallback = (!fallbacks.is_empty()).then_some(messages);
-                        return Ok(self.run(net, String::new(), req, String::new(), String::new(), fallback));
+                        return Ok(self.run(net, String::new(), req, String::new(), String::new(), fallback, Default::default()));
                     }
                     Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && !fallbacks.is_empty() => (fallbacks, None),
                     Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) => match self.on_device_ready() {
@@ -388,7 +388,7 @@ impl Core {
         let (out, events) = mpsc::unbounded_channel();
         let (core, rid) = (self.clone(), request_id.clone());
         self.inner.handle.spawn(async move {
-            core.answer_from_endpoints("", &rid, endpoints, model, messages, &cancel, &out, String::new()).await;
+            core.answer_from_endpoints("", &rid, endpoints, model, messages, &cancel, &out, String::new(), Default::default()).await;
         });
         Ok(ChatHandle { request_id, conversation_id: String::new(), events })
     }
@@ -408,9 +408,16 @@ impl Core {
         let ready = self.net().and_then(|net| self.pick_model(model.clone(), needed).map(|m| (net, m)));
         match ready {
             Ok((net, model)) => {
+                let whole = crate::video_core::sends_whole(&attachments).then(|| attachments.clone());
                 let (id, messages) = self.begin_turn(conversation, prompt, &model, attachments)?;
-                let req = weirdnet_agent::remote::infer::v2::Request::messages(messages.clone()).with_model(model);
-                Ok(self.run(net, id, req, String::new(), String::new(), (!fallbacks.is_empty()).then_some(messages)))
+                let (messages, video) = match &whole {
+                    Some(a) => self.whole_video(&id, prompt, a, messages),
+                    None => (messages, Default::default()),
+                };
+                // Fallback endpoints get the frames: what they read was never checked.
+                let fallback = (!fallbacks.is_empty()).then(|| video.frames.clone().unwrap_or_else(|| messages.clone()));
+                let req = weirdnet_agent::remote::infer::v2::Request::messages(messages).with_model(model);
+                Ok(self.run(net, id, req, String::new(), String::new(), fallback, video))
             }
             Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && !fallbacks.is_empty() => {
                 self.send_endpoints(conversation, prompt, attachments, fallbacks, None)
@@ -466,20 +473,27 @@ impl Core {
     ) -> Result<ChatHandle> {
         let first = endpoints.first().ok_or_else(|| CoreError::new(ErrorKind::Unavailable, "no endpoint to send to"))?;
         let label = model.clone().or_else(|| first.model.clone()).unwrap_or_default();
+        let whole = crate::video_core::sends_whole(&attachments).then(|| attachments.clone());
         let (id, messages) = self.begin_turn(conversation, prompt, &label, attachments)?;
+        let (messages, video) = match &whole {
+            Some(a) => self.whole_video(&id, prompt, a, messages),
+            None => (messages, Default::default()),
+        };
         let request_id = random_id("r");
         let cancel = CancelToken::new();
         lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
         let (out, events) = mpsc::unbounded_channel();
         let (core, rid, conv) = (self.clone(), request_id.clone(), id.clone());
         self.inner.handle.spawn(async move {
-            core.answer_from_endpoints(&conv, &rid, endpoints, model, messages, &cancel, &out, String::new()).await;
+            core.answer_from_endpoints(&conv, &rid, endpoints, model, messages, &cancel, &out, String::new(), video).await;
         });
         Ok(ChatHandle { request_id, conversation_id: id, events })
     }
 
     /// Tries `endpoints` in order until one streams; saves the answer, ends the request and sends
-    /// the last event. Used for an endpoint target and as the pool's fallback.
+    /// the last event. Used for an endpoint target and as the pool's fallback. `video`: when
+    /// `messages` carry a whole clip, the frames to send instead if an endpoint turns it down
+    /// (Native video V4: a 400 that says send frames, or a 413), and a note to show first.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn answer_from_endpoints(
         &self,
@@ -491,7 +505,13 @@ impl Core {
         cancel: &CancelToken,
         out: &mpsc::UnboundedSender<ChatEvent>,
         shown: String,
+        video: crate::video_core::VideoSend,
     ) {
+        let mut messages = messages;
+        let mut frames = video.frames.clone();
+        if let Some(note) = &video.note {
+            let _ = out.send(ChatEvent::Retry { attempt: 0, message: note.clone() });
+        }
         let mut last: Option<CoreError> = None;
         let mut won: Option<(Endpoint, String, Streamed, openai::Finished)> = None;
         let mut partial: Option<Streamed> = None;
@@ -517,12 +537,28 @@ impl Core {
                     }
                 },
             };
-            let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
-            let _ = tx.send(PoolEvent::Accepted { node: ep.name.clone(), model: chosen.clone(), resume: false });
-            let co = tokio::spawn(coalesce(rx, out.clone(), shown.chars().count() as u64, 0));
-            let r = openai::chat_stream(&t, &chosen, &messages, &tx, cancel).await;
-            drop(tx);
-            let streamed = co.await.unwrap_or_default();
+            let (r, streamed) = loop {
+                let (tx, rx) = mpsc::unbounded_channel::<PoolEvent>();
+                let _ = tx.send(PoolEvent::Accepted { node: ep.name.clone(), model: chosen.clone(), resume: false });
+                let co = tokio::spawn(coalesce(rx, out.clone(), shown.chars().count() as u64, 0));
+                let r = openai::chat_stream(&t, &chosen, &messages, &tx, cancel).await;
+                drop(tx);
+                let streamed = co.await.unwrap_or_default();
+                // A whole clip turned down before any text: the frames go instead, here and to
+                // any endpoint after this one, and the message says so.
+                if let Err(e) = &r
+                    && streamed.text.is_empty()
+                    && e.kind != ErrorKind::Cancelled
+                    && crate::video::whole_refused(e)
+                    && let Some(f) = frames.take()
+                {
+                    let _ = out.send(ChatEvent::Retry { attempt: 1, message: video.retry_message(e) });
+                    self.sent_as_frames(conversation);
+                    messages = f;
+                    continue;
+                }
+                break (r, streamed);
+            };
             match r {
                 Ok(f) => {
                     won = Some((ep, chosen, streamed, f));
