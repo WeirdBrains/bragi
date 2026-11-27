@@ -1017,6 +1017,7 @@ pub(crate) fn target_of(t: &TargetView) -> Result<bragi_core::Target, String> {
             id: t.endpoint.clone().ok_or("an endpoint target needs an endpoint")?,
             model: t.model.clone().unwrap_or_default(),
         }),
+        "device" => Ok(bragi_core::Target::Device { model: t.model.clone().unwrap_or_default() }),
         other => Err(format!("unknown target `{other}`")),
     }
 }
@@ -1027,6 +1028,7 @@ fn target_view(t: &bragi_core::Target, label: String) -> TargetView {
         bragi_core::Target::Endpoint { id, model } => {
             TargetView { kind: "endpoint".into(), endpoint: Some(id.clone()), model: Some(model.clone()), label }
         }
+        bragi_core::Target::Device { model } => TargetView { kind: "device".into(), endpoint: None, model: Some(model.clone()), label },
     }
 }
 

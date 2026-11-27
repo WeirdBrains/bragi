@@ -13,6 +13,10 @@ publish = false
 name = "bragi-tui"
 path = "src/main.rs"
 
+[features]
+# The optional on-device model's engine (llama.cpp, B4); see bragi-core.
+on-device = ["bragi-core/on-device"]
+
 [dependencies]
 base64.workspace = true
 bragi-core.workspace = true

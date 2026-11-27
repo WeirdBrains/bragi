@@ -198,6 +198,9 @@ impl Core {
             let label = if model.is_empty() { e.name.clone() } else { format!("{} · {model}", e.name) };
             v.push(TargetOption { target: Target::Endpoint { id: e.id, model }, label });
         }
+        if let Some(m) = self.on_device_ready() {
+            v.push(TargetOption { target: Target::Device { model: m.id }, label: format!("{} · {}", crate::on_device::LABEL, m.label) });
+        }
         v
     }
 
@@ -209,6 +212,10 @@ impl Core {
                 Some(e) if model.is_empty() => e.name,
                 Some(e) => format!("{} · {model}", e.name),
                 None => "Endpoint missing".into(),
+            },
+            Some(Target::Device { model }) => match self.on_device_models().into_iter().find(|m| &m.id == model) {
+                Some(m) => format!("{} · {}", crate::on_device::LABEL, m.label),
+                None => crate::on_device::LABEL.into(),
             },
         }
     }
@@ -277,6 +284,7 @@ impl Core {
             Target::Endpoint { id, .. } if self.inner.endpoints.get(id).is_none() => {
                 Err(CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))
             }
+            Target::Device { model } => self.check_on_device(model).map(|_| ()),
             _ => Ok(()),
         }
     }
@@ -321,6 +329,7 @@ impl Core {
                     self.send_endpoints(conversation, prompt, attachments, vec![ep], m)?
                 }
             }
+            Target::Device { model } => self.send_device(conversation, prompt, attachments, self.check_on_device(model)?)?,
         };
         // Bind new sessions, and sessions the caller moved, to where they went. A pool session that
         // fell back to an endpoint stays a pool session.
@@ -359,6 +368,10 @@ impl Core {
                         return Ok(self.run(net, String::new(), req, String::new(), String::new(), fallback));
                     }
                     Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && !fallbacks.is_empty() => (fallbacks, None),
+                    Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) => match self.on_device_ready() {
+                        Some(spec) => return Ok(self.start_device(String::new(), spec, messages)),
+                        None => return Err(e),
+                    },
                     Err(e) => return Err(e),
                 }
             }
@@ -367,6 +380,7 @@ impl Core {
                     self.inner.endpoints.get(&id).ok_or_else(|| CoreError::new(ErrorKind::NotFound, "that endpoint isn't in Settings any more"))?;
                 (vec![ep], Some(m).filter(|m| !m.is_empty()).or(model))
             }
+            Target::Device { model } => return Ok(self.start_device(String::new(), self.check_on_device(&model)?, messages)),
         };
         let request_id = random_id("r");
         let cancel = CancelToken::new();
@@ -401,8 +415,44 @@ impl Core {
             Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && !fallbacks.is_empty() => {
                 self.send_endpoints(conversation, prompt, attachments, fallbacks, None)
             }
+            // No node and no endpoint: the on-device model answers when it is on and downloaded.
+            Err(e) if matches!(e.kind, ErrorKind::NotPaired | ErrorKind::Unavailable) && needed == weirdnet_agent::Modalities::TEXT => {
+                match self.on_device_ready() {
+                    Some(spec) => self.send_device(conversation, prompt, attachments, spec),
+                    None => Err(e),
+                }
+            }
             Err(e) => Err(e),
         }
+    }
+
+    /// Starts a turn answered by the on-device model (text only).
+    fn send_device(
+        &self,
+        conversation: Option<&str>,
+        prompt: &str,
+        attachments: Vec<Attachment>,
+        spec: weirdnet_model::ModelSpec,
+    ) -> Result<ChatHandle> {
+        if crate::attach::needs(&attachments) != weirdnet_agent::Modalities::TEXT {
+            return Err(CoreError::new(ErrorKind::BadRequest, "the on-device model reads text only; send pictures, sound and video to a node"));
+        }
+        let (id, messages) = self.begin_turn(conversation, prompt, &spec.label, attachments)?;
+        Ok(self.start_device(id, spec, messages))
+    }
+
+    /// Runs `messages` on the on-device model; the answer is saved in `conversation` (nowhere
+    /// when empty).
+    fn start_device(&self, conversation: String, spec: weirdnet_model::ModelSpec, messages: Vec<Message>) -> ChatHandle {
+        let request_id = random_id("r");
+        let cancel = CancelToken::new();
+        lock(&self.inner.requests).insert(request_id.clone(), cancel.clone());
+        let (out, events) = mpsc::unbounded_channel();
+        let (core, rid, conv) = (self.clone(), request_id.clone(), conversation.clone());
+        self.inner.handle.spawn(async move {
+            core.answer_on_device(&conv, &rid, spec, messages, &cancel, &out).await;
+        });
+        ChatHandle { request_id, conversation_id: conversation, events }
     }
 
     /// Starts a turn answered by the first of `endpoints` that works.

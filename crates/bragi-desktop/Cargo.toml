@@ -17,6 +17,8 @@ path = "src/main.rs"
 # same `bragi` binary is the terminal app, MCP server and `bragi serve`, with no GUI libraries.
 [features]
 default = ["gui"]
+# The optional on-device model's engine (llama.cpp, B4); see bragi-core.
+on-device = ["bragi-core/on-device"]
 gui = ["dep:cpal", "dep:gpui", "dep:gpui_platform", "dep:qrcode", "dep:weirdnet-text", "dep:unicode-segmentation", "dep:tempfile", "dep:tokio", "dep:weirdnet-themes"]
 
 [dependencies]

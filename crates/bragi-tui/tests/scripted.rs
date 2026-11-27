@@ -244,3 +244,61 @@ fn link_chat_models_status_help_and_code() {
     h.ctrl('q');
     assert!(h.app.quit);
 }
+
+/// Says "ok" (the on-device model's stand-in: no real engine or weights in tests).
+struct Ok1;
+
+impl bragi_core::on_device::Engine for Ok1 {
+    fn generate(
+        &mut self,
+        _req: &bragi_core::on_device::GenerateRequest,
+        on_text: &mut dyn FnMut(&str) -> bool,
+    ) -> bragi_core::on_device::EngineResult<bragi_core::on_device::Stats> {
+        on_text("ok");
+        Ok(bragi_core::on_device::Stats { prompt_tokens: 1, generated_tokens: 1, stop: bragi_core::on_device::StopCause::End })
+    }
+}
+
+#[test]
+fn the_on_device_model_from_the_chat_box() {
+    use bragi_core::Target;
+    use bragi_core::demo_models::{MockRepo, mock_hub};
+    let project = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(project.path());
+    let core = h.app.core.clone();
+    let mut cmd = |h: &mut Harness, line: &str| -> String {
+        h.typed(line);
+        h.key(KeyCode::Enter);
+        h.app.notice.clone().unwrap_or_default()
+    };
+
+    assert!(cmd(&mut h, "/on-device").contains("Off. Nothing is downloaded"));
+    // `get` shows what would download and downloads nothing.
+    let n = cmd(&mut h, "/on-device get gemma-4-e2b");
+    assert!(n.contains("Download Gemma 4 E2B") && n.contains("/on-device get gemma-4-e2b yes"), "{n}");
+    assert!(core.state().on_device.download.is_none());
+
+    let size = 8192;
+    let hub = mock_hub(vec![MockRepo::new("test/tiny-chat-GGUF", 1, 1, &[("tiny-chat.gguf", size)]).downloadable()], Duration::ZERO);
+    let spec = bragi_core::on_device::ModelSpec {
+        id: "tiny-chat".into(),
+        label: "Tiny chat (test)".into(),
+        repo: "test/tiny-chat-GGUF".into(),
+        file: "tiny-chat.gguf".into(),
+        size,
+        sha256: None,
+    };
+    core.set_on_device_source(&hub, vec![spec]);
+    core.set_on_device_engine("fake engine", std::sync::Arc::new(|_| Ok(Box::new(Ok1) as Box<dyn bragi_core::on_device::Engine>)));
+
+    assert!(cmd(&mut h, "/on-device on").contains("not downloaded yet"));
+    assert!(cmd(&mut h, "/on-device get tiny-chat yes").contains("Downloading"));
+    h.until("", |a| a.core.state().on_device.installed);
+    let n = cmd(&mut h, "/on-device");
+    assert!(n.contains("ready (fake engine)") && n.contains("*tiny-chat"), "{n}");
+    assert!(h.app.targets.iter().any(|t| t.target == Target::Device { model: "tiny-chat".into() } && t.label == "On this device · Tiny chat (test)"));
+
+    assert_eq!(cmd(&mut h, "/on-device remove tiny-chat"), "Removed tiny-chat.");
+    assert!(cmd(&mut h, "/on-device sideways").contains("Use /on-device"));
+    assert!(cmd(&mut h, "/on-device off").contains("Off."));
+}

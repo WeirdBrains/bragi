@@ -31,6 +31,7 @@ mod models_scenario;
 mod react;
 mod settings_scenario;
 mod themes;
+mod on_device;
 mod training;
 mod upload;
 mod upload_scenario;
@@ -346,7 +347,12 @@ impl BragiView {
             self.model = None;
         }
         let old_pool = self.state.pool.as_ref().map(|p| p.id.clone());
+        // The on-device model became ready or stopped being: the picker changes with it.
+        let picker_changed = self.state.on_device.ready() != s.on_device.ready();
         self.state = s;
+        if picker_changed {
+            self.refresh_prefs();
+        }
         if old_pool != self.state.pool.as_ref().map(|p| p.id.clone()) && old_pool.is_some() {
             self.current = None;
             self.reload();

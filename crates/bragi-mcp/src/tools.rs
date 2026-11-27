@@ -71,7 +71,7 @@ const CHAT_PARAMS: &[Param] = &[
     Param::optional(
         "endpoint",
         T::String,
-        "Where to send it: `pool` (the Weirdnet pool) or an endpoint id from bragi_endpoints_list. Default: where the session is bound, or for a new session the pool (or the first endpoint offered alongside it when this device isn't linked).",
+        "Where to send it: `pool` (the Weirdnet pool), `device` (the on-device model, when it is on and downloaded) or an endpoint id from bragi_endpoints_list. Default: where the session is bound, or for a new session the pool (or the first endpoint offered alongside it, then the on-device model, when this device isn't linked).",
     ),
     Param::optional("model", T::String, "A model id from bragi_models_list. Default: the pool's pick, or the endpoint's model."),
     Param::optional("folder", T::String, "File a new session in this folder (an id from bragi_folders_list)."),
@@ -294,6 +294,7 @@ impl BragiTools {
         match weirdnet_mcp::args::opt_string(args, "endpoint") {
             None | Some("") => Ok(None),
             Some("pool") => Ok(Some(Target::Pool)),
+            Some("device") => Ok(Some(Target::Device { model: self.core.on_device_settings().model.unwrap_or_default() })),
             Some(id) => {
                 let e = self
                     .core

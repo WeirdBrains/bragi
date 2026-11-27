@@ -13,6 +13,10 @@ publish = false
 name = "bragi_bridge"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
+[features]
+# The optional on-device model's engine (llama.cpp, B4); see bragi-core.
+on-device = ["bragi-core/on-device"]
+
 [dependencies]
 bragi-core.workspace = true
 flutter_rust_bridge.workspace = true

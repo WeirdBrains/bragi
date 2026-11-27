@@ -34,6 +34,7 @@ pub mod mcp_servers;
 pub mod models;
 mod models_core;
 pub mod notifications;
+pub mod on_device;
 pub mod openai;
 pub mod pools;
 pub mod project;
@@ -64,6 +65,7 @@ pub use crate::core::{
 };
 pub use crate::endpoints::{Endpoint, EndpointInput, EndpointMode, EndpointView, KeyChange};
 pub use crate::error::{CoreError, ErrorKind, Result};
+pub use crate::on_device::{OnDeviceDownload, OnDeviceModel, OnDeviceSettings, OnDeviceStatus};
 pub use crate::files::{ChatFile, FileKind, FileOrigin};
 pub use crate::history::{ChatMessage, Conversation, ConversationSummary, Deleted, MessageState, Mode, Role, UNDO_MS};
 pub use crate::mcp_servers::{McpScope, McpSecrets, McpServer, McpServerInput, McpServerView, McpTestReport, McpTransport};

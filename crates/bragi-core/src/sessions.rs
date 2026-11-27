@@ -24,6 +24,8 @@ pub enum Target {
     Pool,
     /// One endpoint and a model on it.
     Endpoint { id: String, model: String },
+    /// The optional model running on this device (B4); `model` is its catalog id.
+    Device { model: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
