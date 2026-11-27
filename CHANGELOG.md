@@ -6,6 +6,11 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The Release workflow bundles the LGPL ffmpeg: each desktop job builds ffmpeg and ffprobe with `scripts/build-ffmpeg.sh` (FFmpeg 9.0.2 from the pinned, checksummed tarball) on its runner and packs them with Bragi: the Linux tarballs and zips (`bin/`, notices in `share/doc/ffmpeg/`), the macOS app (`Contents/Helpers`, universal: one build per arch joined with `lipo`) and tarball, and the Windows zip and installers (beside `bragi.exe`; built statically in MSYS2). Each job checks the bundle is there. The deb, rpm and Arch packages still recommend the distro's ffmpeg instead.
+- The Linux release builds have the on-device model's engine (the `on-device` Cargo feature, llama.cpp built for the baseline CPU, not `-march=native`), in the desktop and terminal-only binaries and so in every Linux package; the workflow checks the engine is in the binary and runs clippy with the feature. `scripts/dist-linux.sh` takes `BRAGI_FEATURES` (default `on-device`; empty builds without), and `scripts/dist-macos.sh` and `scripts/dist-windows.ps1` take it too (default none: macOS and Windows release builds don't turn the engine on yet). The deb and rpm packages depend on libstdc++.
+
 ## [0.16.0] - 2026-11-27
 
 ### Added

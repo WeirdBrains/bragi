@@ -10,8 +10,11 @@
 # Environment:
 #   FFMPEG_SRC_DIR   where the tarball is kept between runs (default: ~/.cache/bragi-ffmpeg)
 #   JOBS             make -j (default: 6)
-#   FFMPEG_CROSS     extra configure flags for a cross build, e.g. "--arch=aarch64 --enable-cross-compile
-#                    --target-os=darwin --cc='clang -arch arm64'" (macOS universal: build both, then lipo)
+#   FFMPEG_CROSS     extra configure flags, split on spaces (no quoting), e.g. for the x86_64 half of a
+#                    macOS universal build on Apple silicon: "--enable-cross-compile --arch=x86_64
+#                    --target-os=darwin --cc=clang --extra-cflags=--target=x86_64-apple-macos11
+#                    --extra-ldflags=--target=x86_64-apple-macos11" (build both halves, then lipo; the
+#                    Release workflow does), or "--extra-ldflags=-static" for a self-contained MSYS2 build
 #
 # OUT_DIR gets bin/ffmpeg and bin/ffprobe (.exe on Windows), LICENSE.md (LGPL 2.1 text from the source),
 # CONFIG.txt (version, checksum and configure line) and SOURCE.txt (where the matching source is). The

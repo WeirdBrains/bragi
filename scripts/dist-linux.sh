@@ -9,6 +9,9 @@
 # dist/ffmpeg/<host triple>, holds a build from scripts/build-ffmpeg.sh; without one they go out
 # without it and video attach asks for the distro's ffmpeg. The deb, rpm and Arch packages never
 # bundle it: they recommend the distro's ffmpeg instead.
+# Cargo features: BRAGI_FEATURES (default `on-device`, the optional on-device model's llama.cpp engine, B4;
+# portable: llama.cpp is built without -march=native) goes into both builds; BRAGI_FEATURES= builds without.
+# The engine links libstdc++, which every package depends on.
 # Needs nfpm on PATH for the packages (the Release workflow installs a pinned copy); without it only the
 # archives are made. Build paths are remapped so no build machine path ends up in the binary.
 set -euo pipefail
@@ -18,7 +21,11 @@ ver=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;
 arch=$(uname -m)
 target_dir=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys;print(json.load(sys.stdin)["target_directory"])')
 export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home/user"
-cargo build --release --locked -p bragi-desktop
+features="${BRAGI_FEATURES-on-device}"
+feature_args=()
+[[ -n "$features" ]] && feature_args=(--features "$features")
+echo "features: ${features:-none}"
+cargo build --release --locked -p bragi-desktop "${feature_args[@]}"
 
 name="bragi-$ver-$arch-unknown-linux-gnu"
 stage=$(mktemp -d)
@@ -51,7 +58,7 @@ tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "dist/$name.tar.gz" "$n
 ( cd "$stage" && zip -qr "$root/dist/$name.zip" "$name" )
 tui="bragi-tui-$ver-$arch-unknown-linux-gnu"
 # The terminal-only build: the same `bragi` without the `gui` feature, so no GUI libraries.
-cargo build --release --locked -p bragi-desktop --no-default-features
+cargo build --release --locked -p bragi-desktop --no-default-features "${feature_args[@]}"
 install -Dm755 "$target_dir/release/bragi" "$stage/$tui/bin/bragi"
 ln -s bragi "$stage/$tui/bin/bragi-tui"
 install -Dm644 LICENSE "$stage/$tui/LICENSE"
