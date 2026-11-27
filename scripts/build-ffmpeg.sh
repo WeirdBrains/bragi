@@ -10,8 +10,11 @@
 # Environment:
 #   FFMPEG_SRC_DIR   where the tarball is kept between runs (default: ~/.cache/bragi-ffmpeg)
 #   JOBS             make -j (default: 6)
-#   FFMPEG_CROSS     extra configure flags for a cross build, e.g. "--arch=aarch64 --enable-cross-compile
-#                    --target-os=darwin --cc='clang -arch arm64'" (macOS universal: build both, then lipo)
+#   FFMPEG_CROSS     extra configure flags, split on spaces (no quoting), e.g. for the x86_64 half of a
+#                    macOS universal build on Apple silicon: "--enable-cross-compile --arch=x86_64
+#                    --target-os=darwin --cc=clang --extra-cflags=--target=x86_64-apple-macos11
+#                    --extra-ldflags=--target=x86_64-apple-macos11" (build both halves, then lipo; the
+#                    Release workflow does), or "--extra-ldflags=-static" for a self-contained MSYS2 build
 #
 # OUT_DIR gets bin/ffmpeg and bin/ffprobe (.exe on Windows), LICENSE.md (LGPL 2.1 text from the source),
 # CONFIG.txt (version, checksum and configure line) and SOURCE.txt (where the matching source is). The
@@ -56,7 +59,9 @@ fi
 cd "$(dirname "$0")/.."
 root=$(pwd)
 triple=$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')
-out=$(realpath -m "${1:-dist/ffmpeg/${triple:-unknown}}")
+# Absolute, without GNU `realpath -m` (macOS has the BSD one).
+mkdir -p "${1:-dist/ffmpeg/${triple:-unknown}}"
+out=$(cd "${1:-dist/ffmpeg/${triple:-unknown}}" && pwd)
 src_dir="${FFMPEG_SRC_DIR:-$HOME/.cache/bragi-ffmpeg}"
 tarball="$src_dir/ffmpeg-$FFMPEG_VERSION.tar.xz"
 mkdir -p "$src_dir"
@@ -64,7 +69,8 @@ if [[ ! -f "$tarball" ]]; then
   curl -fL --retry 3 -o "$tarball.part" "$FFMPEG_URL"
   mv "$tarball.part" "$tarball"
 fi
-echo "$FFMPEG_SHA256  $tarball" | sha256sum -c - >/dev/null || {
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+echo "$FFMPEG_SHA256  $tarball" | sha256 -c - >/dev/null || {
   echo "ffmpeg tarball checksum mismatch: $tarball (delete it and try again)" >&2
   exit 1
 }
@@ -73,19 +79,22 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 tar -C "$work" -xJf "$tarball"
 cd "$work/ffmpeg-$FFMPEG_VERSION"
-# Reproducible: no build date or host path in the binaries.
+# Reproducible: no build date or host path in the binaries. ffmpeg compiles its configure line into the
+# binaries (`ffmpeg -version`), so nothing on it names this machine: a fixed --prefix with DESTDIR, and an
+# in-tree build (`./configure`), whose sources are compiled by relative path (no debug info).
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1764115200}"
-export CFLAGS="${CFLAGS:-} -ffile-prefix-map=$work=/build"
+extra_cflags=()
+[[ -n "${CFLAGS:-}" ]] && extra_cflags=(--extra-cflags="$CFLAGS")
 # shellcheck disable=SC2086 # FFMPEG_CROSS is a list of flags on purpose.
-./configure --prefix="$work/install" --extra-cflags="$CFLAGS" "${CONFIGURE_FLAGS[@]}" ${FFMPEG_CROSS:-}
+./configure --prefix=/usr/local ${extra_cflags[@]+"${extra_cflags[@]}"} "${CONFIGURE_FLAGS[@]}" ${FFMPEG_CROSS:-}
 make -j"${JOBS:-6}"
-make install
+make install DESTDIR="$work/stage"
 
 ext=""
 case "$triple" in *windows*) ext=".exe" ;; esac
 mkdir -p "$out/bin"
-install -m755 "$work/install/bin/ffmpeg$ext" "$out/bin/ffmpeg$ext"
-install -m755 "$work/install/bin/ffprobe$ext" "$out/bin/ffprobe$ext"
+install -m755 "$work/stage/usr/local/bin/ffmpeg$ext" "$out/bin/ffmpeg$ext"
+install -m755 "$work/stage/usr/local/bin/ffprobe$ext" "$out/bin/ffprobe$ext"
 install -m644 COPYING.LGPLv2.1 "$out/LICENSE.md"
 {
   echo "ffmpeg $FFMPEG_VERSION, LGPL 2.1 or later, built by Bragi's scripts/build-ffmpeg.sh"

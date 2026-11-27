@@ -20,10 +20,10 @@ overrides:
   deb:
     # Video attach and the inline player run the distro's ffmpeg; Bragi installs without it.
     recommends: [ffmpeg]
-    depends: [libc6, libgcc-s1]
+    depends: [libc6, libgcc-s1, libstdc++6]
   rpm:
     recommends: ["(ffmpeg or ffmpeg-free)"]
-    depends: [glibc, libgcc]
+    depends: [glibc, libgcc, libstdc++]
   archlinux:
     depends: [glibc, gcc-libs]
 contents:

@@ -10,6 +10,8 @@
 # 2026-11-12 (docs/RELEASES.md), so every wix command passes -acceptEula wix7. Nothing is code-signed.
 # With BRAGI_FFMPEG_DIR (ffmpeg.exe and ffprobe.exe from scripts/build-ffmpeg.sh, e.g. in MSYS2), both go
 # beside bragi.exe in the zip and the installer, with their licence, build config and source offer.
+# BRAGI_FEATURES (default none) adds Cargo features to both binaries, e.g. `on-device` (the llama.cpp engine;
+# not turned on in the Release workflow for Windows yet).
 param([string]$WixVersion = "7.0.1")
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -25,7 +27,11 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
 }
 $cargoHome = if ($env:CARGO_HOME) { $env:CARGO_HOME } else { Join-Path $env:USERPROFILE ".cargo" }
 $env:RUSTFLAGS = "$env:RUSTFLAGS --remap-path-prefix=$root=C:\build\bragi --remap-path-prefix=$cargoHome=C:\cargo --remap-path-prefix=$env:USERPROFILE=C:\Users\user".Trim()
-cargo build --release --locked -p bragi-desktop -p bragi-tui
+$featureArgs = @()
+if ($env:BRAGI_FEATURES) {
+  $featureArgs = @("--features", (($env:BRAGI_FEATURES -split "[ ,]+" | Where-Object { $_ } | ForEach-Object { "bragi-desktop/$_,bragi-tui/$_" }) -join ","))
+}
+cargo build --release --locked -p bragi-desktop -p bragi-tui @featureArgs
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $name = "bragi-$ver-$triple"

@@ -2,6 +2,10 @@
 # builds and uploads workflow artifacts; the GitHub release itself is made afterwards with
 # `scripts/weirdnet_release.py github VERSION` from the downloaded artifacts. All jobs run on
 # GitHub-hosted runners. Nothing is code-signed except an Android release key when its secrets exist.
+# The desktop archives and installers bundle the LGPL ffmpeg and ffprobe that scripts/build-ffmpeg.sh builds
+# on each runner from the pinned, checksummed FFmpeg tarball (docs/design/video.md, "Platform packaging"):
+# Linux tarballs and zips (bin/), macOS Bragi.app (Contents/Helpers) and tarball, Windows zip and installers
+# (beside bragi.exe). The Linux builds have the on-device model's engine (Cargo feature `on-device`, llama.cpp).
 name: Release
 
 on:
@@ -31,11 +35,13 @@ jobs:
       - name: Desktop shell build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake pkg-config libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+          sudo apt-get install -y clang libclang-dev cmake pkg-config libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
             libxcb1-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev libzstd-dev libdbus-1-dev libasound2-dev
       - run: python3 scripts/weirdnet_release.py validate
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Clippy with the on-device engine (llama.cpp), as the Linux release builds it
+        run: cargo clippy --locked -p bragi-desktop --features on-device --all-targets -- -D warnings
       - name: Clippy on the terminal-only bragi (no gui feature), as the Linux and BSD builds make it
         run: cargo clippy --locked -p bragi-desktop --no-default-features --all-targets -- -D warnings
       - run: cargo test -q --locked --workspace
@@ -58,17 +64,29 @@ jobs:
       - name: Build dependencies and a pinned nfpm 2.49.0
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake pkg-config zip libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
+          sudo apt-get install -y clang libclang-dev cmake nasm pkg-config zip libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev \
             libxcb1-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype-dev libssl-dev libzstd-dev libdbus-1-dev libasound2-dev
           curl -fsSLo nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v2.49.0/nfpm_2.49.0_Linux_${{ matrix.nfpm }}.tar.gz"
           echo "${{ matrix.nfpm_sha }}  nfpm.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/nfpm" && tar -C "$RUNNER_TEMP/nfpm" -xzf nfpm.tar.gz nfpm && rm nfpm.tar.gz
           echo "$RUNNER_TEMP/nfpm" >> "$GITHUB_PATH"
+      - name: LGPL ffmpeg and ffprobe for the archives (scripts/build-ffmpeg.sh)
+        run: |
+          scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg"
+          echo "BRAGI_FFMPEG_DIR=$RUNNER_TEMP/ffmpeg" >> "$GITHUB_ENV"
       - run: scripts/dist-linux.sh
+        env:
+          BRAGI_FEATURES: on-device
       - name: Check the packages
         run: |
           for f in dist/*.deb; do dpkg-deb -I "$f" >/dev/null; dpkg-deb -c "$f"; done
           ldd target/release/bragi
+          grep -aq llama_model_load target/release/bragi || { echo "::error::bragi was built without the on-device engine"; exit 1; }
+          "$BRAGI_FFMPEG_DIR/bin/ffmpeg" -hide_banner -version | sed -n 1p
+          for t in dist/bragi-[0-9]*-unknown-linux-gnu.tar.gz dist/bragi-tui-*-unknown-linux-gnu.tar.gz; do
+            n=$(tar -tzf "$t" | grep -cE '/bin/ffmpeg$|/bin/ffprobe$|/share/doc/ffmpeg/SOURCE.txt$' || true)
+            [ "$n" = 3 ] || { echo "::error::$t does not bundle ffmpeg"; exit 1; }
+          done
           tar -tzf dist/bragi-[0-9]*-unknown-linux-gnu.tar.gz
           sudo apt-get install -y ./dist/bragi_*.deb
           bragi --version
@@ -98,7 +116,29 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-macos
+      - name: LGPL ffmpeg and ffprobe, universal (scripts/build-ffmpeg.sh for each arch, then lipo)
+        run: |
+          brew install nasm
+          FFMPEG_CROSS="--extra-cflags=-mmacosx-version-min=11.0 --extra-ldflags=-mmacosx-version-min=11.0" \
+            scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg-arm64"
+          FFMPEG_CROSS="--enable-cross-compile --arch=x86_64 --target-os=darwin --cc=clang --extra-cflags=--target=x86_64-apple-macos11 --extra-ldflags=--target=x86_64-apple-macos11" \
+            scripts/build-ffmpeg.sh "$RUNNER_TEMP/ffmpeg-x86_64"
+          u="$RUNNER_TEMP/ffmpeg"
+          mkdir -p "$u/bin"
+          for b in ffmpeg ffprobe; do
+            lipo -create -output "$u/bin/$b" "$RUNNER_TEMP/ffmpeg-arm64/bin/$b" "$RUNNER_TEMP/ffmpeg-x86_64/bin/$b"
+            lipo -info "$u/bin/$b"
+          done
+          cp "$RUNNER_TEMP/ffmpeg-arm64/LICENSE.md" "$RUNNER_TEMP/ffmpeg-arm64/SOURCE.txt" "$u/"
+          { echo "arm64:"; cat "$RUNNER_TEMP/ffmpeg-arm64/CONFIG.txt"; echo; echo "x86_64:"; cat "$RUNNER_TEMP/ffmpeg-x86_64/CONFIG.txt"; } > "$u/CONFIG.txt"
+          "$u/bin/ffmpeg" -hide_banner -version | sed -n 1p
+          echo "BRAGI_FFMPEG_DIR=$u" >> "$GITHUB_ENV"
       - run: scripts/dist-macos.sh
+      - name: The app and the tarball bundle ffmpeg
+        run: |
+          unzip -l dist/bragi-*-universal-apple-darwin.zip | grep -q 'Bragi.app/Contents/Helpers/ffprobe$'
+          unzip -l dist/bragi-*-universal-apple-darwin.zip | grep -q 'Bragi.app/Contents/Helpers/ffmpeg$'
+          tar -tzf dist/bragi-*-universal-apple-darwin.tar.gz | grep -q '/ffmpeg$'
       - name: The universal binary starts
         run: cd "$RUNNER_TEMP" && tar -xzf "$GITHUB_WORKSPACE"/dist/bragi-*-universal-apple-darwin.tar.gz && ./bragi-*/bragi --version && ./bragi-*/bragi-tui --version
       - uses: actions/upload-artifact@v4
@@ -115,8 +155,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: x86_64, runner: windows-2025 }
-          - { arch: aarch64, runner: windows-11-arm }
+          # msystem and ffmpeg_flags: the MSYS2 toolchain scripts/build-ffmpeg.sh builds ffmpeg.exe with
+          # (statically linked, so the exes need no MinGW DLLs).
+          - { arch: x86_64, runner: windows-2025, msystem: UCRT64, msys_packages: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-nasm, ffmpeg_flags: --extra-ldflags=-static }
+          - { arch: aarch64, runner: windows-11-arm, msystem: CLANGARM64, msys_packages: mingw-w64-clang-aarch64-clang, ffmpeg_flags: --cc=clang --extra-ldflags=-static }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
@@ -140,9 +182,37 @@ jobs:
           & (Join-Path $bin "wix.exe") extension add -acceptEula wix7 -g WixToolset.UI.wixext/7.0.1 WixToolset.BootstrapperApplications.wixext/7.0.1
           if ($LASTEXITCODE -ne 0) { throw "wix extension add failed: $LASTEXITCODE" }
           Add-Content -Path $env:GITHUB_PATH -Value $bin
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          path-type: inherit
+          update: false
+          install: make diffutils tar xz curl ${{ matrix.msys_packages }}
+      - name: LGPL ffmpeg.exe and ffprobe.exe (scripts/build-ffmpeg.sh in MSYS2)
+        shell: msys2 {0}
+        env:
+          FFMPEG_CROSS: ${{ matrix.ffmpeg_flags }}
+        run: |
+          out="$(cygpath -u "$RUNNER_TEMP")/ffmpeg"
+          scripts/build-ffmpeg.sh "$out"
+          echo "BRAGI_FFMPEG_DIR=$(cygpath -w "$out")" >> "$GITHUB_ENV"
       - name: exe, zip, msi and setup.exe
         shell: pwsh
         run: ./scripts/dist-windows.ps1
+      - name: The zip bundles ffmpeg
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & (Join-Path $env:BRAGI_FFMPEG_DIR "bin\ffmpeg.exe") -hide_banner -version
+          if ($LASTEXITCODE -ne 0) { throw "the bundled ffmpeg.exe does not start" }
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = (Get-ChildItem dist\bragi-*-pc-windows-msvc.zip | Select-Object -First 1).FullName
+          $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+          $names = $archive.Entries.FullName
+          $archive.Dispose()
+          foreach ($f in "ffmpeg.exe", "ffprobe.exe", "FFMPEG-SOURCE.txt") {
+            if (-not ($names | Where-Object { $_ -match "(^|[/\\])$([regex]::Escape($f))$" })) { throw "$f is not in $zip" }
+          }
       - name: Install the MSI per user, start, uninstall
         shell: pwsh
         run: |
@@ -154,6 +224,8 @@ jobs:
           if (!(Test-Path $exe)) { throw "bragi.exe not installed at $exe" }
           $tui = Join-Path $env:LOCALAPPDATA "Programs\Bragi\bragi-tui.exe"
           if (!(Test-Path $tui)) { throw "bragi-tui.exe not installed at $tui" }
+          $ff = Join-Path $env:LOCALAPPDATA "Programs\Bragi\ffmpeg.exe"
+          if (!(Test-Path $ff)) { throw "ffmpeg.exe not installed at $ff" }
           & $tui --version
           if ($LASTEXITCODE -ne 0) { throw "bragi-tui --version failed" }
           $p = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn" -Wait -PassThru
