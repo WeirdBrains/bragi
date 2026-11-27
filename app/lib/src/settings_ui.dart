@@ -345,8 +345,9 @@ class _EndpointDialogState extends State<_EndpointDialog> {
       if (r != null &&
           r.ok &&
           _model.text.trim().isEmpty &&
-          r.models.isNotEmpty)
+          r.models.isNotEmpty) {
         _model.text = r.models.first;
+      }
     });
   }
 

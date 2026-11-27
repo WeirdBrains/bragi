@@ -137,8 +137,9 @@ class BragiController extends ChangeNotifier {
       final wasLinked = linked;
       state = s;
       // History from another device arrives with a state wake-up.
-      if (linked && (!wasLinked || (!streaming && !_refreshing)))
+      if (linked && (!wasLinked || (!streaming && !_refreshing))) {
         unawaited(_refresh());
+      }
       notifyListeners();
     });
     await _refresh();
@@ -205,8 +206,9 @@ class BragiController extends ChangeNotifier {
               x.kind == t.kind &&
               x.endpoint == t.endpoint &&
               x.model == t.model,
-        ))
+        )) {
       newChatTarget = null;
+    }
   }
 
   /// The open conversation's session (its folder and target), if it has one listed.
@@ -423,8 +425,9 @@ class BragiController extends ChangeNotifier {
   Future<void> send(String prompt) async {
     if (streaming) return;
     // Words are needed unless an image or a sound is attached.
-    if (prompt.trim().isEmpty && !attachments.any((a) => a.kind != 'text'))
+    if (prompt.trim().isEmpty && !attachments.any((a) => a.kind != 'text')) {
       return;
+    }
     final files = attachments;
     attachments = const [];
     await _try(() async {
