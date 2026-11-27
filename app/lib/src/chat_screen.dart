@@ -385,12 +385,14 @@ class _ChatScreenState extends State<ChatScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                             const SizedBox(width: 6),
-                            Text(
-                              'Reading frames of ${c.videoReading}…',
-                              key: const Key('video-reading'),
-                              style: const TextStyle(fontSize: 12),
+                            Expanded(
+                              child: Text(
+                                'Reading frames of ${c.videoReading}…',
+                                key: const Key('video-reading'),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
-                            const Spacer(),
                           ] else
                             Flexible(
                               child: ActionChip(
@@ -1028,6 +1030,11 @@ class _VideoCard extends StatelessWidget {
                   key: Key('vplay-$file'),
                   tooltip: playing ? 'Pause' : 'Play',
                   visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
                   onPressed: () => controller.playVideo(file, info),
                   icon: Icon(
                     mine && c.loading
@@ -1060,18 +1067,42 @@ class _VideoCard extends StatelessWidget {
                     key: Key('vmute-$file'),
                     tooltip: c.muted ? 'Unmute' : 'Mute',
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     onPressed: controller.toggleVideoMute,
                     icon: Icon(c.muted ? Icons.volume_off : Icons.volume_up),
                   ),
-              ] else
+                if (info.clipHere)
+                  IconButton(
+                    key: Key('vopen-$file'),
+                    tooltip: 'Open in system player',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    onPressed: () => controller.openVideoExternally(info),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                  ),
+              ] else ...[
                 const Spacer(),
-              if (info.clipHere)
-                TextButton.icon(
-                  key: Key('vopen-$file'),
-                  onPressed: () => controller.openVideoExternally(info),
-                  icon: const Icon(Icons.open_in_new, size: 16),
-                  label: const Text('System player'),
-                ),
+                if (info.clipHere)
+                  Flexible(
+                    child: TextButton.icon(
+                      key: Key('vopen-$file'),
+                      onPressed: () => controller.openVideoExternally(info),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text(
+                        'Open in system player',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
             ],
           ),
           if (info.frames.isNotEmpty) ...[

@@ -41,7 +41,9 @@ void main() {
       expect(frames.map((f) => f.atMs), [1000, 2000]);
       expect(frames.first.mime, 'image/jpeg');
       expect(frames.first.bytes.take(2), [0xFF, 0xD8], reason: 'a JPEG');
-      expect(d.asked.single, ([1000, 2000], 768, 432));
+      final (askedTimes, askedW, askedH) = d.asked.single;
+      expect((askedTimes, askedW, askedH), (askedTimes, 768, 432));
+      expect(askedTimes, [1000, 2000]);
     });
 
     test('the scripted player moves, ends, and fails on request', () async {
@@ -134,7 +136,8 @@ void main() {
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(milliseconds: 50)),
           );
-          await tester.pump();
+          // The scripted player's timer runs on the test's clock.
+          await tester.pump(const Duration(milliseconds: 50));
         }
         fail('timed out waiting for $what');
       }
@@ -247,12 +250,17 @@ void main() {
       expect(c.video, isNull);
 
       // A failure mid-clip does too.
-      c.videoFallbacks.clear();
+      // (Play again from the controller: the card offers only the system player now.)
+      await tester.runAsync(() => c.playVideo(file, info));
       await tester.pump();
-      await tester.tap(find.byKey(Key('vplay-$file')));
-      await until('playing again', () => c.video?.playing == true);
+      expect(c.video?.playing, isTrue);
+      expect(shown('vfallback-$file'), isFalse);
       player.fail('decoder stopped');
-      await until('the fallback', () => shown('vfallback-$file'));
+      await until(
+        'the fallback',
+        () => c.videoFallbacks[file]?.$2 == 'decoder stopped',
+      );
+      await tester.pump();
       expect(find.textContaining('decoder stopped'), findsOneWidget);
 
       // A clip from another device: the frames, and why it can't play.
@@ -274,9 +282,9 @@ void main() {
       expect(opened, hasLength(1));
 
       // Leaving the chat stops the clip.
-      c.videoFallbacks.clear();
-      await tester.tap(find.byKey(Key('vplay-$file')));
-      await until('playing once more', () => c.video?.playing == true);
+      await tester.runAsync(() => c.playVideo(file, info));
+      await tester.pump();
+      expect(c.video?.playing, isTrue);
       c.newChat();
       await tester.pump();
       expect(c.video, isNull);

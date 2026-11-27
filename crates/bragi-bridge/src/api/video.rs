@@ -151,8 +151,17 @@ pub async fn attach_video_frames(
         .handle()
         .spawn(async move {
             let path = path.map(PathBuf::from);
-            c.attach_video_frames(target.as_ref(), &model, &name, path.as_deref(), probe_of(probe), frames, &VideoPrefs::default(), reserved(&history))
-                .await
+            c.attach_video_frames(
+                target.as_ref(),
+                &model,
+                &name,
+                path.as_deref(),
+                probe_of(probe),
+                frames,
+                &VideoPrefs::default(),
+                reserved(&history),
+            )
+            .await
         })
         .await
         .map_err(|e| e.to_string())?
