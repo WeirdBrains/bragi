@@ -19,6 +19,7 @@ mod text_input;
 mod theme;
 #[cfg(feature = "gui")]
 mod video;
+#[cfg(feature = "gui")]
 mod view;
 
 use std::process::ExitCode;
