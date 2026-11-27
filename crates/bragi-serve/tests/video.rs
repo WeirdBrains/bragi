@@ -130,6 +130,26 @@ async fn a_clip_on_disk_goes_with_a_code_chat_sized_by_the_limits_and_override()
         other => panic!("not a video: {other:?}"),
     }
 
+    // Native video (V4): the model reads video, and with its video limits (the user's, since the
+    // demo pool reports none) the clip goes whole; the event and the chip say so.
+    assert!(core.pool_model_reads_video(&model), "{model}");
+    let (s, b) =
+        call(&app, "/v1/video/limits/set", json!({ "model": model, "limits": "image_tokens=256 max_images=6 video_seconds=60 video_bytes=100000" }))
+            .await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    assert!(json_of(&b)["chip"].as_str().unwrap().contains("whole clips up to 60 s"), "{b}");
+    let (s, b) = call(&app, "/v1/code/chat", json!({ "prompt": "what happens?", "video": { "path": clip } })).await;
+    assert_eq!(s, StatusCode::OK, "{b}");
+    let evs = events(&b);
+    let v = &evs[1];
+    assert_eq!((v["whole"].as_bool(), v["send_as"].as_str()), (Some(true), Some("whole clip (36 bytes)")), "{v}");
+    assert_eq!(v["bubble"], "video  clip.mp4  0:42  whole clip (36 bytes)");
+    let c = core.conversation(evs[0]["id"].as_str().unwrap()).unwrap();
+    let answer = c.messages.iter().rev().find(|m| m.role == bragi_core::Role::Assistant).unwrap();
+    assert!(answer.text.starts_with("I can see the whole clip (video/mp4, 36 bytes)."), "{}", answer.text);
+    let (s, _) = call(&app, "/v1/video/limits/set", json!({ "model": model, "limits": "image_tokens=256 max_images=6" })).await;
+    assert_eq!(s, StatusCode::OK);
+
     // Refusals: a relative path, a missing file, a range that runs backwards.
     for (video, want) in [
         (json!({ "path": "clip.mp4" }), "absolute"),

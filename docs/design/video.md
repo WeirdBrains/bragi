@@ -32,7 +32,10 @@ preferences are in `video-prefs.json`): a clip up to 25 MiB is copied into its m
 base64), syncs with it and goes when it is deleted; a linked device without the original writes the copy, checked against its hash,
 into `<data dir>/clips/<hash>.<ext>` and plays that (desktop, terminal app, and the Flutter card through `clip`/`clip_here`). Not yet:
 sound from phone clips, scene detection on phones and transcription (done since: the Flutter switch for stored clips, pruning
-`<data dir>/clips`, and the macOS universal and Windows ffmpeg built and shipped by CI). None of it blocks v1. Ymir's side (the
+`<data dir>/clips`, and the macOS universal and Windows ffmpeg built and shipped by CI). **V4, native video** (branch
+`feature/native-video-v4`, 2026-11-27, weirdnet-agent 0.5.10): a clip goes whole as one `video_url` part to a model that reads video,
+when it fits every limit the model reports; otherwise, and whenever the server turns it down, the frames go as before (see "Native
+video (V4): what was built" below). None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
 
@@ -281,8 +284,48 @@ Wired into the Release workflow on 2026-11-27 (`.github/workflows/release.yml`):
 1. **V1**: `FrameSource` with `FfmpegCli`, the sampling plan, `Media::Video` grouping, attach in `bragi-core` and `bragi-mcp` (`video` input, `video_probe`, `video_frames`), settings. No player yet; the chat shows the frame strip.
 2. **V2** (built 2026-11-26): GPUI desktop inline player with the system-player fallback, and its attach UI; TUI bubble, picker and open-externally; the VS Code attach and webview player.
 3. **V3** (built 2026-11-26, not yet run on a device): Flutter (Android and iOS) player and platform decoders.
-4. **V4**: native video when Ymir's capability flag exists (Ymir doc, phase 2): the sampler becomes the fallback.
+4. **V4** (built 2026-11-27, against the demo node and a mock bridge; no real video model run yet): native video with weirdnet-agent 0.5.10's `video_url` part, `inputs.video` and video limits; the sampler is the fallback.
 5. Packaging for each platform is part of V1 (bundled ffmpeg builds), not an afterthought.
+
+### Native video (V4): what was built
+
+- **Capability and limits.** catalog/1 `inputs.video` (weirdnet-agent 0.5.10) becomes `ModelInfo::video` (any node's copy); an
+  endpoint's `/v1/models` says it as `weirdnet.video` (beside `vision` and `audio`) or `weirdnet.inputs.video`
+  (`openai::parse_model_video`). The video limits come in `MediaLimits` (`video_max_seconds`, `video_max_bytes`,
+  `video_frames_per_minute`) from catalog/1 `limits` or `/v1/models` `weirdnet.limits`, and the per-model override takes them
+  (`video_seconds`, `video_bytes`, `video_frames_per_minute`; it fills gaps and only tightens, as for the others). The chip says
+  `whole clips up to 60 s and 20.0 MiB`, or that the model reads video but its video limits aren't reported (then frames).
+- **When a clip goes whole** (`video::whole_clip`, decided at attach in `Core::finish_video_attach` / `decide_video_whole`): the
+  model reads video; the clip is kept on this device (`keep_original`) and not trimmed to a range; its length is within
+  `video_max_seconds`; its size within `video_max_bytes`; and as a `data:video/...;base64,` URL it fits the request limit: an
+  endpoint's own `max_request_bytes`, or through the pool the link's message limit (weirdnet-agent `codec::MAX_FRAME`, 32 MiB) or the
+  pool's smaller `max_request_bytes`. **Any missing limit means frames**; nothing is guessed. The frames are still sampled, for the
+  player, later turns and the fallback, and the attachment remembers the decision (`Sampled::whole`: MIME type, size, the request
+  limit it was checked against). The chip before sending says `clip.mp4 (video, whole clip (12.5 MiB))` or `(video, 6 frames)`
+  (`Attachment::label`, the bubble, the bridge's `AttachmentView.text` for the Flutter chip, `whole`/`send_as` on `bragi serve`'s
+  `video` event for VS Code).
+- **Sending** (`Core::whole_video`): only the newest message's clip goes whole, read when it is sent from the original or the copy
+  stored with the message, as `Video "clip.mp4", 00:42, sent whole.` and one `video_url` part (`attach::content_whole`; the
+  soundtrack is in the clip). Earlier turns carry their frames, never the clip again. When the clip is gone or changed, or the whole
+  request (history included, measured as JSON) is over the limit, the frames go and a `Retry` event says why first.
+- **Fallback.** Through the pool, a refusal before any text that says send frames (`catalog::VIDEO_FALLBACK`), that the model
+  doesn't take video, or that the message is over the link's limit is retried once with the frames (`Core::run`); an endpoint's 400
+  with the hint or 413 likewise (`answer_from_endpoints`, then any later endpoint gets the frames too); pool fallback endpoints always
+  get the frames. The user sees `The model didn't take the whole clip (...); sending 6 frames instead`, and the saved message drops
+  `whole` so its bubble says frames.
+- **Shells.** All go through the core: the desktop and terminal app attach with `Core::attach_video_file`; `bragi-mcp` (`bragi_chat`
+  `video`) and `bragi serve` (VS Code) call `finish_video_attach` / `decide_video_whole` after sampling with their clip openers; the
+  Flutter app's phone path (`attach_video_frames`) and desktop path (`attach_video_file`) decide in the core, and the chip shows the
+  bridge's label.
+- **Tests.** `video.rs` (gating on each limit, a missing limit naming itself, the data-URL size, MIME types, the override keys, the
+  chip, which refusals fall back, labels and old messages), `attach.rs` (`content_whole`), `openai.rs` (the listing's flag and
+  limits), `tests/native_video.rs` (the demo node, whose `gemma-4-e4b` now reads video, and the mock bridge with `video-*` models:
+  whole through the pool and an endpoint, frames for each missing or exceeded limit, a trimmed range, a model without video, a clip
+  that is gone or changed, the node's frames hint, an endpoint's 400 and 413), `bragi-mcp` and `bragi-serve` video tests, the bridge's
+  chip label.
+- **Not yet.** No real video model has been run (a Ymir node needs weirdnet-agent 0.5.10 and an engine that takes video, Ymir
+  milestones 3 and 4); weirdnet-openai 0.2.4's `/v1/models` doesn't say `weirdnet.video` yet, so a Ymir bridge's endpoint sends frames
+  until it does. Clips over the request limit wait for content roots (LF-12).
 
 ### Open questions
 

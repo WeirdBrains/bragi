@@ -129,6 +129,34 @@ async fn probe_frames_and_chat_with_a_clip() {
     assert_eq!(r["isError"], true, "{r}");
 }
 
+/// Native video (V4): `bragi_chat` with `video` sends the clip whole to a model that reads video
+/// when it fits the limits (here the user's), and the frames otherwise.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn chat_sends_the_whole_clip_to_a_model_that_reads_video() {
+    let (_tmp, _node, core, root) = setup().await;
+    let rpc = Arc::new(bragi_mcp::server(tools(&core, &root)));
+    let model = bragi_core::demo::WARM_MODEL;
+    assert!(core.pool_model_reads_video(model));
+    let base = MediaLimits::new().with_image_tokens(256).with_max_images(6);
+    core.set_video_override(model, ModelLimits::new(None, base.with_video_max_seconds(60).with_video_max_bytes(100_000))).unwrap();
+    let r = call(&rpc, "bragi_chat", json!({"prompt": "what happens?", "video": "clip.mp4", "model": model})).await;
+    assert_eq!(r["isError"], false, "{r}");
+    let session = r["structuredContent"]["session"].as_str().unwrap().to_string();
+    let c = core.conversation(&session).unwrap();
+    let answer = c.messages.iter().rev().find(|m| m.role == bragi_core::Role::Assistant).unwrap();
+    assert!(answer.text.starts_with("I can see the whole clip (video/mp4, 36 bytes)."), "{}", answer.text);
+    let user = c.messages.iter().find(|m| m.role == bragi_core::Role::User).unwrap();
+    assert_eq!(user.attachments[0].label(), "clip.mp4 (video, whole clip (36 bytes))");
+
+    // Over the model's length (the fake clip is 42 s): the frames.
+    core.set_video_override(model, ModelLimits::new(None, base.with_video_max_seconds(30).with_video_max_bytes(100_000))).unwrap();
+    let r = call(&rpc, "bragi_chat", json!({"prompt": "what happens?", "video": "clip.mp4", "model": model})).await;
+    let session = r["structuredContent"]["session"].as_str().unwrap().to_string();
+    let c = core.conversation(&session).unwrap();
+    let answer = c.messages.iter().rev().find(|m| m.role == bragi_core::Role::Assistant).unwrap();
+    assert!(answer.text.starts_with("I can see 6 image(s)"), "{}", answer.text);
+}
+
 /// The frames through a real MCP client over an in-memory stdio pipe.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_mcp_client_reads_frames_as_images_with_their_times() {

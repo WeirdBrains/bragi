@@ -958,11 +958,14 @@ impl Core {
         let messages = agent_messages(&c.messages);
         self.inner.history.save(&c)?;
         // The partial answer is the last message: `continuing` moves it into the prefix.
-        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown, shown_reasoning, None))
+        Ok(self.run(net, c.id, Request::messages(messages).with_model(model).continuing(), shown, shown_reasoning, None, Default::default()))
     }
 
     /// Streams `req` into the last message of `conversation`. `shown` and `shown_reasoning` are
     /// what that message already holds (a continued answer); the new text and reasoning follow them.
+    /// `video`: when `req` carries a whole clip, the frames to send instead if the pool turns it
+    /// down (Native video V4), and a note to show first.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn run(
         &self,
         net: Arc<Net>,
@@ -971,6 +974,7 @@ impl Core {
         shown: String,
         shown_reasoning: String,
         fallback: Option<Vec<Message>>,
+        video: crate::video_core::VideoSend,
     ) -> ChatHandle {
         let request_id = random_id("r");
         let cancel = CancelToken::new();
@@ -979,7 +983,25 @@ impl Core {
         let (core, rid, conv) = (self.clone(), request_id.clone(), conversation.clone());
         self.inner.handle.spawn(async move {
             let order = |model: &str| core.nodes_for(model);
-            let (result, streamed) = stream(&net, &order, req, &out, &cancel, &shown, shown_reasoning.chars().count() as u64).await;
+            if let Some(note) = &video.note {
+                let _ = out.send(ChatEvent::Retry { attempt: 0, message: note.clone() });
+            }
+            let wanted = req.model.clone();
+            let (mut result, mut streamed) = stream(&net, &order, req, &out, &cancel, &shown, shown_reasoning.chars().count() as u64).await;
+            // A whole clip the pool turned down (no node's copy reads video, or it is too large):
+            // the frames go instead, once, and the message says so.
+            if let (Err(i), Some(frames)) = (&result, &video.frames) {
+                let e = CoreError::from(&i.error);
+                if !i.streamed() && streamed.text.is_empty() && crate::video::whole_refused(&e) {
+                    let _ = out.send(ChatEvent::Retry { attempt: 1, message: video.retry_message(&e) });
+                    core.sent_as_frames(&conv);
+                    let mut again = Request::messages(frames.clone());
+                    if let Some(m) = wanted {
+                        again = again.with_model(m);
+                    }
+                    (result, streamed) = stream(&net, &order, again, &out, &cancel, &shown, shown_reasoning.chars().count() as u64).await;
+                }
+            }
             // The pool couldn't start the answer: an enabled fallback endpoint takes over.
             if let (Err(i), Some(messages)) = (&result, fallback) {
                 let e = CoreError::from(&i.error);
@@ -989,7 +1011,7 @@ impl Core {
                         attempt: 1,
                         message: format!("The pool couldn't answer ({}); trying a fallback endpoint", e.message),
                     });
-                    core.answer_from_endpoints(&conv, &rid, fallbacks, None, messages, &cancel, &out, shown).await;
+                    core.answer_from_endpoints(&conv, &rid, fallbacks, None, messages, &cancel, &out, shown, Default::default()).await;
                     return;
                 }
             }

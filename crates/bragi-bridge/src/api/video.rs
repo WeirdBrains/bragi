@@ -197,11 +197,9 @@ pub async fn attach_video_file(
         .spawn(async move {
             let plan = c.video_plan(target.as_ref(), &model).await?;
             let c2 = c.clone();
-            tokio::task::spawn_blocking(move || {
-                c2.attach_video_with(Path::new(&path), &model, &plan.limits, plan.audio_ok, &c2.video_prefs(), reserved(&history))
-            })
-            .await
-            .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, format!("reading the clip stopped: {e}")))?
+            tokio::task::spawn_blocking(move || c2.attach_video_file(Path::new(&path), &model, &plan, &c2.video_prefs(), reserved(&history)))
+                .await
+                .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, format!("reading the clip stopped: {e}")))?
         })
         .await
         .map_err(|e| e.to_string())?
@@ -306,9 +304,18 @@ mod tests {
             audio: None,
             clip: Some(PathBuf::from("/nowhere/clip.mp4")),
             stored: None,
+            whole: None,
         };
         let v = video_info("clip.mp4".into(), s.to_json()).unwrap();
         assert_eq!(v.bubble, "video  clip.mp4  0:42  1 frame  no sound sent");
+        // The chip before sending says how the clip goes (Native video V4).
+        let a = bragi_core::Attachment::from_video("clip.mp4", s.clone());
+        assert_eq!(crate::api::bragi::attachment_view(&a, false).text, "1 frame");
+        let whole =
+            Sampled { whole: Some(bragi_core::video::Whole { mime: "video/mp4".into(), bytes: 2048, max_request_bytes: 1 << 20 }), ..s.clone() };
+        let a = bragi_core::Attachment::from_video("clip.mp4", whole.clone());
+        assert_eq!(crate::api::bragi::attachment_view(&a, true).text, "whole clip (2 KiB)");
+        assert_eq!(video_info("clip.mp4".into(), whole.to_json()).unwrap().bubble, "video  clip.mp4  0:42  whole clip (2 KiB)");
         assert_eq!(v.frames[0].label, "[00:07.5]");
         assert_eq!(v.clip.as_deref(), Some("/nowhere/clip.mp4"));
         assert!(!v.clip_here, "not on this device");

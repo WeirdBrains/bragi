@@ -32,7 +32,7 @@ Weirdnet crates: `weirdnet-sync`, `weirdnet-push`, `weirdnet-model`.
 
 ## B5 Breadth (In progress)
 
-Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. The BSD desktop window does not build yet, so on BSD it is the terminal app only.
+Text, image and audio attachments and agent mode (tool calls with approval cards) are built on both shells. Video clips are sampled into frames sized from the model's limits and played in every shell; a model that reads video gets the whole clip when it fits its reported limits (weirdnet-agent 0.5.10), else the frames. The BSD desktop window does not build yet, so on BSD it is the terminal app only.
 
 Weirdnet crates: `weirdnet-agent`.
 

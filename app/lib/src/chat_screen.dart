@@ -1518,10 +1518,12 @@ class _History extends StatelessWidget {
   }
 }
 
-/// A chip or bubble line for an attachment: a text file by its length, an image or sound by its kind.
+/// A chip or bubble line for an attachment: a text file by its length, an image or sound by its kind,
+/// a clip with how it goes (`whole clip (12.5 MiB)` or `6 frames`, from the core).
 String _attachmentLabel(AttachmentView a) => switch (a.kind) {
   'image' => '${a.name} (image)',
   'audio' => '${a.name} (audio)',
+  'video' when a.text.isNotEmpty => '${a.name} (video, ${a.text})',
   'video' => '${a.name} (video)',
   _ => '${a.name} (${a.text.trimRight().split('\n').length} lines)',
 };

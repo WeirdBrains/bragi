@@ -496,7 +496,12 @@ pub(crate) fn attachment_view(a: &Attachment, with_data: bool) -> AttachmentView
         Some(Media::Audio { format, data }) => ("audio", format.clone(), data.clone()),
         Some(Media::Video(v)) => ("video", String::new(), v.to_json()),
     };
-    AttachmentView { name: a.name.clone(), text: a.text.clone(), kind: kind.into(), mime, data: if with_data { data } else { String::new() } }
+    // A clip's `text` says how it goes (`whole clip (12.5 MiB)` or `6 frames`) for the chip.
+    let text = match &a.media {
+        Some(Media::Video(v)) => v.send_label(),
+        _ => a.text.clone(),
+    };
+    AttachmentView { name: a.name.clone(), text, kind: kind.into(), mime, data: if with_data { data } else { String::new() } }
 }
 
 fn attachments(v: Vec<AttachmentView>) -> Result<Vec<Attachment>, String> {

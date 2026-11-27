@@ -6,6 +6,14 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Native video (V4): a clip goes whole, as one `video_url` part, to a model that reads video (catalog/1 `inputs.video` from weirdnet-agent 0.5.10, or an endpoint's `/v1/models` `weirdnet.video`) when it fits every limit the model reports: `video_max_seconds`, `video_max_bytes` and the request size (an endpoint's `max_request_bytes`, or the pool's link limit). A missing limit, a trimmed range, a clip not kept on the device or a model without video sends the frames as before, and so does a server that turns the clip down (the frames hint, a 413), once, saying so. The attach chip and the bubble say "whole clip (12.5 MiB)" or "6 frames" in every shell; the limits chip says how long and large a whole clip may be; the per-model override takes `video_seconds`, `video_bytes` and `video_frames_per_minute`. Later turns send the earlier clip's frames, never the clip again.
+
+### Changed
+
+- weirdnet-agent 0.5.10 (the `video_url` part, `inputs.video` and the video limits). An endpoint's HTTP 413 now says the request is too large.
+
 ## [0.17.0] - 2026-11-27
 
 ### Added

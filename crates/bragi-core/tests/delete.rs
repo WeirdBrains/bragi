@@ -147,6 +147,7 @@ async fn a_deleted_message_takes_its_clip_copy_with_it() {
             audio: None,
             clip: None,
             stored: StoredClip::read(&p).unwrap(),
+            whole: None,
         };
         bragi_core::Attachment::from_video(name, s)
     };

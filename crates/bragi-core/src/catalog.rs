@@ -38,6 +38,10 @@ pub struct ModelInfo {
     /// Whether some node's copy of it reads audio.
     #[serde(default)]
     pub audio: bool,
+    /// Whether some node's copy of it reads video itself (catalog/1 `inputs.video`, weirdnet-agent
+    /// 0.5.10): a clip that fits its limits may go whole (Native video V4).
+    #[serde(default)]
+    pub video: bool,
     /// For a Ymir rollout (training plan P4b): its pinnable versions (`support@2`, `support@3`),
     /// folded under the name so the picker shows one row. Asking for the name lets the pool pick
     /// a version per conversation; a version id pins it.
@@ -116,6 +120,7 @@ fn info(m: &CatalogModel) -> ModelInfo {
         standin: None,
         vision: m.inputs.vision,
         audio: m.inputs.audio,
+        video: m.inputs.video,
         versions: Vec::new(),
         origin: m.origin.clone(),
         license: m.license.clone(),
@@ -177,6 +182,7 @@ impl CatalogView {
                         i.limits = i.limits.tightest(m.limits);
                         i.vision |= m.inputs.vision;
                         i.audio |= m.inputs.audio;
+                        i.video |= m.inputs.video;
                         if i.standin.is_none() {
                             i.standin = m.standin.clone();
                         }

@@ -104,6 +104,7 @@ async fn status_error(resp: reqwest::Response) -> CoreError {
     let (kind, head) = match code.as_u16() {
         401 | 403 => (ErrorKind::Refused, "the endpoint refused the API key".to_string()),
         404 => (ErrorKind::BadRequest, "the endpoint has no such address or model (404)".to_string()),
+        413 => (ErrorKind::BadRequest, "the request is too large for the endpoint (413)".to_string()),
         429 => (ErrorKind::Busy, "the endpoint is rate limiting you (429)".to_string()),
         400..=499 => (ErrorKind::BadRequest, format!("the endpoint rejected the request ({})", code.as_u16())),
         _ => (ErrorKind::Unavailable, format!("the endpoint failed ({})", code.as_u16())),
@@ -149,15 +150,33 @@ pub fn parse_model_limits(json: &serde_json::Value, model: &str) -> crate::video
     crate::video::ModelLimits::new(context, media)
 }
 
+/// Whether `model` in a `/v1/models` listing (`json`) reads video itself: `weirdnet.video` (beside
+/// `weirdnet.vision` and `weirdnet.audio`, as a Ymir bridge says them) or `weirdnet.inputs.video`
+/// (catalog/1's shape). Anything else, including other servers, is no: clips go as frames.
+pub fn parse_model_video(json: &serde_json::Value, model: &str) -> bool {
+    json.get("data")
+        .and_then(|d| d.as_array())
+        .and_then(|d| d.iter().find(|m| m.get("id").and_then(|i| i.as_str()) == Some(model)))
+        .and_then(|m| m.get("weirdnet"))
+        .is_some_and(|w| {
+            w.get("video").and_then(|v| v.as_bool()).unwrap_or(false) || w.pointer("/inputs/video").and_then(|v| v.as_bool()).unwrap_or(false)
+        })
+}
+
 /// `GET {base}/models` and [`parse_model_limits`] for `model`.
 pub async fn model_limits(t: &Target, model: &str) -> Result<crate::video::ModelLimits> {
+    Ok(model_media(t, model).await?.0)
+}
+
+/// `GET {base}/models`: [`parse_model_limits`] and [`parse_model_video`] for `model`.
+pub async fn model_media(t: &Target, model: &str) -> Result<(crate::video::ModelLimits, bool)> {
     let resp = authed(client(Some(LIST_TIMEOUT))?.get(format!("{}/models", t.base_url)), t).send().await.map_err(transport)?;
     if !resp.status().is_success() {
         return Err(status_error(resp).await);
     }
     let v: serde_json::Value =
         resp.json().await.map_err(|_| CoreError::new(ErrorKind::BadRequest, "that address answered, but not like an OpenAI-compatible API"))?;
-    Ok(parse_model_limits(&v, model))
+    Ok((parse_model_limits(&v, model), parse_model_video(&v, model)))
 }
 
 /// Lists the models and says how long it took; never an error, the report carries it.
@@ -419,6 +438,25 @@ mod tests {
         assert_eq!(g.media.max_request_bytes, Some(1_048_576), "the smaller of the model's and the bridge's");
         assert!(parse_model_limits(&v, "plain").is_unknown(), "a server that says nothing gets nothing invented");
         assert!(parse_model_limits(&v, "missing").is_unknown());
+    }
+
+    #[test]
+    fn video_capability_and_limits_come_from_the_listing() {
+        let v = serde_json::json!({"object": "list", "data": [
+            {"id": "qwen-vl", "weirdnet": {"vision": true, "video": true, "context": 32768, "max_request_bytes": 4194304,
+                "limits": {"image_tokens": 256, "video_max_seconds": 60, "video_max_bytes": 20971520, "video_frames_per_minute": 120}}},
+            {"id": "catalog-shape", "weirdnet": {"inputs": {"vision": true, "video": true}}},
+            {"id": "gemma", "weirdnet": {"vision": true, "audio": true, "video": false}},
+            {"id": "plain", "object": "model"}
+        ]});
+        assert!(parse_model_video(&v, "qwen-vl") && parse_model_video(&v, "catalog-shape"));
+        assert!(!parse_model_video(&v, "gemma") && !parse_model_video(&v, "plain") && !parse_model_video(&v, "missing"));
+        let q = parse_model_limits(&v, "qwen-vl").media;
+        assert_eq!((q.video_max_seconds, q.video_max_bytes, q.video_frames_per_minute), (Some(60), Some(20_971_520), Some(120)));
+        assert_eq!(q.video_frame_rate(), Some(2.0));
+        assert_eq!(q.max_request_bytes, Some(4_194_304));
+        let c = parse_model_limits(&v, "catalog-shape").media;
+        assert_eq!((c.video_max_seconds, c.video_max_bytes), (None, None), "not reported, not invented");
     }
 
     #[test]

@@ -86,6 +86,8 @@ impl NodeSpec {
 #[derive(Default)]
 pub struct Faults {
     refuse: AtomicU32,
+    /// Requests with a whole clip refused with weirdnet-agent's frames hint (Native video V4).
+    refuse_video: AtomicU32,
     die_after: Mutex<Option<usize>>,
     /// (model, prompt) pairs answered before: the pool's exact-match answer cache.
     seen: Mutex<HashSet<(String, String)>>,
@@ -95,6 +97,17 @@ impl Faults {
     /// The next `n` requests are refused before any text (as if the node were gone).
     pub fn refuse_next(&self, n: u32) {
         self.refuse.store(n, Ordering::SeqCst);
+    }
+
+    /// The next `n` requests that carry a whole clip are refused before any text with the
+    /// frames hint ([`weirdnet_agent::remote::catalog::VIDEO_FALLBACK`]), as a node whose engine
+    /// can't take the clip would.
+    pub fn refuse_video_next(&self, n: u32) {
+        self.refuse_video.store(n, Ordering::SeqCst);
+    }
+
+    fn take_video_refusal(&self) -> bool {
+        self.refuse_video.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1)).is_ok()
     }
 
     /// The next answer's node dies after `words` words; another node must finish it.
@@ -289,6 +302,8 @@ struct FakeBackend {
 trait Parts {
     /// How many images and how many sounds the request's messages carry.
     fn messages_parts(&self) -> (usize, usize);
+    /// The whole clips (`video_url` parts) it carries: MIME type and decoded size.
+    fn videos(&self) -> Vec<(String, u64)>;
 }
 
 impl Parts for Request {
@@ -297,6 +312,20 @@ impl Parts for Request {
         let images = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::ImageUrl { .. })).count();
         let sounds = parts.iter().filter(|p| matches!(p, weirdnet_agent::ContentPart::InputAudio { .. })).count();
         (images, sounds)
+    }
+
+    fn videos(&self) -> Vec<(String, u64)> {
+        self.inline_messages()
+            .unwrap_or_default()
+            .iter()
+            .flat_map(|m| m.content.parts())
+            .filter_map(|p| match p {
+                weirdnet_agent::ContentPart::VideoUrl { video_url } => {
+                    Some((video_url.mime_type().unwrap_or_default().to_string(), video_url.data_len().unwrap_or(0)))
+                }
+                _ => None,
+            })
+            .collect()
     }
 }
 
@@ -322,6 +351,16 @@ impl InferBackend for FakeBackend {
         let seen = request.messages_parts();
         if seen.0 + seen.1 > 0 {
             text = format!("I can see {} image(s) and {} sound(s). {text}", seen.0, seen.1);
+        }
+        // A whole clip (Native video V4): WARM_MODEL reads video, like Qwen-VL class models.
+        let videos = request.videos();
+        if let Some((mime, bytes)) = videos.first() {
+            if self.faults.take_video_refusal() {
+                return Err(RemoteError::BadRequest {
+                    message: format!("`{}` can't take this clip; {}", self.model, weirdnet_agent::remote::catalog::VIDEO_FALLBACK),
+                });
+            }
+            text = format!("I can see the whole clip ({mime}, {bytes} bytes). {text}");
         }
         let reasoning = reasoning_for(&prompt);
         let inline = prompt.starts_with(THINK_INLINE_PROMPT);
@@ -572,7 +611,7 @@ impl DemoNode {
             .map(|(id, state)| {
                 let warm = *state == ModelState::Warm;
                 let m = CatalogModel::new(id.clone(), Purpose::Chat, *state).with_context(32768);
-                let m = if id == WARM_MODEL { m.with_inputs(weirdnet_agent::Modalities::new(true, true)) } else { m };
+                let m = if id == WARM_MODEL { m.with_inputs(weirdnet_agent::Modalities::new(true, true).with_video(true)) } else { m };
                 if warm { m.with_replicas(1).with_speed(if id == BIG_MODEL { 22.0 } else { 48.0 }) } else { m.with_speed(14.0) }
             })
             .collect();

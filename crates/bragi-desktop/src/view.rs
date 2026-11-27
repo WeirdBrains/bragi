@@ -924,16 +924,12 @@ impl BragiView {
         let core = self.core.clone();
         let job = self.core.handle().spawn(async move {
             let plan = core.video_plan(target.as_ref(), &model).await?;
-            let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             let prefs = core.video_prefs();
             let core2 = core.clone();
             let model2 = model.clone();
-            let a = tokio::task::spawn_blocking(move || {
-                let source = core2.video_source(&path)?;
-                core2.attach_video_source(&name, &source, &model2, &plan, &prefs, reserved)
-            })
-            .await
-            .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))??;
+            let a = tokio::task::spawn_blocking(move || core2.attach_video_file(&path, &model2, &plan, &prefs, reserved))
+                .await
+                .map_err(|e| bragi_core::CoreError::new(bragi_core::ErrorKind::Other, e.to_string()))??;
             let view = core.video_limits_view(target.as_ref(), &model).await.ok();
             Ok::<_, bragi_core::CoreError>((a, view))
         });
