@@ -8,7 +8,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -88,8 +87,9 @@ class PlatformVideoDecoder implements VideoDecoder {
     final m = await _channel.invokeMapMethod<Object?, Object?>('probe', {
       'path': path,
     });
-    if (m == null)
+    if (m == null) {
       throw const FormatException("the clip can't be read as a video");
+    }
     return VideoFacts.fromMap(m);
   }
 
@@ -160,8 +160,9 @@ abstract class VideoClipBackend {
   /// The player for this build: the platform's on Android and iOS, the scripted one in the demo
   /// build, none elsewhere (the clip opens in the system player).
   static VideoClipBackend? create() {
-    if (const bool.fromEnvironment('BRAGI_DEMO'))
+    if (const bool.fromEnvironment('BRAGI_DEMO')) {
       return ScriptedVideoClipBackend();
+    }
     if (Platform.isAndroid || Platform.isIOS) return PlatformVideoClipBackend();
     return null;
   }

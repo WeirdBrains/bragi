@@ -8,6 +8,7 @@
 
 import 'api/bragi.dart';
 import 'api/code.dart';
+import 'api/video.dart';
 
 import 'dart:async';
 import 'dart:convert';
@@ -70,6 +71,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   EndpointForm dco_decode_box_autoadd_endpoint_form(dynamic raw);
 
   @protected
+  double dco_decode_box_autoadd_f_32(dynamic raw);
+
+  @protected
   double dco_decode_box_autoadd_f_64(dynamic raw);
 
   @protected
@@ -109,6 +113,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UploadedResultView dco_decode_box_autoadd_uploaded_result_view(dynamic raw);
 
   @protected
+  VideoInfoView dco_decode_box_autoadd_video_info_view(dynamic raw);
+
+  @protected
+  VideoProbeView dco_decode_box_autoadd_video_probe_view(dynamic raw);
+
+  @protected
   ChatEventView dco_decode_chat_event_view(dynamic raw);
 
   @protected
@@ -146,6 +156,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   EntryView dco_decode_entry_view(dynamic raw);
+
+  @protected
+  double dco_decode_f_32(dynamic raw);
 
   @protected
   double dco_decode_f_64(dynamic raw);
@@ -244,6 +257,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint32List dco_decode_list_prim_u_32_strict(dynamic raw);
 
   @protected
+  Uint64List dco_decode_list_prim_u_64_strict(dynamic raw);
+
+  @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
 
   @protected
@@ -295,6 +311,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<UploadCopyView> dco_decode_list_upload_copy_view(dynamic raw);
 
   @protected
+  List<VideoFrameIn> dco_decode_list_video_frame_in(dynamic raw);
+
+  @protected
+  List<VideoFrameView> dco_decode_list_video_frame_view(dynamic raw);
+
+  @protected
   List<WakeableView> dco_decode_list_wakeable_view(dynamic raw);
 
   @protected
@@ -334,6 +356,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ContextView? dco_decode_opt_box_autoadd_context_view(dynamic raw);
 
   @protected
+  double? dco_decode_opt_box_autoadd_f_32(dynamic raw);
+
+  @protected
   double? dco_decode_opt_box_autoadd_f_64(dynamic raw);
 
   @protected
@@ -370,6 +395,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UploadedResultView? dco_decode_opt_box_autoadd_uploaded_result_view(
     dynamic raw,
   );
+
+  @protected
+  VideoInfoView? dco_decode_opt_box_autoadd_video_info_view(dynamic raw);
 
   @protected
   PairView dco_decode_pair_view(dynamic raw);
@@ -471,6 +499,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   UploadedResultView dco_decode_uploaded_result_view(dynamic raw);
 
   @protected
+  VideoFrameIn dco_decode_video_frame_in(dynamic raw);
+
+  @protected
+  VideoFramePlanView dco_decode_video_frame_plan_view(dynamic raw);
+
+  @protected
+  VideoFrameView dco_decode_video_frame_view(dynamic raw);
+
+  @protected
+  VideoInfoView dco_decode_video_info_view(dynamic raw);
+
+  @protected
+  VideoLimitsView dco_decode_video_limits_view(dynamic raw);
+
+  @protected
+  VideoProbeView dco_decode_video_probe_view(dynamic raw);
+
+  @protected
   WakeView dco_decode_wake_view(dynamic raw);
 
   @protected
@@ -526,6 +572,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  double sse_decode_box_autoadd_f_32(SseDeserializer deserializer);
+
+  @protected
   double sse_decode_box_autoadd_f_64(SseDeserializer deserializer);
 
   @protected
@@ -573,6 +622,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VideoInfoView sse_decode_box_autoadd_video_info_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VideoProbeView sse_decode_box_autoadd_video_probe_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   ChatEventView sse_decode_chat_event_view(SseDeserializer deserializer);
 
   @protected
@@ -610,6 +669,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   EntryView sse_decode_entry_view(SseDeserializer deserializer);
+
+  @protected
+  double sse_decode_f_32(SseDeserializer deserializer);
 
   @protected
   double sse_decode_f_64(SseDeserializer deserializer);
@@ -728,6 +790,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint32List sse_decode_list_prim_u_32_strict(SseDeserializer deserializer);
 
   @protected
+  Uint64List sse_decode_list_prim_u_64_strict(SseDeserializer deserializer);
+
+  @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
 
   @protected
@@ -797,6 +862,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<VideoFrameIn> sse_decode_list_video_frame_in(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  List<VideoFrameView> sse_decode_list_video_frame_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<WakeableView> sse_decode_list_wakeable_view(
     SseDeserializer deserializer,
   );
@@ -838,6 +913,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ContextView? sse_decode_opt_box_autoadd_context_view(
     SseDeserializer deserializer,
   );
+
+  @protected
+  double? sse_decode_opt_box_autoadd_f_32(SseDeserializer deserializer);
 
   @protected
   double? sse_decode_opt_box_autoadd_f_64(SseDeserializer deserializer);
@@ -884,6 +962,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   UploadedResultView? sse_decode_opt_box_autoadd_uploaded_result_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VideoInfoView? sse_decode_opt_box_autoadd_video_info_view(
     SseDeserializer deserializer,
   );
 
@@ -997,6 +1080,26 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  VideoFrameIn sse_decode_video_frame_in(SseDeserializer deserializer);
+
+  @protected
+  VideoFramePlanView sse_decode_video_frame_plan_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  VideoFrameView sse_decode_video_frame_view(SseDeserializer deserializer);
+
+  @protected
+  VideoInfoView sse_decode_video_info_view(SseDeserializer deserializer);
+
+  @protected
+  VideoLimitsView sse_decode_video_limits_view(SseDeserializer deserializer);
+
+  @protected
+  VideoProbeView sse_decode_video_probe_view(SseDeserializer deserializer);
+
+  @protected
   WakeView sse_decode_wake_view(SseDeserializer deserializer);
 
   @protected
@@ -1066,6 +1169,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_f_32(double self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_f_64(double self, SseSerializer serializer);
 
   @protected
@@ -1132,6 +1238,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_video_info_view(
+    VideoInfoView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_video_probe_view(
+    VideoProbeView self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_chat_event_view(ChatEventView self, SseSerializer serializer);
 
   @protected
@@ -1178,6 +1296,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_entry_view(EntryView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_f_32(double self, SseSerializer serializer);
 
   @protected
   void sse_encode_f_64(double self, SseSerializer serializer);
@@ -1327,6 +1448,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_prim_u_64_strict(
+    Uint64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
 
   @protected
@@ -1420,6 +1547,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_video_frame_in(
+    List<VideoFrameIn> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_video_frame_view(
+    List<VideoFrameView> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_wakeable_view(
     List<WakeableView> self,
     SseSerializer serializer,
@@ -1475,6 +1614,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     ContextView? self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_opt_box_autoadd_f_32(double? self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_box_autoadd_f_64(double? self, SseSerializer serializer);
@@ -1533,6 +1675,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_uploaded_result_view(
     UploadedResultView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_video_info_view(
+    VideoInfoView? self,
     SseSerializer serializer,
   );
 
@@ -1668,6 +1816,36 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_uploaded_result_view(
     UploadedResultView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_video_frame_in(VideoFrameIn self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_video_frame_plan_view(
+    VideoFramePlanView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_video_frame_view(
+    VideoFrameView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_video_info_view(VideoInfoView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_video_limits_view(
+    VideoLimitsView self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_video_probe_view(
+    VideoProbeView self,
     SseSerializer serializer,
   );
 
