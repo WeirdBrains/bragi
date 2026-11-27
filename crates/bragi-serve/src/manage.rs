@@ -6,7 +6,7 @@
 use axum::extract::{Path, RawQuery, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use bragi_core::{EndpointInput, EndpointMode, KeyChange, Target};
 use serde::Deserialize;
