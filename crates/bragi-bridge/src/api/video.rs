@@ -121,10 +121,10 @@ pub fn video_store_clip() -> bool {
 
 /// Turns copying clips into their messages on or off for this device; returns the new value.
 #[frb(sync)]
-pub fn set_video_store_clip(on: bool) -> Result<bool, String> {
+pub fn set_video_store_clip(enabled: bool) -> Result<bool, String> {
     let c = core()?;
     let mut prefs = c.video_prefs();
-    prefs.store_clip = on;
+    prefs.store_clip = enabled;
     c.set_video_prefs(&prefs).map_err(err)?;
     Ok(c.video_prefs().store_clip)
 }

@@ -486,7 +486,7 @@ abstract class RustLibApi extends BaseApi {
     TargetView? target,
   });
 
-  bool crateApiVideoSetVideoStoreClip({required bool on_});
+  bool crateApiVideoSetVideoStoreClip({required bool enabled});
 
   WakeView crateApiBragiSetWakeSettings({
     required bool push,
@@ -4131,12 +4131,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
-  bool crateApiVideoSetVideoStoreClip({required bool on_}) {
+  bool crateApiVideoSetVideoStoreClip({required bool enabled}) {
     return handler.executeSync(
       SyncTask(
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_bool(on_, serializer);
+          sse_encode_bool(enabled, serializer);
           return pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -4148,14 +4148,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_String,
         ),
         constMeta: kCrateApiVideoSetVideoStoreClipConstMeta,
-        argValues: [on_],
+        argValues: [enabled],
         apiImpl: this,
       ),
     );
   }
 
   TaskConstMeta get kCrateApiVideoSetVideoStoreClipConstMeta =>
-      const TaskConstMeta(debugName: "set_video_store_clip", argNames: ["on_"]);
+      const TaskConstMeta(
+        debugName: "set_video_store_clip",
+        argNames: ["enabled"],
+      );
 
   @override
   WakeView crateApiBragiSetWakeSettings({
