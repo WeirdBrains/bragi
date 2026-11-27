@@ -2,6 +2,27 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 11:45 EST: the on-device engine in the Android and iOS apps (merged `feature/on-device-mobile`)
+
+The rest of the B4 "Next" item: the engine in the phone release builds. It goes out with the next release.
+
+**CI:** `workflow_dispatch` Release runs on the branch. [46028517480](https://github.com/WeirdBrains/bragi/actions/runs/46028517480) passed every job, with the new checks on the apks and the ipa. The run before it (46023911358) was green but for macOS's runner-path check (GPUI's metallib, see the macOS/Windows entry).
+
+**What:**
+- [app/hook/build.dart](app/hook/build.dart): the Native Assets hook builds the bridge with `on-device` for Android and iOS (other targets don't, so a desktop `flutter run` skips llama.cpp; the `on_device` user-define in `pubspec.yaml` overrides it for any target). The hook runs cargo with a trimmed environment (no `RUSTFLAGS`, `CFLAGS` or `ANDROID_NDK`), so it passes what the build needs itself: build paths remapped (`--config target.<triple>.rustflags` with `--remap-path-prefix`, and `CFLAGS_<triple>`/`CXXFLAGS_<triple>` with `-ffile-prefix-map`), and on Android `ANDROID_NDK` (Flutter's own NDK, from the C compiler it hands the hook) and `ANDROID_API_LEVEL` (Flutter's minimum), since llama-cpp-sys-2 would otherwise build with the newest NDK under the SDK and API 28. New direct dependency `code_assets` (already in the lock as a transitive one). The remap is new for the phone bridges in general: the RUSTFLAGS in `dist-android.sh`/`dist-ios.sh` never reached the hook, so v0.16.1's `libbragi_bridge.so` had `/home/runner/.cargo/registry/...` paths; those lines are gone from the scripts.
+- [crates/bragi-core/Cargo.toml](crates/bragi-core/Cargo.toml): on Android, `on-device` also turns on `llama-cpp-2`'s `android-static-stdcxx` (an optional target dependency at weirdnet-model's version), so llama.cpp links the static libc++: a Flutter apk ships no `libc++_shared.so`, and without this the bridge needed it and would not load. iOS uses llama.cpp's Metal backend (the clang runtime link from the macOS/Windows entry covers `@available` there too).
+- [.github/workflows/release.yml](.github/workflows/release.yml): Android checks every apk's bridge has the engine, doesn't need `libc++_shared.so` and has no runner path; iOS checks the ipa's bridge has the engine, links Metal and has no runner path.
+- [packaging/fdroid/org.weirdbrains.bragi.yml](packaging/fdroid/org.weirdbrains.bragi.yml): a note that builds after 0.16.1 need `cmake` (llama.cpp) in `sudo`.
+- Docs: [CHANGELOG.md](CHANGELOG.md), [docs/RELEASES.md](docs/RELEASES.md), [roadmap.toml](roadmap.toml) B4 ([ROADMAP.md](ROADMAP.md), site regenerated), [docs/design/video.md](docs/design/video.md) (stale "Not yet" items done since: CI-built ffmpeg, the Flutter stored-clips switch, clip pruning).
+
+**Checks (alien-blue):**
+- `cargo build -p bragi-bridge --target aarch64-linux-android --features on-device` with NDK 28.2 (Flutter's) and API 24: llama.cpp builds; without the static libc++ the library NEEDED `libc++_shared.so`, with it only `liblog`, `libdl`, `libm`, `libc`.
+- `flutter build apk --release --split-per-abi --target-platform android-x64 --dart-define=BRAGI_DEMO=true` through the hook: the bridge has the engine, no `libc++_shared.so`, and the leak scan finds nothing in it (paths are `/cargo/...`, `/build/bragi/...`). The only hit in the apk was `libapp.so` (Dart's AOT snapshot keeps this machine's source paths for a local build; CI builds have the runner's).
+- That apk on a throwaway headless emulator (`scripts/android-scenario.sh`, its own AVD under the scratch dir, Android 37 x86_64): the bridge loads, and pairing, the model list, an answer, stop and the stopped state passed; step 8 (Continue, a fixed `sleep 6`) saw 1 complete answer instead of 2 while alien-blue's load average was about 60. Not rerun.
+- Rust and Flutter: as in the macOS/Windows entry, plus `flutter analyze` (no issues). `flutter test --dart-define=BRAGI_DEMO=true`: every test passed but `settings_test.dart`, the known timing flake (it fails at a different line each run, 1 or 2 of 3 runs alone; it passed once in 3 here). A `settle()` that waits for the controller to be quiet didn't fix it (failures at lines 237, 267, 398, 430: taps and finds, not only state), so it was reverted; the flake needs a closer look.
+
+**Left:** the engine not run with real weights on a phone; the settings_test flake.
+
 ## 2026-11-27 11:30 EST: the on-device engine in the macOS (Metal) and Windows release builds (merged `feature/on-device-macos-windows`)
 
 Michael (11-27): "Go on through the Bragi features". The first of the B4 "Next" items: the engine in the macOS and Windows release builds. It goes out with the next release.

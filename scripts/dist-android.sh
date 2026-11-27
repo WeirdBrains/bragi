@@ -7,11 +7,13 @@
 # bragi-VER-android-ABI.apk and bragi-VER-android.aab. Without them Flutter signs with the debug key:
 # the apks are named bragi-VER-android-ABI-debug-signed.apk (sideload only, they will not update an
 # install signed by another key) and no aab is made (Play refuses debug-signed bundles).
+#
+# The Rust bridge is built by app/hook/build.dart with the on-device model's engine (llama.cpp, with the
+# static libc++ and Flutter's own NDK) and with build paths remapped; the hook runs cargo with a trimmed
+# environment, so RUSTFLAGS or CFLAGS set here would not reach it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-root=$(pwd)
 ver=$(sed -n 's/^version: *\([0-9][^+ ]*\).*/\1/p' app/pubspec.yaml)
-export RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$root=/build/bragi --remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo --remap-path-prefix=$HOME=/home/user"
 props=app/android/key.properties
 cleanup() { if [ -n "${made_props:-}" ]; then rm -f "$props"; fi; }
 trap cleanup EXIT
