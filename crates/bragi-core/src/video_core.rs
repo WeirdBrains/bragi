@@ -10,7 +10,9 @@ use crate::attach::Attachment;
 use crate::core::Core;
 use crate::error::Result;
 use crate::sessions::Target;
-use crate::video::{Ffmpeg, FfmpegCli, Frame, FramePlan, FrameSource, LimitOverrides, LimitsView, ModelLimits, Probe, ProvidedSource, VideoPrefs};
+use crate::video::{
+    Ffmpeg, FfmpegCli, Frame, FramePlan, FrameSource, LimitOverrides, LimitsView, ModelLimits, Probe, ProvidedSource, VideoPrefs, phone_prefs,
+};
 
 /// This device's per-model video limits, beside the other device settings.
 const OVERRIDES_FILE: &str = "video-limits.json";
@@ -175,7 +177,8 @@ impl Core {
     ) -> Result<Attachment> {
         let plan = self.video_plan(target, model).await?;
         let source = ProvidedSource { probe, frames };
-        let mut a = self.attach_video_source(name, &source, model, &VideoPlan { limits: plan.limits, audio_ok: false }, prefs, reserved)?;
+        let phone = phone_prefs(prefs);
+        let mut a = self.attach_video_source(name, &source, model, &VideoPlan { limits: plan.limits, audio_ok: false }, &phone, reserved)?;
         if let Some(p) = path {
             keep_clip(&mut a, prefs, p);
         }

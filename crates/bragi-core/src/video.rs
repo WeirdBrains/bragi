@@ -717,8 +717,15 @@ pub struct FramePlan {
 
 /// The [`FramePlan`] for the clip `name` with `probe`, for `model` (refusals as in [`sample`]).
 pub fn plan(name: &str, probe: &Probe, model: &str, limits: &ModelLimits, prefs: &VideoPrefs, reserved: u32) -> Result<FramePlan> {
-    let (_, _, budget, times_ms) = planned(name, probe, model, limits, prefs, reserved, false, || Ok(Vec::new()))?;
+    let prefs = phone_prefs(prefs);
+    let (_, _, budget, times_ms) = planned(name, probe, model, limits, &prefs, reserved, false, || Ok(Vec::new()))?;
     Ok(FramePlan { times_ms, width: budget.width, height: budget.height, frame_tokens: budget.frame_tokens })
+}
+
+/// The settings a phone samples with: uniform spacing, since phones have no scene detector
+/// (the plan and the sampling of its frames must agree).
+pub fn phone_prefs(prefs: &VideoPrefs) -> VideoPrefs {
+    VideoPrefs { mode: Mode::Uniform, ..prefs.clone() }
 }
 
 /// Frames a platform decoder already made for a [`FramePlan`] (phones), as a [`FrameSource`]:
