@@ -4,6 +4,9 @@
 # terminal app: `bragi` runs it, `bragi desktop` opens the window; bragi-tui is a symlink to bragi) in .tar.gz.
 # The app is ad-hoc signed (codesign -s -), not Developer ID signed or notarized: Gatekeeper asks
 # the first time (right-click, Open). Build paths are remapped out of the binary.
+# With BRAGI_FFMPEG_DIR (universal ffmpeg and ffprobe from scripts/build-ffmpeg.sh, built per arch with
+# FFMPEG_CROSS and joined with lipo), they go in Bragi.app/Contents/Helpers, signed with the app, and
+# beside bragi in the tarball; Bragi finds them there before PATH.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$(pwd)
@@ -29,6 +32,15 @@ exec "$(dirname "$0")/bragi" desktop "$@"
 LAUNCH
 chmod 755 "$app/Contents/MacOS/bragi-app"
 cp brand/png/macos/bragi.icns "$app/Contents/Resources/bragi.icns"
+cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/"
+ffdir="${BRAGI_FFMPEG_DIR:-}"
+if [[ -n "$ffdir" ]]; then
+  mkdir -p "$app/Contents/Helpers" "$app/Contents/Resources/ffmpeg"
+  cp "$ffdir/bin/ffmpeg" "$ffdir/bin/ffprobe" "$app/Contents/Helpers/"
+  cp "$ffdir/LICENSE.md" "$ffdir/CONFIG.txt" "$ffdir/SOURCE.txt" "$app/Contents/Resources/ffmpeg/"
+  # Helpers are signed first, like the binary: an unsigned helper breaks notarisation.
+  codesign --force --sign - --timestamp=none "$app/Contents/Helpers/ffmpeg" "$app/Contents/Helpers/ffprobe"
+fi
 sed "s/@VERSION@/$ver/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist"
 # The binary first: it is not the bundle's main executable (bragi-app is), so signing the app alone leaves it unsigned.
@@ -43,6 +55,10 @@ hdiutil create -volname "Bragi $ver" -srcfolder "$stage/app" -ov -format UDZO "d
 mkdir -p "$stage/tar/$name"
 cp "$stage/bragi" "$stage/tar/$name/bragi"
 ln -s bragi "$stage/tar/$name/bragi-tui"
-cp LICENSE README.md "$stage/tar/$name/"
+cp LICENSE README.md THIRD_PARTY_NOTICES.md "$stage/tar/$name/"
+if [[ -n "$ffdir" ]]; then
+  cp "$ffdir/bin/ffmpeg" "$ffdir/bin/ffprobe" "$stage/tar/$name/"
+  mkdir -p "$stage/tar/$name/ffmpeg" && cp "$ffdir/LICENSE.md" "$ffdir/CONFIG.txt" "$ffdir/SOURCE.txt" "$stage/tar/$name/ffmpeg/"
+fi
 tar -C "$stage/tar" -czf "dist/$name.tar.gz" "$name"
 ls -l dist/

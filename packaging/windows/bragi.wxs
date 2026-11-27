@@ -1,6 +1,6 @@
 <!-- Bragi's per-user Windows installer (WiX Toolset 7): bragi.exe in %LOCALAPPDATA%\Programs\Bragi,
      a Start menu shortcut, upgrades in place, no admin rights needed. Built by scripts/dist-windows.ps1
-     (wix build -acceptEula wix7 ... -d Source=DIR -d ProductVersion=X.Y.Z -d LicenseRtf=FILE). -->
+     (wix build -acceptEula wix7 ... -d Source=DIR -d ProductVersion=X.Y.Z -d LicenseRtf=FILE -d Ffmpeg=0|1). -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="Bragi" Manufacturer="Weird Brains LLC" Version="$(var.ProductVersion)"
            UpgradeCode="a9cfacdc-099f-4bfa-88db-ff4b997e9e6b" Scope="perUser" Compressed="yes">
@@ -33,6 +33,21 @@
             <File Id="BragiLicenseFile" Source="$(var.Source)\LICENSE.txt" />
             <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="License" Type="integer" Value="1" KeyPath="yes" />
           </Component>
+          <Component Id="BragiNotices" Guid="0b6f2d4e-8a51-4c7e-9d3b-2e7f1a6c5d94">
+            <File Id="BragiNoticesFile" Source="$(var.Source)\THIRD_PARTY_NOTICES.md" />
+            <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Notices" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+          <?if $(var.Ffmpeg) = 1 ?>
+          <!-- The LGPL ffmpeg and ffprobe from scripts/build-ffmpeg.sh, beside bragi.exe, with their notices. -->
+          <Component Id="BragiFfmpeg" Guid="6d3a9c1f-2b8e-4f57-a0c4-9e1d7b3f5a28">
+            <File Id="FfmpegExe" Source="$(var.Source)\ffmpeg.exe" />
+            <File Id="FfprobeExe" Source="$(var.Source)\ffprobe.exe" />
+            <File Id="FfmpegLicense" Source="$(var.Source)\FFMPEG-LICENSE.md" />
+            <File Id="FfmpegConfig" Source="$(var.Source)\FFMPEG-CONFIG.txt" />
+            <File Id="FfmpegSource" Source="$(var.Source)\FFMPEG-SOURCE.txt" />
+            <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Ffmpeg" Type="integer" Value="1" KeyPath="yes" />
+          </Component>
+          <?endif?>
           <Component Id="BragiIconFile" Guid="4629b1b3-c281-4086-aac6-4ee67c4ae11a">
             <File Id="BragiIcoFile" Source="$(var.Source)\bragi.ico" />
             <RegistryValue Root="HKCU" Key="Software\Weird Brains\Bragi" Name="Icon" Type="integer" Value="1" KeyPath="yes" />
@@ -54,6 +69,10 @@
       <ComponentRef Id="BragiTuiExe" />
       <ComponentRef Id="BragiLicense" />
       <ComponentRef Id="BragiIconFile" />
+      <ComponentRef Id="BragiNotices" />
+      <?if $(var.Ffmpeg) = 1 ?>
+      <ComponentRef Id="BragiFfmpeg" />
+      <?endif?>
       <ComponentRef Id="BragiShortcut" />
     </Feature>
   </Package>

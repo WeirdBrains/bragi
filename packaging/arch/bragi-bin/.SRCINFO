@@ -18,6 +18,7 @@ pkgbase = bragi-bin
 	depends = glibc
 	depends = gcc-libs
 	optdepends = vulkan-driver: GPU rendering (mesa or the vendor driver)
+	optdepends = ffmpeg: attach and play videos
 	provides = bragi
 	provides = bragi-tui
 	conflicts = bragi

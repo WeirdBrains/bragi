@@ -55,8 +55,9 @@ class _ChatScreenState extends State<ChatScreen> {
   /// Up and Down on a hardware keyboard walk the prompts sent before (the chat's, or the open
   /// project's), as in the terminal app; only while the box holds one line.
   KeyEventResult _historyKey(FocusNode _, KeyEvent e) {
-    if (e is! KeyDownEvent || _prompt.text.contains('\n'))
+    if (e is! KeyDownEvent || _prompt.text.contains('\n')) {
       return KeyEventResult.ignored;
+    }
     final code = widget.controller.code;
     final String? next;
     if (e.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -203,8 +204,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_stick && _scroll.hasClients)
+      if (_stick && _scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
     });
     final wide = MediaQuery.sizeOf(context).width >= 1024;
     final showSidebar = wide && !c.sidebarCollapsed;

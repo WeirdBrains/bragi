@@ -2,6 +2,47 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 22:29 EST: video follow-ups, LGPL ffmpeg recipe and packaging, desktop fullscreen, opt-in stored clips (merged `feature/video-followups`, LF-43)
+
+The open follow-ups of [docs/design/video.md](docs/design/video.md).
+
+- **Bundled LGPL ffmpeg** ([scripts/build-ffmpeg.sh](scripts/build-ffmpeg.sh), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)):
+  - FFmpeg 9.0.2, a pinned tarball and sha256. The sha256 was pinned after checking the release signature against the FFmpeg key FCF9 86EA … D676 58D8, using a throwaway GNUPGHOME.
+  - `--disable-gpl --disable-nonfree --disable-everything`, then only what Bragi runs: 7 demuxers, 21 decoders, parsers and BSFs; the encoders `mjpeg,pcm_s16le,wrapped_avframe` (`-f null` scene detection needs the last); the muxers `image2pipe,wav,null`; 13 filters; and the protocols `file,pipe`, no network.
+  - Reproducible flags: `SOURCE_DATE_EPOCH` and `-ffile-prefix-map`.
+  - Output: `bin/ffmpeg`, `bin/ffprobe`, `LICENSE.md`, `CONFIG.txt` and `SOURCE.txt`. `--print-config` prints the configure line, which is in the notices verbatim.
+  - Built end to end on alien-blue, about 6.3 MiB per binary. Every ffmpeg command Bragi runs worked on mp4/H.264+AAC, webm/VP9+Opus and avi/MPEG-4+MP3: probe, a frame, scene detection, the soundtrack and the player's MJPEG stream. No binary is committed.
+- **Packaging**:
+  - `dist-linux.sh` bundles a build into the desktop and terminal tarballs when `BRAGI_FFMPEG_DIR` or `dist/ffmpeg/<host>` has one.
+  - The nfpm deb and rpm packages `Recommends` the distro's ffmpeg (`ffmpeg`; `(ffmpeg or ffmpeg-free)`). `bragi-bin` has an `optdepends` entry (`.SRCINFO` regenerated). Nix wraps with `ffmpeg-headless` after `PATH`.
+  - `dist-macos.sh` puts it in `Contents/Helpers`, signed ad hoc before the app, and `Ffmpeg::locate` now looks there (`locate_from`, tested).
+  - `dist-windows.ps1` and `bragi.wxs` (`-d Ffmpeg=0|1`, component `BragiFfmpeg`) put it beside `bragi.exe`.
+  - `THIRD_PARTY_NOTICES.md` ships in every package.
+  - The PowerShell, WiX and macOS paths were not run, because alien-blue is Linux with no pwsh. Bash scripts pass `bash -n` (there is no shellcheck here), the YAML parses, and the WiX XML parses.
+- **Desktop fullscreen** ([video.rs](crates/bragi-desktop/src/video.rs), [view.rs](crates/bragi-desktop/src/view.rs)):
+  - A **⛶ Fullscreen** button lays the picture and the shared controls over the window, and the window goes fullscreen if it wasn't.
+  - Escape (the `Stop` action and the composer's Cancel) or **Exit fullscreen (Esc)** comes back. The window leaves fullscreen only if the player put it there. A fallback or a chat switch leaves fullscreen.
+  - Not tried in a live window, because no GUI was opened on alien-blue.
+- **Opt-in stored clips** ([video.rs](crates/bragi-core/src/video.rs) `StoredClip`, [video_core.rs](crates/bragi-core/src/video_core.rs), [video_play.rs](crates/bragi-core/src/video_play.rs)):
+  - `VideoPrefs.store_clip` is off by default and works only with `keep_original`. It is saved per device in `video-prefs.json` (`Core::video_prefs`/`set_video_prefs`). Every shell now attaches with these prefs instead of the defaults.
+  - A clip of up to 25 MiB (`MAX_STORED_CLIP_BYTES`) is copied into `Sampled.stored` (ext, BLAKE3, size, base64). It rides in the message record, which weirdnet-sync chunks, and is deleted with it. It is never in the model's content (tested).
+  - `Core::playable_clip` plays the original, else writes the copy to `<dir>/clips/<hash>.<ext>` once, after checking the extension, hash and size. Records from other devices are untrusted (tested: path escapes, a bad hash, bad base64).
+  - The switch is Settings → Video → **Play clips on all my devices** in the desktop, and `/store-clips [on|off]` in the terminal app. The Flutter card gets the written copy through `clip`/`clip_here`. There is no Flutter switch yet; that needs a bridge API and frb codegen.
+- **weirdnet-model 0.5.3 → 0.5.4**: Bragi already uses it for B7 (Hub search, artifact inspection, demo models), with `default-features = false` and no `llama`. 0.5.4 is additive (Transcribe purpose, Voxtral Mini 3B, `ModelLimits`, `LlamaEngine::limits`), and nothing in Bragi changed. Its `llama` feature is the engine the B4 on-device model would use.
+- **Flutter**: the 6 `curly_braces_in_flow_control_structures` infos in `chat_screen.dart`, `controller.dart` and `settings_ui.dart` were already on main and made `flutter analyze` exit non-zero, so they are fixed (braces only).
+- **Checks** (alien-blue, scratch clone, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf43-vfollow`, under `flock`/`nice`/`ionice`, `-j 6`):
+  - `cargo fmt --all --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 373 passed, 0 failed, 5 ignored in 46 suites (8 new).
+  - `flutter analyze`: no issues.
+  - `flutter test --dart-define=BRAGI_DEMO=true` with `BRAGI_BRIDGE_LIB` set to this build: 18 passed.
+- **Left**:
+  - CI building and attaching the ffmpeg bundles (a universal macOS build with lipo, Windows through MSYS2) and real signing and notarisation.
+  - A Flutter switch for stored clips.
+  - Pruning `<dir>/clips`.
+  - Phone decoders still not run on a device.
+  - Ymir's `docs/DESIGN.md` Bragi status is stale. Its B4 status says push "Bragi side built" and on-device model "not built"; the stored clips and video work aren't mentioned.
+
 ## 2026-11-26 21:44 EST: extension parity done, chat files, images and sound, reactions, delete, history, folders and link codes in VS Code (merged `feature/ext-parity-chat`, LF-40)
 
 The last open slice of [docs/design/extension-parity.md](docs/design/extension-parity.md), which now has nothing left open. It is on top of the MCP slice (merge 2298a51, entry below).

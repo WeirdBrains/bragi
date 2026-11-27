@@ -207,7 +207,50 @@ impl BragiView {
         )
     }
 
-    /// Settings: pools, endpoints, Weirdnet links, wake-ups and history.
+    /// Video: whether attached clips are copied into their message so linked devices can play them.
+    fn video_section(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let t = self.theme;
+        let on = self.core.video_prefs().store_clip;
+        let mib = bragi_core::video::MAX_STORED_CLIP_BYTES >> 20;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(8.))
+            .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("VIDEO"))
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(12.))
+                    .p(px(12.))
+                    .rounded(px(8.))
+                    .bg(rgb(t.surface))
+                    .child(
+                        div().flex_1().flex().flex_col().child(div().text_size(px(14.)).child("Play clips on all my devices")).child(
+                            div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(format!(
+                                "Copies each clip you attach (up to {mib} MiB) into its message, so your linked devices can play it. It syncs and is deleted with the message. Larger clips play only here."
+                            )),
+                        ),
+                    )
+                    .child(
+                        self.button("video-store-clip", if on { "On" } else { "Off" }, on)
+                            .on_click(cx.listener(|v, _, _, cx| v.toggle_store_clip(cx))),
+                    ),
+            )
+    }
+
+    /// Turns copying clips into their messages on or off for this device.
+    pub(super) fn toggle_store_clip(&mut self, cx: &mut Context<Self>) {
+        let mut prefs = self.core.video_prefs();
+        prefs.store_clip = !prefs.store_clip;
+        if let Err(e) = self.core.set_video_prefs(&prefs) {
+            self.notice = Some(e.message);
+        }
+        cx.notify();
+    }
+
+    /// Settings: pools, endpoints, Weirdnet links, wake-ups, video and history.
     pub(super) fn settings(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.theme;
         div()
@@ -223,6 +266,7 @@ impl BragiView {
             .child(self.endpoints_section(cx))
             .child(self.links_section(cx))
             .child(self.wake_section(cx))
+            .child(self.video_section(cx))
             .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("HISTORY"))
             .child(
                 div()

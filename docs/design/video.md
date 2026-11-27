@@ -21,8 +21,18 @@ Flutter app attaches a clip (gallery or files) with a limits chip and sheet; on 
 a Flutter build on a computer reads clips with ffmpeg through the core. The chat card plays the clip inline with `video_player` (one
 clip at a time with the audio files; Play/Pause, seek, elapsed / total, Mute, the frames strip plays from there) and otherwise says why
 (not on this device, no player in this build, the platform can't play it) and offers the system player (`url_launcher`). The native
-decoders are written but not yet built or run on a device. Not yet: sound from phone clips, scene detection on phones, transcription,
-packaging ffmpeg. None of it blocks v1. Ymir's side (the
+decoders are written but not yet built or run on a device. Video follow-ups (branch `feature/video-followups`, 2026-11-26): the LGPL
+ffmpeg recipe `scripts/build-ffmpeg.sh` (FFmpeg 9.0.2, pinned tarball and sha256, `--disable-gpl --disable-nonfree`, only the demuxers,
+decoders, parsers, filters and the MJPEG/WAV encoders Bragi runs; about 6 MiB each for ffmpeg and ffprobe), its notice and exact
+configure line in `THIRD_PARTY_NOTICES.md`, and the packaging wiring below (`Ffmpeg::locate` also looks in `Contents/Helpers` of the
+macOS app); the desktop player's **Fullscreen** (the picture and controls fill the window, the window goes fullscreen if it wasn't and
+comes back only if the player put it there; Escape or Exit fullscreen returns to the card; a fallback leaves fullscreen); and opt-in
+**stored clips** (`video.store_clip`, Settings → Video in the desktop, `/store-clips on|off` in the terminal app; this device's
+preferences are in `video-prefs.json`): a clip up to 25 MiB is copied into its message (`Sampled.stored`: extension, BLAKE3, size,
+base64), syncs with it and goes when it is deleted; a linked device without the original writes the copy, checked against its hash,
+into `<data dir>/clips/<hash>.<ext>` and plays that (desktop, terminal app, and the Flutter card through `clip`/`clip_here`). Not yet:
+sound from phone clips, scene detection on phones, transcription, a Flutter switch for stored clips (phones keep the path only), a
+macOS universal and Windows ffmpeg built and shipped by CI, and pruning `<data dir>/clips`. None of it blocks v1. Ymir's side (the
 server and node half, and the native-video phase) is in [`ymir/docs/design/video.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/design/video.md).
 Written for Weird Brains LLC by m3talsmith's agents.
 
@@ -170,13 +180,14 @@ Per attach (a sheet on the attach chip) with preferences in settings and in the 
 | `video.range` | whole clip | start and end, set per attach |
 | `video.limits.<model>` | none | the explicit override for a model with no reported metadata |
 | `video.keep_original` | `true` | keep the clip file with the message for playback, else keep only the frames |
+| `video.store_clip` | `false` | with `keep_original`, also copy a clip of up to 25 MiB into the message so linked devices can play it |
 
 ### Limits
 
 - Clip: at most 500 MiB read from disk and at most 10 minutes, refused with a message that says what to do (trim it). The limit is on what we *read*, not on what we send.
 - What travels is bounded by frames and audio, not by the clip: the frames and soundtrack the plan produces are sized to fit the request limit Ymir reports (`max_request_bytes`) as well as the model's limits. If the total would still exceed it, drop frames evenly, then shorten the audio, in that order. The 5 MiB image and 10 MiB audio limits still apply to each part.
 - `MAX_PER_MESSAGE` counts a video as **one** attachment, and phase 1 takes one video per message (the budget is per request, and two clips would split it).
-- Stored with the message: frames and transcript always (they are what the model saw); the original clip only if `keep_original` is on (needed for the player), under a size cap, stored in the same attachment store the audio clips use, and deleted with the message.
+- Stored with the message: frames and transcript always (they are what the model saw); the original clip only if `keep_original` is on (needed for the player), under a size cap, stored in the same attachment store the audio clips use, and deleted with the message. Built 2026-11-26 as an opt-in: `keep_original` keeps the path; `video.store_clip` (off by default) also copies a clip of at most `MAX_STORED_CLIP_BYTES` (25 MiB) into the message record (`Sampled.stored`), which `weirdnet-sync` chunks and syncs like an audio attachment. Larger clips keep only the path. The copy is never sent to a model. A device plays the original when it is there, else writes the copy into `<data dir>/clips/<blake3>.<ext>` once, after checking the extension, hash and size (a record from another device is not trusted).
 - Extraction runs with a time limit (60 s plus the clip's duration), on a background thread, with a cancel, and a progress line (`Reading frames 5/N`, N from the plan).
 
 ### Playback
@@ -185,7 +196,7 @@ The player mirrors the audio player's split: **the core decides, the shell draws
 
 - `bragi-core::video::Deck` is the audio `Deck` generalised: one media clip plays at a time (audio or video, so a video stops a playing voice note and the other way round), and it stops when the chat on screen changes. Probably the same type with a `Kind`.
 - Time keeping (`clock`, `seek_ms`) is reused as is. The audio clock stays the master clock for a video that has sound (picture follows sound, dropping frames), and a wall clock when it has none.
-- **Desktop shell (GPUI), Linux, macOS and Windows: an inline player, decided 2026-11-22.** Decode through ffmpeg (the `decode` pattern, a `video-decode` feature) into frames drawn as a texture, with the audio output as the master clock. Controls: play and pause, seek bar, elapsed and total, mute, fullscreen, and a "frames the model saw" strip (click a frame to jump there). **Fallback to the system player** (`xdg-open`, `open`, `start`) when inline playback can't handle the clip: no decoder for its codec, a size or frame rate the decoder can't keep up with (measured on the first seconds, not guessed), or ffmpeg missing. The chat then shows the thumbnail strip and an "Open in system player" button, and says why. The same fallback is used if the player fails mid-clip.
+- **Desktop shell (GPUI), Linux, macOS and Windows: an inline player, decided 2026-11-22.** Decode through ffmpeg (the `decode` pattern, a `video-decode` feature) into frames drawn as a texture, with the audio output as the master clock. Controls: play and pause, seek bar, elapsed and total, mute, fullscreen (built 2026-11-26: fills the window, Escape comes back), and a "frames the model saw" strip (click a frame to jump there). **Fallback to the system player** (`xdg-open`, `open`, `start`) when inline playback can't handle the clip: no decoder for its codec, a size or frame rate the decoder can't keep up with (measured on the first seconds, not guessed), or ffmpeg missing. The chat then shows the thumbnail strip and an "Open in system player" button, and says why. The same fallback is used if the player fails mid-clip.
 - **Flutter app, Android and iOS only**: a `VideoClipBackend` beside `ClipBackend` (`app/lib/src/audio.dart`), over the platform player (the `video_player` plugin, which supports both phones' native players). Same controls, the frame strip, and a scripted backend for tests like the audio one. There is no Flutter desktop player to build.
 - **TUI**: no inline playback. The chat shows a bubble `video  name.mp4  00:42  N frames  sound` and the frame strip as small half-block or kitty-graphics images where the terminal supports it (detected the way the rest of the TUI does), else just the line. `Enter` on it opens the clip in the system player (`xdg-open`, `open`, `start`) and `f` shows the sampled frames list with timestamps. The TUI **attach** is the file picker (LF-34) accepting video extensions.
 - **VS Code extension** (`editors/vscode`): attach through the file dialog or drag and drop onto the chat webview; the webview plays the clip with an HTML5 `<video>` element (VS Code's webview is Chromium, so mp4/H.264 and webm usually play, other codecs show the thumbnail strip and "open externally"). Sampling stays in `bragi-core`, reached through the bridge or the `bragi serve` local server (the extension already talks to it), so the extension never needs its own ffmpeg.
@@ -226,6 +237,14 @@ Per shared AGENTS.md, Bragi ships on every platform. How video lands on each (de
 | iOS (ipa) | | No ffmpeg (App Store rules and size). AVFoundation. |
 
 Where ffmpeg is missing, video attach is hidden or disabled with one sentence of how to get it. Nothing else in Bragi changes. The LGPL notice and the exact build configuration are listed in the repo's third-party notices, and the build script that produces the bundled binary lives in `scripts/` and is reproducible (pinned source tarball and checksum).
+
+Built 2026-11-26:
+
+- `scripts/build-ffmpeg.sh [OUT_DIR]` downloads `ffmpeg-9.0.2.tar.xz` (cached in `FFMPEG_SRC_DIR`), checks its sha256 (pinned after checking the FFmpeg release key's signature), and builds with `SOURCE_DATE_EPOCH` and `-ffile-prefix-map` into `dist/ffmpeg/<triple>`: `bin/ffmpeg`, `bin/ffprobe`, `LICENSE.md` (LGPL 2.1), `CONFIG.txt` (version, source, sha256, configure line) and `SOURCE.txt` (where the source is). `--print-config` prints the configure line; `FFMPEG_CROSS` adds cross flags. Components: demuxers `mov,matroska,avi,ogg,mp3,wav,aac`; decoders for H.264, HEVC, VP8, VP9, MPEG-4, MPEG-2, MJPEG, Theora, ProRes and the usual audio codecs; encoders `mjpeg,pcm_s16le,wrapped_avframe`; muxers `image2pipe,wav,null`; the `scale,fps,select,metadata` filters; protocols `file,pipe` only, no network. Checked on alien-blue: every command Bragi runs (probe, a frame, scene detection, the soundtrack, the player's MJPEG stream) works on mp4/H.264+AAC, webm/VP9+Opus and avi/MPEG-4+MP3. `lavfi` is left out, so the test fixtures still come from the system's ffmpeg.
+- `scripts/dist-linux.sh` puts the build (`BRAGI_FFMPEG_DIR`, else `dist/ffmpeg/<host triple>`) in the desktop and terminal tarballs' `bin/` with `share/doc/ffmpeg/`, and ships without it (saying so) when there is none. The deb and rpm packages `Recommends` the distro's ffmpeg (`ffmpeg`, `(ffmpeg or ffmpeg-free)`), the Arch package has it as an `optdepends`, and the Nix package puts nixpkgs' `ffmpeg-headless` after the user's `PATH`. All ship `THIRD_PARTY_NOTICES.md`.
+- `scripts/dist-macos.sh` with `BRAGI_FFMPEG_DIR` (universal binaries) copies them into `Bragi.app/Contents/Helpers`, signs them before the app, and puts them beside `bragi` in the tarball.
+- `scripts/dist-windows.ps1` with `BRAGI_FFMPEG_DIR` puts `ffmpeg.exe` and `ffprobe.exe` beside `bragi.exe` in the zip and, through `-d Ffmpeg=1`, the installer (`BragiFfmpeg` component).
+- Flatpak and the BSDs are unchanged (no manifest or port in this repo yet).
 
 ### MCP exposure
 

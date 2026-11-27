@@ -5,6 +5,10 @@
 #   deb, rpm and Arch pkg.tar.zst, each as `bragi` (desktop entry and icons), `bragi-standalone`
 #   (the binaries only) and `bragi-tui` (the terminal app only, no GUI libraries), made with nfpm
 #   (packaging/nfpm/).
+# The archives bundle the LGPL ffmpeg and ffprobe (bin/, beside bragi) when BRAGI_FFMPEG_DIR, or
+# dist/ffmpeg/<host triple>, holds a build from scripts/build-ffmpeg.sh; without one they go out
+# without it and video attach asks for the distro's ffmpeg. The deb, rpm and Arch packages never
+# bundle it: they recommend the distro's ffmpeg instead.
 # Needs nfpm on PATH for the packages (the Release workflow installs a pinned copy); without it only the
 # archives are made. Build paths are remapped so no build machine path ends up in the binary.
 set -euo pipefail
@@ -27,6 +31,20 @@ mkdir -p "$b/share/icons"
 cp -r brand/png/hicolor "$b/share/icons/"
 install -Dm644 LICENSE "$b/LICENSE"
 install -Dm644 README.md "$b/README.md"
+install -Dm644 THIRD_PARTY_NOTICES.md "$b/THIRD_PARTY_NOTICES.md"
+host=$(rustc -vV | sed -n 's/^host: //p')
+ffdir="${BRAGI_FFMPEG_DIR:-dist/ffmpeg/$host}"
+# Copies the bundled ffmpeg, its licence, build config and source offer into the archive at $1.
+bundle_ffmpeg() {
+  if [[ -x "$ffdir/bin/ffmpeg" && -x "$ffdir/bin/ffprobe" ]]; then
+    install -Dm755 "$ffdir/bin/ffmpeg" "$1/bin/ffmpeg"
+    install -Dm755 "$ffdir/bin/ffprobe" "$1/bin/ffprobe"
+    for f in LICENSE.md CONFIG.txt SOURCE.txt; do install -Dm644 "$ffdir/$f" "$1/share/doc/ffmpeg/$f"; done
+  else
+    echo "no ffmpeg build in $ffdir (scripts/build-ffmpeg.sh): $(basename "$1") goes out without one" >&2
+  fi
+}
+bundle_ffmpeg "$b"
 mkdir -p dist
 rm -f "dist/$name.tar.gz" "dist/$name.zip"
 tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "dist/$name.tar.gz" "$name"
@@ -38,6 +56,8 @@ install -Dm755 "$target_dir/release/bragi" "$stage/$tui/bin/bragi"
 ln -s bragi "$stage/$tui/bin/bragi-tui"
 install -Dm644 LICENSE "$stage/$tui/LICENSE"
 install -Dm644 README.md "$stage/$tui/README.md"
+install -Dm644 THIRD_PARTY_NOTICES.md "$stage/$tui/THIRD_PARTY_NOTICES.md"
+bundle_ffmpeg "$stage/$tui"
 rm -f "dist/$tui.tar.gz"
 tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "dist/$tui.tar.gz" "$tui"
 

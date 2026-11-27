@@ -16,6 +16,8 @@ use crate::video::{
 
 /// This device's per-model video limits, beside the other device settings.
 const OVERRIDES_FILE: &str = "video-limits.json";
+/// This device's video preferences ([`VideoPrefs`] without the per-attach range).
+const PREFS_FILE: &str = "video-prefs.json";
 
 impl Core {
     fn video_overrides_path(&self) -> PathBuf {
@@ -73,6 +75,23 @@ impl Core {
         Ok(self.reported_video_limits(model).with_override(&self.video_override(model)?))
     }
 
+    /// This device's video preferences (the defaults until the user changes one). Shells start
+    /// every attach from these and add the range.
+    pub fn video_prefs(&self) -> VideoPrefs {
+        std::fs::read(self.inner.cfg.dir.join(PREFS_FILE))
+            .ok()
+            .and_then(|b| serde_json::from_slice::<VideoPrefs>(&b).ok())
+            .map(|p| VideoPrefs { range: None, ..p })
+            .unwrap_or_default()
+    }
+
+    /// Saves this device's video preferences (not the range, which is per attach).
+    pub fn set_video_prefs(&self, prefs: &VideoPrefs) -> Result<()> {
+        let json = serde_json::to_vec_pretty(&VideoPrefs { range: None, ..prefs.clone() })
+            .map_err(|e| crate::error::CoreError::new(crate::error::ErrorKind::Storage, e.to_string()))?;
+        crate::files::write_atomic(&self.inner.cfg.dir.join(PREFS_FILE), &json)
+    }
+
     /// Whether video can be attached here: `None` when it can, else the sentence to show.
     pub fn video_unavailable(&self) -> Option<&'static str> {
         Ffmpeg::locate().is_none().then(Ffmpeg::missing_message)
@@ -103,7 +122,7 @@ impl Core {
         let source = self.video_source(path)?;
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let mut a = self.attach_video_source(&name, &source, model, &VideoPlan { limits: *limits, audio_ok }, prefs, reserved)?;
-        keep_clip(&mut a, prefs, &source.path);
+        keep_clip(&mut a, prefs, &source.path)?;
         Ok(a)
     }
 
@@ -180,7 +199,7 @@ impl Core {
         let phone = phone_prefs(prefs);
         let mut a = self.attach_video_source(name, &source, model, &VideoPlan { limits: plan.limits, audio_ok: false }, &phone, reserved)?;
         if let Some(p) = path {
-            keep_clip(&mut a, prefs, p);
+            keep_clip(&mut a, prefs, p)?;
         }
         Ok(a)
     }
@@ -194,11 +213,79 @@ pub struct VideoPlan {
     pub audio_ok: bool,
 }
 
-/// Notes where the original clip is, for the player, when the user keeps originals.
-pub(crate) fn keep_clip(a: &mut Attachment, prefs: &VideoPrefs, path: &Path) {
+/// Notes where the original clip is, for the player, when the user keeps originals; with
+/// `store_clip` also copies it into the message (up to [`crate::video::MAX_STORED_CLIP_BYTES`]) for
+/// linked devices.
+pub(crate) fn keep_clip(a: &mut Attachment, prefs: &VideoPrefs, path: &Path) -> Result<()> {
     if prefs.keep_original
         && let Some(crate::attach::Media::Video(v)) = &mut a.media
     {
         v.clip = Some(path.to_path_buf());
+        if prefs.store_clip {
+            v.stored = crate::video::StoredClip::read(path)?;
+        }
+    }
+    Ok(())
+}
+
+impl Core {
+    /// Where the copies of clips stored with messages are written to play (`<dir>/clips`).
+    pub fn clip_cache(&self) -> PathBuf {
+        self.inner.cfg.dir.join("clips")
+    }
+
+    /// The file a message's clip plays from on this device: the original, else the copy stored
+    /// with the message, written into [`clip_cache`](Self::clip_cache) once.
+    pub fn playable_clip(&self, sampled: &crate::video::Sampled) -> std::result::Result<PathBuf, crate::video_play::Fallback> {
+        crate::video_play::playable_clip_in(sampled, &self.clip_cache())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::video::{Sampled, StoredClip};
+
+    fn video() -> Attachment {
+        Attachment::from_video("c.mp4", Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored: None })
+    }
+
+    fn sampled(a: &Attachment) -> &Sampled {
+        match &a.media {
+            Some(crate::attach::Media::Video(v)) => v,
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn keep_clip_remembers_the_path_and_copies_the_clip_only_when_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = dir.path().join("c.mp4");
+        std::fs::write(&clip, b"clip").unwrap();
+        let mut a = video();
+        keep_clip(&mut a, &VideoPrefs::default(), &clip).unwrap();
+        assert_eq!((sampled(&a).clip.as_deref(), &sampled(&a).stored), (Some(clip.as_path()), &None), "off by default: the path only");
+        let mut a = video();
+        keep_clip(&mut a, &VideoPrefs { store_clip: true, ..VideoPrefs::default() }, &clip).unwrap();
+        assert_eq!(sampled(&a).stored, StoredClip::read(&clip).unwrap());
+        let mut a = video();
+        keep_clip(&mut a, &VideoPrefs { store_clip: true, keep_original: false, ..VideoPrefs::default() }, &clip).unwrap();
+        assert_eq!((&sampled(&a).clip, &sampled(&a).stored), (&None, &None), "nothing kept without keep_original");
+    }
+
+    #[test]
+    fn video_prefs_persist_on_this_device_without_the_range() {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = crate::core::Config { transport: crate::core::Transport::Memory, ..crate::core::Config::new(dir.path().join("app"), "t") };
+        let core = Core::start(cfg).unwrap();
+        assert_eq!(core.video_prefs(), VideoPrefs::default());
+        assert!(!core.video_prefs().store_clip, "opt-in");
+        core.set_video_prefs(&VideoPrefs { store_clip: true, range: Some((1, 2)), ..VideoPrefs::default() }).unwrap();
+        let p = core.video_prefs();
+        assert!(p.store_clip && p.keep_original);
+        assert_eq!(p.range, None, "the range is per attach");
+        assert_eq!(core.clip_cache(), dir.path().join("app").join("clips"));
+        std::fs::write(dir.path().join("app").join(PREFS_FILE), b"{oops").unwrap();
+        assert_eq!(core.video_prefs(), VideoPrefs::default(), "a damaged file reads as the defaults");
     }
 }
