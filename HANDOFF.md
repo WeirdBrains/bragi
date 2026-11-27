@@ -2,6 +2,26 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 23:10 EST: stored clips polish: the Flutter switch and clip cache cleanup (merged `feature/video-clip-polish`, LF-43)
+
+The two loose ends of the stored clips follow-up.
+
+- **Flutter switch** ([settings_ui.dart](app/lib/src/settings_ui.dart) `StoreClipsTile`, [video.rs](crates/bragi-bridge/src/api/video.rs)):
+  - Settings → Video → **Play clips on all my devices**, off by default, with the 25 MiB cap in its text. A failed save shows the error and keeps the switch where it was.
+  - Bridge: sync `video_store_clip()`, `set_video_store_clip(enabled)` and `video_stored_clip_max_mib()`; frb regenerated. The parameter is `enabled` because frb renames a Dart keyword (`on` became `on_`).
+- **Clip cache cleanup** ([video_play.rs](crates/bragi-core/src/video_play.rs), [core.rs](crates/bragi-core/src/core.rs)):
+  - Deleting a message (and its reply) or a conversation removes the copies its clips wrote to `<data dir>/clips`. Only names shaped like a copy (`<64 hex>.<video ext>`) are touched. Undo still works: the message keeps the clip and the copy is written again when played.
+  - Clear all history empties the folder.
+  - Each start, off the caller's thread, drops copies not played for 30 days, half-written `.part` files older than an hour, then the least recently played until the folder is under 1 GiB. Playing a copy refreshes its time. This also catches copies of messages deleted on another device.
+- **Checks** (alien-blue, scratch clone, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf43-b4`, under `flock`/`nice`/`ionice`, `-j 6`):
+  - `cargo fmt --all --check`: clean (after running `cargo fmt` on the regenerated `frb_generated.rs`).
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 376 passed, 0 failed, 5 ignored in 46 suites (3 new).
+  - `flutter analyze`: no issues.
+  - `flutter test --dart-define=BRAGI_DEMO=true` with `BRAGI_BRIDGE_LIB` set to this build: 21 passed (3 new).
+  - After the `enabled` rename: frb codegen, fmt, clippy, `cargo test -p bragi-bridge` (1 passed), the bridge build, `flutter analyze` and `flutter test` (21 passed) again.
+- **Next**: the B4 on-device model.
+
 ## 2026-11-26 22:29 EST: video follow-ups, LGPL ffmpeg recipe and packaging, desktop fullscreen, opt-in stored clips (merged `feature/video-followups`, LF-43)
 
 The open follow-ups of [docs/design/video.md](docs/design/video.md).

@@ -20,8 +20,8 @@ String? videoFileUnavailable() =>
 bool videoStoreClip() => RustLib.instance.api.crateApiVideoVideoStoreClip();
 
 /// Turns copying clips into their messages on or off for this device; returns the new value.
-bool setVideoStoreClip({required bool on_}) =>
-    RustLib.instance.api.crateApiVideoSetVideoStoreClip(on_: on_);
+bool setVideoStoreClip({required bool enabled}) =>
+    RustLib.instance.api.crateApiVideoSetVideoStoreClip(enabled: enabled);
 
 /// The largest clip copied into a message, in MiB, for the settings' text.
 int videoStoredClipMaxMib() =>

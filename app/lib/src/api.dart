@@ -391,7 +391,7 @@ class RustBragiApi implements BragiApi {
   @override
   bool videoStoreClip() => rv.videoStoreClip();
   @override
-  bool setVideoStoreClip(bool on) => rv.setVideoStoreClip(on: on);
+  bool setVideoStoreClip(bool on) => rv.setVideoStoreClip(enabled: on);
   @override
   int videoStoredClipMaxMib() => rv.videoStoredClipMaxMib();
   @override
