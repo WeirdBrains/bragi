@@ -70,7 +70,10 @@ pub const CHAT_HELP: &[(&str, &str)] = &[
     ("/attach PATH · /detach", "attach a text, image, audio or video file · drop them"),
     ("/frames · /play", "the frames the model saw of the chat's video · open it in the system player"),
     ("/store-clips [on|off]", "copy attached clips into their messages so your other devices can play them"),
-    ("/on-device [on|off|use|get|stop|remove]", "the optional on-device model: off until you turn it on; get ID shows what downloads, get ID yes downloads it"),
+    (
+        "/on-device [on|off|use|get|stop|remove]",
+        "the optional on-device model: off until you turn it on; get ID shows what downloads, get ID yes downloads it",
+    ),
     ("/video-limits [k=v… | clear]", "the model's video limits · set yours (fill gaps, only tighten) · clear them"),
     ("/train · /train off", "mark the open chat for training on your Ymir nodes · withdraw it"),
 ];

@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use weirdnet_agent::pool::PoolEvent;
 use weirdnet_agent::{CancelToken, Message};
-use weirdnet_model::{ChatMessage, ChatRole, Chunk, Consent, Engine, GenerateRequest, ModelSpec, ModelStore, Worker};
+use weirdnet_model::{ChatMessage, ChatRole, Chunk, Consent, ModelStore, Worker};
 
 use crate::chat::{ChatEvent, coalesce};
 use crate::core::{Core, lock};
@@ -106,7 +106,7 @@ impl OnDeviceStatus {
     /// One line for Settings.
     pub fn line(&self) -> String {
         if let Some(d) = &self.download {
-            let pct = if d.total == 0 { 0 } else { d.done.saturating_mul(100) / d.total };
+            let pct = d.done.saturating_mul(100).checked_div(d.total).unwrap_or(0);
             return format!("Downloading {} ({pct}% of {})…", d.id, weirdnet_model::human(d.total));
         }
         if let Some(e) = &self.error {
@@ -162,11 +162,7 @@ fn built_in_engine() -> Option<(String, EngineFactory)> {
 
 /// The model a device starts with: the smaller Gemma on phones, the larger elsewhere.
 fn default_model(catalog: &[ModelSpec]) -> Option<String> {
-    let device = if cfg!(any(target_os = "android", target_os = "ios")) {
-        weirdnet_model::Device::Phone
-    } else {
-        weirdnet_model::Device::Desktop
-    };
+    let device = if cfg!(any(target_os = "android", target_os = "ios")) { weirdnet_model::Device::Phone } else { weirdnet_model::Device::Desktop };
     let want = weirdnet_model::catalog::default_for(device).id;
     catalog.iter().find(|m| m.id == want).or(catalog.first()).map(|m| m.id.clone())
 }
@@ -181,7 +177,7 @@ pub(crate) fn prompt(messages: &[Message]) -> Vec<ChatMessage> {
                 Role::System => ChatRole::System,
                 Role::User => ChatRole::User,
                 Role::Assistant => ChatRole::Assistant,
-                Role::Tool => return None,
+                _ => return None,
             };
             let text = m.text();
             (!text.trim().is_empty()).then(|| ChatMessage::new(role, text.into_owned()))
@@ -295,7 +291,11 @@ impl Core {
         let store = self.on_device_store();
         let mut lines = spec.consent_text(store.hub());
         let free = store.free_bytes();
-        lines.push(format!("Saved in {}{}.", store.dir().display(), if free > 0 { format!(" ({} free)", weirdnet_model::human(free)) } else { String::new() }));
+        lines.push(format!(
+            "Saved in {}{}.",
+            store.dir().display(),
+            if free > 0 { format!(" ({} free)", weirdnet_model::human(free)) } else { String::new() }
+        ));
         lines.push("It runs only on this device; your chats with it stay here.".into());
         Ok(lines)
     }
@@ -322,10 +322,7 @@ impl Core {
         self.inner.state.send_modify(|s| s.on_device.download = Some(first));
         self.publish_on_device();
         let core = self.clone();
-        std::thread::Builder::new()
-            .name("bragi-model-download".into())
-            .spawn(move || core.run_download(spec, cancel))
-            .map_err(storage)?;
+        std::thread::Builder::new().name("bragi-model-download".into()).spawn(move || core.run_download(spec, cancel)).map_err(storage)?;
         Ok(())
     }
 

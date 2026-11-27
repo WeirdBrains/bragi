@@ -536,8 +536,13 @@ impl App {
                 Err(e) => Err(e),
             },
             ["get", id, "yes"] => self.core.download_on_device_model(id, true).map(|_| Some("Downloading; /on-device shows how far.".to_string())),
-            ["stop"] => Ok(Some(if self.core.cancel_on_device_download() { "Download stopped; /on-device get resumes it." } else { "Nothing is downloading." }.to_string())),
-            ["remove", id] => self.core.remove_on_device_model(id).map(|r| Some(if r { format!("Removed {id}.") } else { format!("{id} wasn't downloaded.") })),
+            ["stop"] => Ok(Some(
+                if self.core.cancel_on_device_download() { "Download stopped; /on-device get resumes it." } else { "Nothing is downloading." }
+                    .to_string(),
+            )),
+            ["remove", id] => {
+                self.core.remove_on_device_model(id).map(|r| Some(if r { format!("Removed {id}.") } else { format!("{id} wasn't downloaded.") }))
+            }
             _ => return self.fail("Use /on-device [on|off|use ID|get ID|stop|remove ID]."),
         };
         match done {
@@ -550,7 +555,9 @@ impl App {
                     .core
                     .on_device_models()
                     .into_iter()
-                    .map(|m| format!("{}{} ({}{})", if m.chosen { "*" } else { "" }, m.id, m.size_label, if m.installed { ", downloaded" } else { "" }))
+                    .map(|m| {
+                        format!("{}{} ({}{})", if m.chosen { "*" } else { "" }, m.id, m.size_label, if m.installed { ", downloaded" } else { "" })
+                    })
                     .collect();
                 self.say(format!("On-device model: {} Models: {}.", st.line(), models.join(", ")))
             }

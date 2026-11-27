@@ -266,13 +266,19 @@ fn the_on_device_model_from_the_chat_box() {
     let project = tempfile::tempdir().unwrap();
     let mut h = Harness::new(project.path());
     let core = h.app.core.clone();
-    let mut cmd = |h: &mut Harness, line: &str| -> String {
+    h.until("Link this terminal", |a| a.view == View::Link);
+    h.key(KeyCode::Char('s'));
+    h.until("Does the other device show this code?", |a| matches!(a.state.pair, PairState::Confirm { .. }));
+    h.key(KeyCode::Char('y'));
+    h.until("online", |a| a.view == View::Chat && a.state.online);
+    let cmd = |h: &mut Harness, line: &str| -> String {
         h.typed(line);
         h.key(KeyCode::Enter);
         h.app.notice.clone().unwrap_or_default()
     };
 
-    assert!(cmd(&mut h, "/on-device").contains("Off. Nothing is downloaded"));
+    let n = cmd(&mut h, "/on-device");
+    assert!(n.contains("Off. Nothing is downloaded"), "{n}");
     // `get` shows what would download and downloads nothing.
     let n = cmd(&mut h, "/on-device get gemma-4-e2b");
     assert!(n.contains("Download Gemma 4 E2B") && n.contains("/on-device get gemma-4-e2b yes"), "{n}");

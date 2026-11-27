@@ -103,29 +103,17 @@ impl BragiView {
         let t = self.theme;
         let st = &self.state.on_device;
         let row = |title: String, note: String| {
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap(px(12.))
-                .p(px(12.))
-                .rounded(px(8.))
-                .bg(rgb(t.surface))
-                .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .flex_col()
-                        .child(div().text_size(px(14.)).child(title))
-                        .child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(note)),
-                )
+            div().flex().flex_row().items_center().gap(px(12.)).p(px(12.)).rounded(px(8.)).bg(rgb(t.surface)).child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .child(div().text_size(px(14.)).child(title))
+                    .child(div().text_size(px(12.)).text_color(rgb(t.text_secondary)).child(note)),
+            )
         };
-        let mut col = div()
-            .flex()
-            .flex_col()
-            .gap(px(8.))
-            .child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("ON-DEVICE MODEL"))
-            .child(
+        let mut col =
+            div().flex().flex_col().gap(px(8.)).child(div().text_size(px(11.)).text_color(rgb(t.text_secondary)).child("ON-DEVICE MODEL")).child(
                 row("Run a model on this device".into(), st.line()).child(
                     self.button("on-device", if st.enabled { "On" } else { "Off" }, st.enabled)
                         .w(px(64.))

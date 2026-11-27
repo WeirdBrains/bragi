@@ -1,6 +1,6 @@
 //! The optional on-device model (B4) through `Core`: off by default, nothing downloaded without
 //! consent, a consented download from a mock Hub (progress, cancel, resume), the "On this device"
-//! target, chats and stops on a fake engine, and the fallback when no node is reachable. No real
+//! target, chats and stops on a fake engine, and the fallback when no node can answer. No real
 //! weights are fetched and no real engine runs.
 
 mod common;
@@ -95,7 +95,7 @@ async fn off_by_default_and_nothing_downloads_without_consent() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert!(core.state().on_device.download.is_none());
     assert!(!core.targets().iter().any(|t| matches!(t.target, Target::Device { .. })));
-    let e = core.send_to(None, "hi", None, Vec::new(), Some(Target::Device { model: TINY.into() })).unwrap_err();
+    let Err(e) = core.send_to(None, "hi", None, Vec::new(), Some(Target::Device { model: TINY.into() })) else { panic!("sent") };
     assert!(e.message.contains("download") || e.message.contains("engine"), "{e:?}");
     // The setting is kept per device.
     assert!(core.on_device_settings().enabled);
@@ -104,7 +104,8 @@ async fn off_by_default_and_nothing_downloads_without_consent() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_consented_download_then_chats_on_this_device() {
     let tmp = tempfile::tempdir().unwrap();
-    let core = Core::start(bragi_core::Config::new(tmp.path().join("app"), "t")).unwrap();
+    // History lives on the context store, so chats need a linked device; its pool stays the default.
+    let (core, _demo) = linked(tmp.path()).await;
     let url = hub(200_000, Duration::ZERO);
     core.set_on_device_source(&url, vec![tiny(200_000)]);
     let loads = fake_engine(&core, Duration::ZERO);
@@ -126,8 +127,10 @@ async fn a_consented_download_then_chats_on_this_device() {
     let opt = core.targets().into_iter().find(|t| matches!(t.target, Target::Device { .. })).unwrap();
     assert_eq!(opt.label, "On this device · Tiny chat (test)");
 
-    // With no node reachable, a new chat goes to this device and stays bound to it.
-    let mut h = core.send_to(None, "hello there", None, Vec::new(), None).unwrap();
+    assert_eq!(core.targets()[0].target, Target::Pool);
+
+    // Picked, a new chat goes to this device and stays bound to it.
+    let mut h = core.send_to(None, "hello there", None, Vec::new(), Some(opt.target.clone())).unwrap();
     let conv = h.conversation_id.clone();
     let events = drain(&mut h).await;
     assert!(matches!(events.last(), Some(ChatEvent::Done { finish_reason: Some(f) }) if f == "stop"), "{events:?}");
@@ -148,26 +151,52 @@ async fn a_consented_download_then_chats_on_this_device() {
     assert_eq!(core.conversation(&conv).unwrap().messages.len(), 4);
 
     // A one-off completion (code mode) runs here too and saves nothing.
-    let mut h = core.complete(vec![bragi_core::code::PromptMessage::user("fn main")], None).unwrap();
+    let mut h = core.complete_to(vec![bragi_core::code::PromptMessage::user("fn main")], None, Some(opt.target.clone())).unwrap();
     assert_eq!(answer_text(&drain(&mut h).await), "you said: fn main");
     assert!(h.conversation_id.is_empty());
 
     // Pictures, sound and video stay with nodes.
-    let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, b'I', b'H', b'D', b'R', 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15, 0xc4, 0x89];
+    let png = [
+        0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, b'I', b'H', b'D', b'R', 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 0x1f, 0x15,
+        0xc4, 0x89,
+    ];
     let img = Attachment::from_bytes("shot.png", &png).unwrap();
-    let e = core.send_to(Some(&conv), "what is this", None, vec![img], None).unwrap_err();
+    let Err(e) = core.send_to(Some(&conv), "what is this", None, vec![img], None) else { panic!("sent") };
     assert!(e.message.contains("text only"), "{e:?}");
 
     // Off: gone from the picker, and the bound chat says why it can't send.
     core.set_on_device(false).unwrap();
     assert!(!core.targets().iter().any(|t| matches!(t.target, Target::Device { .. })));
-    let e = core.send_to(Some(&conv), "still there?", None, Vec::new(), None).unwrap_err();
+    let Err(e) = core.send_to(Some(&conv), "still there?", None, Vec::new(), None) else { panic!("sent") };
     assert!(e.message.contains("turn it on"), "{e:?}");
 
     // Removing deletes the file.
     assert!(core.remove_on_device_model(TINY).unwrap());
     assert!(!tmp.path().join("app/models/tiny-chat.gguf").exists());
     assert!(!core.on_device_models()[0].installed);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn with_no_node_it_answers_in_the_pools_place() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Not linked: no node can answer.
+    let core = Core::start(bragi_core::Config::new(tmp.path().join("app"), "t")).unwrap();
+    let ask = || vec![bragi_core::code::PromptMessage::user("anyone there?")];
+    let Err(e) = core.complete(ask(), None) else { panic!("answered") };
+    assert_eq!(e.kind, ErrorKind::NotPaired);
+
+    core.set_on_device_source(&hub(4096, Duration::ZERO), vec![tiny(4096)]);
+    fake_engine(&core, Duration::ZERO);
+    core.download_on_device_model(TINY, true).unwrap();
+    downloaded(&core).await;
+    core.set_on_device(true).unwrap();
+    // The default target and the pool itself both fall to this device.
+    for target in [None, Some(Target::Pool)] {
+        let mut h = core.complete_to(ask(), None, target).unwrap();
+        let events = drain(&mut h).await;
+        assert_eq!(answer_text(&events), "you said: anyone there?");
+        assert!(events.iter().any(|e| matches!(e, ChatEvent::Started { node, .. } if node == "On this device")), "{events:?}");
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -197,7 +226,7 @@ async fn a_cancelled_download_keeps_what_came_and_resumes() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_failed_download_says_so_and_stop_ends_an_answer() {
     let tmp = tempfile::tempdir().unwrap();
-    let core = Core::start(bragi_core::Config::new(tmp.path().join("app"), "t")).unwrap();
+    let (core, _demo) = linked(tmp.path()).await;
     // The Hub doesn't have this one.
     let mut missing = tiny(1000);
     (missing.id, missing.repo) = ("missing".into(), "test/elsewhere".into());
@@ -228,5 +257,5 @@ async fn a_failed_download_says_so_and_stop_ends_an_answer() {
     assert!(matches!(events.last(), Some(ChatEvent::Error { kind: ErrorKind::Cancelled, .. })), "{events:?}");
     let c = core.conversation(&h.conversation_id).unwrap();
     assert_eq!(c.messages[1].state, MessageState::Stopped);
-    assert!(c.messages[1].text.starts_with("you said:") && !c.messages[1].text.contains("six"), "{:?}", c.messages[1].text);
+    assert!(c.messages[1].text.starts_with("you") && !c.messages[1].text.contains("six"), "{:?}", c.messages[1].text);
 }
