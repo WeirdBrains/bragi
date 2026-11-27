@@ -142,7 +142,10 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Reported: ${now.reported.isEmpty ? 'nothing' : now.reported}', style: const TextStyle(fontSize: 12)),
+            Text(
+              'Reported: ${now.reported.isEmpty ? 'nothing' : now.reported}',
+              style: const TextStyle(fontSize: 12),
+            ),
             const SizedBox(height: 8),
             TextField(
               key: const Key('video-limits-field'),
@@ -150,16 +153,28 @@ class _ChatScreenState extends State<ChatScreen> {
               decoration: InputDecoration(
                 labelText: 'Yours (key=value …)',
                 hintText: 'image_tokens=258 max_images=32',
-                helperText: 'Fills what isn\'t reported, only lowers what is. Keys: ${now.keys.join(', ')}',
+                helperText:
+                    'Fills what isn\'t reported, only lowers what is. Keys: ${now.keys.join(', ')}',
                 helperMaxLines: 4,
               ),
             ),
           ],
         ),
         actions: [
-          TextButton(key: const Key('video-limits-clear'), onPressed: () => Navigator.pop(ctx, ''), child: const Text('Clear')),
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(key: const Key('video-limits-save'), onPressed: () => Navigator.pop(ctx, field.text), child: const Text('Save')),
+          TextButton(
+            key: const Key('video-limits-clear'),
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('video-limits-save'),
+            onPressed: () => Navigator.pop(ctx, field.text),
+            child: const Text('Save'),
+          ),
         ],
       ),
     );
@@ -356,25 +371,40 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (c.code.on && c.code.shell != null)
                     ShellPanel(code: c.code),
                   if (c.code.on) CodeBar(chat: c),
-                  if (c.videoReading != null || c.videoLimits != null || c.attachments.any((a) => a.kind == 'video'))
+                  if (c.videoReading != null ||
+                      c.videoLimits != null ||
+                      c.attachments.any((a) => a.kind == 'video'))
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
                       child: Row(
                         children: [
                           if (c.videoReading != null) ...[
-                            const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                             const SizedBox(width: 6),
-                            Text('Reading frames of ${c.videoReading}…', key: const Key('video-reading'), style: const TextStyle(fontSize: 12)),
+                            Text(
+                              'Reading frames of ${c.videoReading}…',
+                              key: const Key('video-reading'),
+                              style: const TextStyle(fontSize: 12),
+                            ),
                             const Spacer(),
                           ] else
                             Flexible(
                               child: ActionChip(
                                 key: const Key('video-limits'),
                                 avatar: Icon(
-                                  (c.videoLimits?.ready ?? true) ? Icons.movie_outlined : Icons.warning_amber,
+                                  (c.videoLimits?.ready ?? true)
+                                      ? Icons.movie_outlined
+                                      : Icons.warning_amber,
                                   size: 16,
                                 ),
-                                label: Text(c.videoLimits?.chip ?? 'Video limits…', overflow: TextOverflow.ellipsis),
+                                label: Text(
+                                  c.videoLimits?.chip ?? 'Video limits…',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                                 onPressed: _videoLimits,
                               ),
                             ),
@@ -393,14 +423,11 @@ class _ChatScreenState extends State<ChatScreen> {
                               label: Text(_attachmentLabel(a)),
                               avatar: a.kind == 'text'
                                   ? null
-                                  : Icon(
-                                      switch (a.kind) {
-                                        'image' => Icons.image_outlined,
-                                        'video' => Icons.movie_outlined,
-                                        _ => Icons.graphic_eq,
-                                      },
-                                      size: 16,
-                                    ),
+                                  : Icon(switch (a.kind) {
+                                      'image' => Icons.image_outlined,
+                                      'video' => Icons.movie_outlined,
+                                      _ => Icons.graphic_eq,
+                                    }, size: 16),
                               onDeleted: () => c.detach(i),
                             ),
                         ],
@@ -425,7 +452,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           IconButton(
                             key: const Key('attach-video'),
                             tooltip: 'Attach a video',
-                            onPressed: c.videoReading == null ? _attachVideo : null,
+                            onPressed: c.videoReading == null
+                                ? _attachVideo
+                                : null,
                             icon: const Icon(Icons.videocam_outlined),
                           ),
                           IconButton(
@@ -926,7 +955,11 @@ class _FileCard extends StatelessWidget {
 /// Mute), or why it can't play here with the system player, then the frames the model saw (a tap
 /// plays from there).
 class _VideoCard extends StatelessWidget {
-  const _VideoCard({required this.controller, required this.file, required this.info});
+  const _VideoCard({
+    required this.controller,
+    required this.file,
+    required this.info,
+  });
 
   final BragiController controller;
   final String file;
@@ -935,12 +968,15 @@ class _VideoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = controller.video;
-    final mine = c != null && c.file == file && c.conversation == controller.current?.id;
+    final mine =
+        c != null && c.file == file && c.conversation == controller.current?.id;
     final known = Duration(milliseconds: info.durationMs.toInt());
     final total = mine ? (c.duration ?? known) : known;
     final at = mine ? c.position : Duration.zero;
     final playing = mine && c.playing;
-    final progress = total.inMilliseconds == 0 ? 0.0 : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+    final progress = total.inMilliseconds == 0
+        ? 0.0
+        : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
     final fallback = controller.videoFallbacks[file];
     final picture = mine && !c.loading ? controller.videoView() : null;
     return Container(
@@ -954,14 +990,24 @@ class _VideoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(info.bubble, key: Key('vbubble-$file'), style: const TextStyle(fontSize: 13)),
+          Text(
+            info.bubble,
+            key: Key('vbubble-$file'),
+            style: const TextStyle(fontSize: 13),
+          ),
           const SizedBox(height: 6),
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 240),
-            child: picture ??
+            child:
+                picture ??
                 (info.frames.isEmpty
                     ? const SizedBox.shrink()
-                    : Image.memory(base64Decode(info.frames.first.data), fit: BoxFit.contain, gaplessPlayback: true, errorBuilder: (_, _, _) => const SizedBox.shrink())),
+                    : Image.memory(
+                        base64Decode(info.frames.first.data),
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      )),
           ),
           if (fallback != null)
             Padding(
@@ -969,7 +1015,10 @@ class _VideoCard extends StatelessWidget {
               child: Text(
                 videoFallbackMessage(fallback.$1, fallback.$2),
                 key: Key('vfallback-$file'),
-                style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: BragiColors.textSecondary,
+                ),
               ),
             ),
           Row(
@@ -980,19 +1029,31 @@ class _VideoCard extends StatelessWidget {
                   tooltip: playing ? 'Pause' : 'Play',
                   visualDensity: VisualDensity.compact,
                   onPressed: () => controller.playVideo(file, info),
-                  icon: Icon(mine && c.loading ? Icons.hourglass_empty : (playing ? Icons.pause : Icons.play_arrow)),
+                  icon: Icon(
+                    mine && c.loading
+                        ? Icons.hourglass_empty
+                        : (playing ? Icons.pause : Icons.play_arrow),
+                  ),
                 ),
                 Expanded(
                   child: Slider(
                     key: Key('vseek-$file'),
                     value: progress,
-                    onChanged: mine && !c.loading ? (v) => controller.seekVideo(file, v) : null,
+                    onChanged: mine && !c.loading
+                        ? (v) => controller.seekVideo(file, v)
+                        : null,
                   ),
                 ),
                 Text(
-                  rust.audioTimes(positionMs: BigInt.from(at.inMilliseconds), durationMs: BigInt.from(total.inMilliseconds)),
+                  rust.audioTimes(
+                    positionMs: BigInt.from(at.inMilliseconds),
+                    durationMs: BigInt.from(total.inMilliseconds),
+                  ),
                   key: Key('vtime-$file'),
-                  style: TextStyle(fontSize: 12, color: BragiColors.textSecondary),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: BragiColors.textSecondary,
+                  ),
                 ),
                 if (mine)
                   IconButton(
@@ -1014,7 +1075,10 @@ class _VideoCard extends StatelessWidget {
             ],
           ),
           if (info.frames.isNotEmpty) ...[
-            Text('Frames the model saw', style: TextStyle(fontSize: 11, color: BragiColors.textSecondary)),
+            Text(
+              'Frames the model saw',
+              style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+            ),
             const SizedBox(height: 4),
             Wrap(
               spacing: 4,
@@ -1023,10 +1087,22 @@ class _VideoCard extends StatelessWidget {
                 for (final (i, fr) in info.frames.indexed)
                   InkWell(
                     key: Key('vframe-$file-$i'),
-                    onTap: () => controller.playVideo(file, info, from: Duration(milliseconds: fr.atMs.toInt())),
+                    onTap: () => controller.playVideo(
+                      file,
+                      info,
+                      from: Duration(milliseconds: fr.atMs.toInt()),
+                    ),
                     child: Column(
                       children: [
-                        Image.memory(base64Decode(fr.data), width: 72, height: 40, fit: BoxFit.cover, gaplessPlayback: true, errorBuilder: (_, _, _) => const SizedBox(width: 72, height: 40)),
+                        Image.memory(
+                          base64Decode(fr.data),
+                          width: 72,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) =>
+                              const SizedBox(width: 72, height: 40),
+                        ),
                         Text(fr.label, style: const TextStyle(fontSize: 10)),
                       ],
                     ),

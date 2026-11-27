@@ -5,6 +5,7 @@
 //! reads the clip through the core (`attach_video_file`). The player's facts come from
 //! `video_attachment`; limits and the override from `video_limits` / `set_video_limits`.
 
+use flutter_rust_bridge::frb;
 use std::path::{Path, PathBuf};
 
 use bragi_core::video::{self, Frame, ModelLimits, Probe, Sampled, VideoPrefs};
@@ -106,6 +107,7 @@ fn reserved(history: &[String]) -> u32 {
 }
 
 /// Whether ffmpeg is here for [`attach_video_file`]: `None` when it is, else what to tell the user.
+#[frb(sync)]
 pub fn video_file_unavailable() -> Option<String> {
     core().ok().and_then(|c| c.video_unavailable()).map(str::to_string)
 }
@@ -202,6 +204,7 @@ fn info(name: &str, s: &Sampled) -> VideoInfoView {
 }
 
 /// An attachment's clip (the JSON in a `video` [`AttachmentView`]'s `data`), for the chip before sending.
+#[frb(sync)]
 pub fn video_info(name: String, json: String) -> Result<VideoInfoView, String> {
     let s: Sampled = sampled_of(&json)?;
     Ok(info(&name, &s))
@@ -215,6 +218,7 @@ fn sampled_of(json: &str) -> Result<Sampled, String> {
 }
 
 /// The clip of file `file` (`<message id>#a<n>`) in `conversation`, when it is one.
+#[frb(sync)]
 pub fn video_attachment(conversation: String, file: String) -> Result<Option<VideoInfoView>, String> {
     let c = core()?.conversation(&conversation).map_err(err)?;
     let Some((msg, n)) = file.rsplit_once("#a") else { return Ok(None) };
@@ -226,6 +230,7 @@ pub fn video_attachment(conversation: String, file: String) -> Result<Option<Vid
 }
 
 /// `[00:07.5]` for a time in milliseconds.
+#[frb(sync)]
 pub fn video_label(ms: u64) -> String {
     video::label(ms)
 }

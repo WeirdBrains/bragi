@@ -19,12 +19,19 @@ const videoExtensions = ['mp4', 'm4v', 'mov', 'webm', 'mkv', 'avi', '3gp'];
 
 bool isVideoName(String name) {
   final dot = name.lastIndexOf('.');
-  return dot >= 0 && videoExtensions.contains(name.substring(dot + 1).toLowerCase());
+  return dot >= 0 &&
+      videoExtensions.contains(name.substring(dot + 1).toLowerCase());
 }
 
 /// What the platform reads from a clip.
 class VideoFacts {
-  const VideoFacts({required this.durationMs, required this.width, required this.height, this.fps, required this.hasAudio});
+  const VideoFacts({
+    required this.durationMs,
+    required this.width,
+    required this.height,
+    this.fps,
+    required this.hasAudio,
+  });
 
   final int durationMs;
   final int width;
@@ -63,7 +70,12 @@ abstract class VideoDecoder {
   Future<VideoFacts> probe(String path);
 
   /// The frames at [timesMs], scaled to fit [width] x [height], as JPEG.
-  Future<List<DecodedFrame>> frames(String path, List<int> timesMs, int width, int height);
+  Future<List<DecodedFrame>> frames(
+    String path,
+    List<int> timesMs,
+    int width,
+    int height,
+  );
 }
 
 /// The platform's decoder over the method channel (android/.../VideoDecoder.kt,
@@ -73,17 +85,36 @@ class PlatformVideoDecoder implements VideoDecoder {
 
   @override
   Future<VideoFacts> probe(String path) async {
-    final m = await _channel.invokeMapMethod<Object?, Object?>('probe', {'path': path});
-    if (m == null) throw const FormatException("the clip can't be read as a video");
+    final m = await _channel.invokeMapMethod<Object?, Object?>('probe', {
+      'path': path,
+    });
+    if (m == null)
+      throw const FormatException("the clip can't be read as a video");
     return VideoFacts.fromMap(m);
   }
 
   @override
-  Future<List<DecodedFrame>> frames(String path, List<int> timesMs, int width, int height) async {
-    final list = await _channel.invokeListMethod<Object?>('frames', {'path': path, 'times_ms': timesMs, 'width': width, 'height': height, 'quality': 85});
+  Future<List<DecodedFrame>> frames(
+    String path,
+    List<int> timesMs,
+    int width,
+    int height,
+  ) async {
+    final list = await _channel.invokeListMethod<Object?>('frames', {
+      'path': path,
+      'times_ms': timesMs,
+      'width': width,
+      'height': height,
+      'quality': 85,
+    });
     return [
       for (final f in list ?? const <Object?>[])
-        if (f is Map) DecodedFrame((f['at_ms'] as num).toInt(), 'image/jpeg', f['bytes'] as Uint8List),
+        if (f is Map)
+          DecodedFrame(
+            (f['at_ms'] as num).toInt(),
+            'image/jpeg',
+            f['bytes'] as Uint8List,
+          ),
     ];
   }
 }
@@ -96,7 +127,15 @@ final Uint8List sampleJpeg = base64Decode(
 /// No platform: a 42 s 1920x1080 clip without sound, every frame the sample JPEG (the demo build
 /// and the tests). Records what it was asked for.
 class ScriptedVideoDecoder implements VideoDecoder {
-  ScriptedVideoDecoder({this.facts = const VideoFacts(durationMs: 42000, width: 1920, height: 1080, fps: 30, hasAudio: false)});
+  ScriptedVideoDecoder({
+    this.facts = const VideoFacts(
+      durationMs: 42000,
+      width: 1920,
+      height: 1080,
+      fps: 30,
+      hasAudio: false,
+    ),
+  });
 
   final VideoFacts facts;
   final asked = <(List<int>, int, int)>[];
@@ -105,7 +144,12 @@ class ScriptedVideoDecoder implements VideoDecoder {
   Future<VideoFacts> probe(String path) async => facts;
 
   @override
-  Future<List<DecodedFrame>> frames(String path, List<int> timesMs, int width, int height) async {
+  Future<List<DecodedFrame>> frames(
+    String path,
+    List<int> timesMs,
+    int width,
+    int height,
+  ) async {
     asked.add((timesMs, width, height));
     return [for (final t in timesMs) DecodedFrame(t, 'image/jpeg', sampleJpeg)];
   }
@@ -116,7 +160,8 @@ abstract class VideoClipBackend {
   /// The player for this build: the platform's on Android and iOS, the scripted one in the demo
   /// build, none elsewhere (the clip opens in the system player).
   static VideoClipBackend? create() {
-    if (const bool.fromEnvironment('BRAGI_DEMO')) return ScriptedVideoClipBackend();
+    if (const bool.fromEnvironment('BRAGI_DEMO'))
+      return ScriptedVideoClipBackend();
     if (Platform.isAndroid || Platform.isIOS) return PlatformVideoClipBackend();
     return null;
   }
@@ -160,7 +205,11 @@ class PlatformVideoClipBackend implements VideoClipBackend {
       return;
     }
     _position.add(v.position);
-    final done = v.isInitialized && v.duration > Duration.zero && v.position >= v.duration && !v.isPlaying;
+    final done =
+        v.isInitialized &&
+        v.duration > Duration.zero &&
+        v.position >= v.duration &&
+        !v.isPlaying;
     if (done && !_endSent) {
       _endSent = true;
       _ended.add(null);
@@ -289,7 +338,11 @@ class ScriptedVideoClipBackend implements VideoClipBackend {
   Stream<String> get failed => _failed.stream;
 
   @override
-  Widget view() => const ColoredBox(key: Key('video-picture'), color: Color(0xFF000000), child: SizedBox(width: 320, height: 180));
+  Widget view() => const ColoredBox(
+    key: Key('video-picture'),
+    color: Color(0xFF000000),
+    child: SizedBox(width: 320, height: 180),
+  );
 }
 
 /// Why a clip doesn't play in the chat; each says what to do.
@@ -298,7 +351,8 @@ enum VideoFallback { notHere, noPlayer, cantPlay }
 String videoFallbackMessage(VideoFallback f, [String? detail]) => switch (f) {
   VideoFallback.notHere => "The clip isn't on this device, so it can't play here. The frames the model saw are below.",
   VideoFallback.noPlayer => 'Clips play in your system player on this device.',
-  VideoFallback.cantPlay => "This clip didn't play here${detail == null ? '' : ' ($detail)'}. Open it in your system player.",
+  VideoFallback.cantPlay =>
+    "This clip didn't play here${detail == null ? '' : ' ($detail)'}. Open it in your system player.",
 };
 
 /// The clip playing or paused.

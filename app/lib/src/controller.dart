@@ -620,13 +620,31 @@ class BragiController extends ChangeNotifier {
           fps: facts.fps,
           hasAudio: facts.hasAudio,
         );
-        final plan = await api.videoFramePlan(file, probe, model, _videoTarget, _historyText);
-        final frames = await decoder.frames(path, [for (final t in plan.timesMs) t.toInt()], plan.width, plan.height);
+        final plan = await api.videoFramePlan(
+          file,
+          probe,
+          model,
+          _videoTarget,
+          _historyText,
+        );
+        final frames = await decoder.frames(
+          path,
+          [for (final t in plan.timesMs) t.toInt()],
+          plan.width,
+          plan.height,
+        );
         a = await api.attachVideoFrames(
           file,
           path,
           probe,
-          [for (final f in frames) VideoFrameIn(atMs: BigInt.from(f.atMs), mime: f.mime, bytes: f.bytes)],
+          [
+            for (final f in frames)
+              VideoFrameIn(
+                atMs: BigInt.from(f.atMs),
+                mime: f.mime,
+                bytes: f.bytes,
+              ),
+          ],
           model,
           _videoTarget,
           _historyText,
@@ -662,7 +680,9 @@ class BragiController extends ChangeNotifier {
     try {
       videoLimits = await api.setVideoLimits(model, text.trim(), _videoTarget);
       final ignored = videoLimits!.ignored;
-      notice = ignored.isEmpty ? videoLimits!.chip : '${videoLimits!.chip}. Ignored (they would raise a reported limit): ${ignored.join(', ')}';
+      notice = ignored.isEmpty
+          ? videoLimits!.chip
+          : '${videoLimits!.chip}. Ignored (they would raise a reported limit): ${ignored.join(', ')}';
     } catch (e) {
       notice = '$e';
     }
@@ -687,12 +707,19 @@ class BragiController extends ChangeNotifier {
 
   /// Play or pause on a clip's card; [from] plays from there (a frame of the strip). Audio stops
   /// first. When the clip can't play here, the card says why.
-  Future<void> playVideo(String file, VideoInfoView info, {Duration? from}) async {
+  Future<void> playVideo(
+    String file,
+    VideoInfoView info, {
+    Duration? from,
+  }) async {
     final conv = current?.id;
     if (conv == null) return;
     final v = video;
     final player = _videoBackend;
-    if (v != null && v.conversation == conv && v.file == file && player != null) {
+    if (v != null &&
+        v.conversation == conv &&
+        v.file == file &&
+        player != null) {
       if (v.loading) return;
       if (from != null) {
         v.position = from;
@@ -735,26 +762,32 @@ class BragiController extends ChangeNotifier {
     video = next;
     notifyListeners();
     if (_videoSubs.isEmpty) {
-      _videoSubs.add(p.position.listen((at) {
-        final v = video;
-        if (v == null || v.loading) return;
-        v.position = at;
-        notifyListeners();
-      }));
-      _videoSubs.add(p.ended.listen((_) {
-        final v = video;
-        if (v == null) return;
-        v.playing = false;
-        v.position = v.duration ?? v.position;
-        notifyListeners();
-      }));
-      _videoSubs.add(p.failed.listen((why) {
-        final v = video;
-        if (v == null) return;
-        videoFallbacks[v.file] = (VideoFallback.cantPlay, why);
-        unawaited(stopVideo());
-        notifyListeners();
-      }));
+      _videoSubs.add(
+        p.position.listen((at) {
+          final v = video;
+          if (v == null || v.loading) return;
+          v.position = at;
+          notifyListeners();
+        }),
+      );
+      _videoSubs.add(
+        p.ended.listen((_) {
+          final v = video;
+          if (v == null) return;
+          v.playing = false;
+          v.position = v.duration ?? v.position;
+          notifyListeners();
+        }),
+      );
+      _videoSubs.add(
+        p.failed.listen((why) {
+          final v = video;
+          if (v == null) return;
+          videoFallbacks[v.file] = (VideoFallback.cantPlay, why);
+          unawaited(stopVideo());
+          notifyListeners();
+        }),
+      );
     }
     try {
       final length = await p.load(path, known);
@@ -770,7 +803,10 @@ class BragiController extends ChangeNotifier {
       await p.play();
     } catch (e) {
       if (identical(video, next)) video = null;
-      videoFallbacks[file] = (VideoFallback.cantPlay, e is PlatformException ? e.message : '$e');
+      videoFallbacks[file] = (
+        VideoFallback.cantPlay,
+        e is PlatformException ? e.message : '$e',
+      );
     }
     notifyListeners();
   }
@@ -780,7 +816,9 @@ class BragiController extends ChangeNotifier {
     final v = video;
     final len = v?.duration;
     if (v == null || v.file != file || v.loading || len == null) return;
-    final to = Duration(milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round());
+    final to = Duration(
+      milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round(),
+    );
     v.position = to;
     notifyListeners();
     await _videoBackend?.seek(to);
@@ -800,7 +838,11 @@ class BragiController extends ChangeNotifier {
     if (path == null || !info.clipHere) {
       notice = "That clip isn't on this device.";
     } else {
-      if (video?.playing ?? false) await playVideo(video!.file, info);
+      final v = video;
+      if (v != null && v.playing) {
+        v.playing = false;
+        await _videoBackend?.pause();
+      }
       final ok = await _openExternally(path);
       notice = ok ? null : 'No app here opens ${info.name}.';
     }

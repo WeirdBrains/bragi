@@ -6,7 +6,13 @@ import 'rust/api/bragi.dart' as rust;
 import 'rust/api/video.dart' as rv;
 
 export 'rust/api/video.dart'
-    show VideoFrameIn, VideoFramePlanView, VideoFrameView, VideoInfoView, VideoLimitsView, VideoProbeView;
+    show
+        VideoFrameIn,
+        VideoFramePlanView,
+        VideoFrameView,
+        VideoInfoView,
+        VideoLimitsView,
+        VideoProbeView;
 export 'rust/api/bragi.dart'
     show
         NodeTrainingView,
@@ -90,14 +96,40 @@ abstract class BragiApi {
 
   // Video (LF-43, V3): the core plans the frames, a phone's platform decoder makes them, the core
   // attaches them; a computer reads the clip with ffmpeg through the core.
-  Future<rv.VideoFramePlanView> videoFramePlan(String name, rv.VideoProbeView probe, String? model, rust.TargetView? target, List<String> history);
-  Future<rust.AttachmentView> attachVideoFrames(String name, String? path, rv.VideoProbeView probe, List<rv.VideoFrameIn> frames, String? model, rust.TargetView? target, List<String> history);
-  Future<rust.AttachmentView> attachVideoFile(String path, String? model, rust.TargetView? target, List<String> history);
+  Future<rv.VideoFramePlanView> videoFramePlan(
+    String name,
+    rv.VideoProbeView probe,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  );
+  Future<rust.AttachmentView> attachVideoFrames(
+    String name,
+    String? path,
+    rv.VideoProbeView probe,
+    List<rv.VideoFrameIn> frames,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  );
+  Future<rust.AttachmentView> attachVideoFile(
+    String path,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  );
   String? videoFileUnavailable();
   rv.VideoInfoView videoInfo(String name, String json);
   rv.VideoInfoView? videoAttachment(String conversation, String file);
-  Future<rv.VideoLimitsView> videoLimits(String? model, rust.TargetView? target);
-  Future<rv.VideoLimitsView> setVideoLimits(String? model, String limits, rust.TargetView? target);
+  Future<rv.VideoLimitsView> videoLimits(
+    String? model,
+    rust.TargetView? target,
+  );
+  Future<rv.VideoLimitsView> setVideoLimits(
+    String? model,
+    String limits,
+    rust.TargetView? target,
+  );
   bool approve(String requestId, int ask, String choice);
   Future<rust.ChatStarted> continueAnswer(String conversation, String? model);
   Stream<rust.ChatEventView> followChat(String requestId);
@@ -224,7 +256,11 @@ abstract class BragiApi {
   Future<String> modelsUpload(rust.UploadSpecView spec);
 
   /// The same upload as a `ymirctl` command for a computer that holds the file at [file].
-  Future<String> uploadCommand(rust.UploadSpecView spec, String file, List<rust.ModelNodeView> labels);
+  Future<String> uploadCommand(
+    rust.UploadSpecView spec,
+    String file,
+    List<rust.ModelNodeView> labels,
+  );
   Future<List<rust.PendingUploadView>> modelsPendingUploads();
   Future<void> modelsForgetUpload(String path, String peer);
 }
@@ -291,25 +327,68 @@ class RustBragiApi implements BragiApi {
   rust.AttachmentView attachBytes(String name, List<int> bytes) =>
       rust.attachBytes(name: name, bytes: bytes);
   @override
-  Future<rv.VideoFramePlanView> videoFramePlan(String name, rv.VideoProbeView probe, String? model, rust.TargetView? target, List<String> history) =>
-      rv.videoFramePlan(name: name, probe: probe, model: model, target: target, history: history);
+  Future<rv.VideoFramePlanView> videoFramePlan(
+    String name,
+    rv.VideoProbeView probe,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  ) => rv.videoFramePlan(
+    name: name,
+    probe: probe,
+    model: model,
+    target: target,
+    history: history,
+  );
   @override
-  Future<rust.AttachmentView> attachVideoFrames(String name, String? path, rv.VideoProbeView probe, List<rv.VideoFrameIn> frames, String? model, rust.TargetView? target, List<String> history) =>
-      rv.attachVideoFrames(name: name, path: path, probe: probe, frames: frames, model: model, target: target, history: history);
+  Future<rust.AttachmentView> attachVideoFrames(
+    String name,
+    String? path,
+    rv.VideoProbeView probe,
+    List<rv.VideoFrameIn> frames,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  ) => rv.attachVideoFrames(
+    name: name,
+    path: path,
+    probe: probe,
+    frames: frames,
+    model: model,
+    target: target,
+    history: history,
+  );
   @override
-  Future<rust.AttachmentView> attachVideoFile(String path, String? model, rust.TargetView? target, List<String> history) =>
-      rv.attachVideoFile(path: path, model: model, target: target, history: history);
+  Future<rust.AttachmentView> attachVideoFile(
+    String path,
+    String? model,
+    rust.TargetView? target,
+    List<String> history,
+  ) => rv.attachVideoFile(
+    path: path,
+    model: model,
+    target: target,
+    history: history,
+  );
   @override
   String? videoFileUnavailable() => rv.videoFileUnavailable();
   @override
-  rv.VideoInfoView videoInfo(String name, String json) => rv.videoInfo(name: name, json: json);
+  rv.VideoInfoView videoInfo(String name, String json) =>
+      rv.videoInfo(name: name, json: json);
   @override
-  rv.VideoInfoView? videoAttachment(String conversation, String file) => rv.videoAttachment(conversation: conversation, file: file);
+  rv.VideoInfoView? videoAttachment(String conversation, String file) =>
+      rv.videoAttachment(conversation: conversation, file: file);
   @override
-  Future<rv.VideoLimitsView> videoLimits(String? model, rust.TargetView? target) => rv.videoLimits(model: model, target: target);
+  Future<rv.VideoLimitsView> videoLimits(
+    String? model,
+    rust.TargetView? target,
+  ) => rv.videoLimits(model: model, target: target);
   @override
-  Future<rv.VideoLimitsView> setVideoLimits(String? model, String limits, rust.TargetView? target) =>
-      rv.setVideoLimits(model: model, limits: limits, target: target);
+  Future<rv.VideoLimitsView> setVideoLimits(
+    String? model,
+    String limits,
+    rust.TargetView? target,
+  ) => rv.setVideoLimits(model: model, limits: limits, target: target);
   @override
   bool approve(String requestId, int ask, String choice) =>
       rust.approve(requestId: requestId, ask: BigInt.from(ask), choice: choice);
@@ -347,7 +426,8 @@ class RustBragiApi implements BragiApi {
   Future<rust.DeletedView> deleteConversations(List<String> ids) =>
       rust.deleteConversations(ids: ids);
   @override
-  Future<void> setTraining(String id, bool on) => rust.setTraining(id: id, marked: on);
+  Future<void> setTraining(String id, bool on) =>
+      rust.setTraining(id: id, marked: on);
   @override
   Future<void> undoDelete(String undo) => rust.undoDelete(undo: undo);
   @override
@@ -511,7 +591,8 @@ class RustBragiApi implements BragiApi {
   @override
   Future<List<rust.NodeModelsView>> modelsOverview() => rust.modelsOverview();
   @override
-  Future<rust.TrainingOverviewView> trainingOverview() => rust.trainingOverview();
+  Future<rust.TrainingOverviewView> trainingOverview() =>
+      rust.trainingOverview();
   @override
   Future<String> modelsSearch(String query) async =>
       rust.modelsSearch(query: query);
@@ -537,18 +618,25 @@ class RustBragiApi implements BragiApi {
   List<int> uploadPercentPresets() => rust.uploadPercentPresets().toList();
 
   @override
-  Future<rust.UploadPreviewView> modelsInspectUpload(String path) => rust.modelsInspectUpload(path: path);
+  Future<rust.UploadPreviewView> modelsInspectUpload(String path) =>
+      rust.modelsInspectUpload(path: path);
 
   @override
-  Future<String> modelsUpload(rust.UploadSpecView spec) async => rust.modelsUpload(spec: spec);
+  Future<String> modelsUpload(rust.UploadSpecView spec) async =>
+      rust.modelsUpload(spec: spec);
 
   @override
-  Future<String> uploadCommand(rust.UploadSpecView spec, String file, List<rust.ModelNodeView> labels) async =>
-      rust.uploadCommand(spec: spec, file: file, labels: labels);
+  Future<String> uploadCommand(
+    rust.UploadSpecView spec,
+    String file,
+    List<rust.ModelNodeView> labels,
+  ) async => rust.uploadCommand(spec: spec, file: file, labels: labels);
 
   @override
-  Future<List<rust.PendingUploadView>> modelsPendingUploads() async => rust.modelsPendingUploads();
+  Future<List<rust.PendingUploadView>> modelsPendingUploads() async =>
+      rust.modelsPendingUploads();
 
   @override
-  Future<void> modelsForgetUpload(String path, String peer) async => rust.modelsForgetUpload(path: path, peer: peer);
+  Future<void> modelsForgetUpload(String path, String peer) async =>
+      rust.modelsForgetUpload(path: path, peer: peer);
 }
