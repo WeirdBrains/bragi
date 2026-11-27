@@ -59,7 +59,9 @@ fi
 cd "$(dirname "$0")/.."
 root=$(pwd)
 triple=$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')
-out=$(realpath -m "${1:-dist/ffmpeg/${triple:-unknown}}")
+# Absolute, without GNU `realpath -m` (macOS has the BSD one).
+mkdir -p "${1:-dist/ffmpeg/${triple:-unknown}}"
+out=$(cd "${1:-dist/ffmpeg/${triple:-unknown}}" && pwd)
 src_dir="${FFMPEG_SRC_DIR:-$HOME/.cache/bragi-ffmpeg}"
 tarball="$src_dir/ffmpeg-$FFMPEG_VERSION.tar.xz"
 mkdir -p "$src_dir"
@@ -67,7 +69,8 @@ if [[ ! -f "$tarball" ]]; then
   curl -fL --retry 3 -o "$tarball.part" "$FFMPEG_URL"
   mv "$tarball.part" "$tarball"
 fi
-echo "$FFMPEG_SHA256  $tarball" | sha256sum -c - >/dev/null || {
+sha256() { if command -v sha256sum >/dev/null; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
+echo "$FFMPEG_SHA256  $tarball" | sha256 -c - >/dev/null || {
   echo "ffmpeg tarball checksum mismatch: $tarball (delete it and try again)" >&2
   exit 1
 }
