@@ -19,6 +19,7 @@ import 'settings_ui.dart';
 import 'theme_ui.dart';
 import 'theme.dart';
 import 'training_ui.dart';
+import 'video.dart';
 import 'rust/api/bragi.dart' as rust;
 
 const _scripted = bool.fromEnvironment('BRAGI_DEMO');
@@ -109,6 +110,76 @@ class _ChatScreenState extends State<ChatScreen> {
       final bytes = f.bytes;
       if (bytes != null) c.attachFile(f.name, bytes);
     }
+  }
+
+  /// A clip from the gallery or files (the scripted demo writes a sample clip and its scripted
+  /// decoder reads it); the core samples it for the current model.
+  Future<void> _attachVideo() async {
+    final c = widget.controller;
+    if (_scripted) {
+      final f = File('${Directory.systemTemp.path}/bragi-sample-clip.mp4');
+      await f.writeAsBytes(sampleJpeg, flush: true);
+      await c.attachVideo(f.path, name: 'sample-clip.mp4');
+      return;
+    }
+    final r = await FilePicker.platform.pickFiles(type: FileType.video);
+    final f = r?.files.firstOrNull;
+    if (f?.path != null) await c.attachVideo(f!.path!, name: f.name);
+  }
+
+  /// This device's video limits for the current model: what is reported, and your own
+  /// `key=value` values that fill gaps and only lower what is reported.
+  Future<void> _videoLimits() async {
+    final c = widget.controller;
+    final now = c.videoLimits ?? await c.refreshVideoLimits();
+    if (!mounted || now == null) return;
+    final field = TextEditingController(text: now.user);
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Video limits for ${now.model}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Reported: ${now.reported.isEmpty ? 'nothing' : now.reported}',
+              style: const TextStyle(fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const Key('video-limits-field'),
+              controller: field,
+              decoration: InputDecoration(
+                labelText: 'Yours (key=value …)',
+                hintText: 'image_tokens=258 max_images=32',
+                helperText:
+                    'Fills what isn\'t reported, only lowers what is. Keys: ${now.keys.join(', ')}',
+                helperMaxLines: 4,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            key: const Key('video-limits-clear'),
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('Clear'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('video-limits-save'),
+            onPressed: () => Navigator.pop(ctx, field.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    field.dispose();
+    if (text != null) await c.setVideoLimits(text);
   }
 
   void _send() {
@@ -300,6 +371,48 @@ class _ChatScreenState extends State<ChatScreen> {
                   if (c.code.on && c.code.shell != null)
                     ShellPanel(code: c.code),
                   if (c.code.on) CodeBar(chat: c),
+                  if (c.videoReading != null ||
+                      c.videoLimits != null ||
+                      c.attachments.any((a) => a.kind == 'video'))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+                      child: Row(
+                        children: [
+                          if (c.videoReading != null) ...[
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Reading frames of ${c.videoReading}…',
+                                key: const Key('video-reading'),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ),
+                          ] else
+                            Flexible(
+                              child: ActionChip(
+                                key: const Key('video-limits'),
+                                avatar: Icon(
+                                  (c.videoLimits?.ready ?? true)
+                                      ? Icons.movie_outlined
+                                      : Icons.warning_amber,
+                                  size: 16,
+                                ),
+                                label: Text(
+                                  c.videoLimits?.chip ?? 'Video limits…',
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onPressed: _videoLimits,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   if (c.attachments.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
@@ -312,12 +425,11 @@ class _ChatScreenState extends State<ChatScreen> {
                               label: Text(_attachmentLabel(a)),
                               avatar: a.kind == 'text'
                                   ? null
-                                  : Icon(
-                                      a.kind == 'image'
-                                          ? Icons.image_outlined
-                                          : Icons.graphic_eq,
-                                      size: 16,
-                                    ),
+                                  : Icon(switch (a.kind) {
+                                      'image' => Icons.image_outlined,
+                                      'video' => Icons.movie_outlined,
+                                      _ => Icons.graphic_eq,
+                                    }, size: 16),
                               onDeleted: () => c.detach(i),
                             ),
                         ],
@@ -335,12 +447,38 @@ class _ChatScreenState extends State<ChatScreen> {
                         if (!c.code.on) ...[
                           IconButton(
                             key: const Key('attach'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
                             tooltip: 'Attach a file, image or audio',
                             onPressed: _attach,
                             icon: const Icon(Icons.attach_file),
                           ),
                           IconButton(
+                            key: const Key('attach-video'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
+                            tooltip: 'Attach a video',
+                            onPressed: c.videoReading == null
+                                ? _attachVideo
+                                : null,
+                            icon: const Icon(Icons.videocam_outlined),
+                          ),
+                          IconButton(
                             key: const Key('agent'),
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 40,
+                            ),
                             tooltip: c.agent
                                 ? 'Agent mode: on'
                                 : 'Agent mode: off',
@@ -355,7 +493,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             icon: const Icon(Icons.smart_toy_outlined),
                           ),
                         ],
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 4),
                         Expanded(
                           child: Focus(
                             onKeyEvent: _historyKey,
@@ -384,6 +522,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           const SizedBox(width: 6),
                           OutlinedButton(
                             key: const Key('continue'),
+                            style: OutlinedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                            ),
                             onPressed: c.continueAnswer,
                             child: const Text('Continue'),
                           ),
@@ -641,7 +785,10 @@ class _Bubble extends StatelessWidget {
               ),
             if (!streaming)
               for (final f in message.files)
-                _FileCard(controller: controller, file: f),
+                if (controller.videoInfo(f.id) case final v?)
+                  _VideoCard(controller: controller, file: f.id, info: v)
+                else
+                  _FileCard(controller: controller, file: f),
             if (message.reactions.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -824,6 +971,200 @@ class _FileCard extends StatelessWidget {
                     : const SizedBox(height: 4),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A clip in the chat: the platform player inline (Play/Pause, a seek bar, elapsed / total,
+/// Mute), or why it can't play here with the system player, then the frames the model saw (a tap
+/// plays from there).
+class _VideoCard extends StatelessWidget {
+  const _VideoCard({
+    required this.controller,
+    required this.file,
+    required this.info,
+  });
+
+  final BragiController controller;
+  final String file;
+  final VideoInfoView info;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = controller.video;
+    final mine =
+        c != null && c.file == file && c.conversation == controller.current?.id;
+    final known = Duration(milliseconds: info.durationMs.toInt());
+    final total = mine ? (c.duration ?? known) : known;
+    final at = mine ? c.position : Duration.zero;
+    final playing = mine && c.playing;
+    final progress = total.inMilliseconds == 0
+        ? 0.0
+        : (at.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
+    final fallback = controller.videoFallbacks[file];
+    final picture = mine && !c.loading ? controller.videoView() : null;
+    return Container(
+      key: Key('video-$file'),
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        border: Border.all(color: BragiColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            info.bubble,
+            key: Key('vbubble-$file'),
+            style: const TextStyle(fontSize: 13),
+          ),
+          const SizedBox(height: 6),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 240),
+            child:
+                picture ??
+                (info.frames.isEmpty
+                    ? const SizedBox.shrink()
+                    : Image.memory(
+                        base64Decode(info.frames.first.data),
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                      )),
+          ),
+          if (fallback != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                videoFallbackMessage(fallback.$1, fallback.$2),
+                key: Key('vfallback-$file'),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: BragiColors.textSecondary,
+                ),
+              ),
+            ),
+          Row(
+            children: [
+              if (fallback == null) ...[
+                IconButton(
+                  key: Key('vplay-$file'),
+                  tooltip: playing ? 'Pause' : 'Play',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  onPressed: () => controller.playVideo(file, info),
+                  icon: Icon(
+                    mine && c.loading
+                        ? Icons.hourglass_empty
+                        : (playing ? Icons.pause : Icons.play_arrow),
+                  ),
+                ),
+                Expanded(
+                  child: Slider(
+                    key: Key('vseek-$file'),
+                    value: progress,
+                    onChanged: mine && !c.loading
+                        ? (v) => controller.seekVideo(file, v)
+                        : null,
+                  ),
+                ),
+                Text(
+                  rust.audioTimes(
+                    positionMs: BigInt.from(at.inMilliseconds),
+                    durationMs: BigInt.from(total.inMilliseconds),
+                  ),
+                  key: Key('vtime-$file'),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: BragiColors.textSecondary,
+                  ),
+                ),
+                if (mine)
+                  IconButton(
+                    key: Key('vmute-$file'),
+                    tooltip: c.muted ? 'Unmute' : 'Mute',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    onPressed: controller.toggleVideoMute,
+                    icon: Icon(c.muted ? Icons.volume_off : Icons.volume_up),
+                  ),
+                if (info.clipHere)
+                  IconButton(
+                    key: Key('vopen-$file'),
+                    tooltip: 'Open in system player',
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    onPressed: () => controller.openVideoExternally(info),
+                    icon: const Icon(Icons.open_in_new, size: 18),
+                  ),
+              ] else ...[
+                const Spacer(),
+                if (info.clipHere)
+                  Flexible(
+                    child: TextButton.icon(
+                      key: Key('vopen-$file'),
+                      onPressed: () => controller.openVideoExternally(info),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text(
+                        'Open in system player',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
+            ],
+          ),
+          if (info.frames.isNotEmpty) ...[
+            Text(
+              'Frames the model saw',
+              style: TextStyle(fontSize: 11, color: BragiColors.textSecondary),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 4,
+              runSpacing: 4,
+              children: [
+                for (final (i, fr) in info.frames.indexed)
+                  InkWell(
+                    key: Key('vframe-$file-$i'),
+                    onTap: () => controller.playVideo(
+                      file,
+                      info,
+                      from: Duration(milliseconds: fr.atMs.toInt()),
+                    ),
+                    child: Column(
+                      children: [
+                        Image.memory(
+                          base64Decode(fr.data),
+                          width: 72,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, _, _) =>
+                              const SizedBox(width: 72, height: 40),
+                        ),
+                        Text(fr.label, style: const TextStyle(fontSize: 10)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -1179,5 +1520,6 @@ class _History extends StatelessWidget {
 String _attachmentLabel(AttachmentView a) => switch (a.kind) {
   'image' => '${a.name} (image)',
   'audio' => '${a.name} (audio)',
+  'video' => '${a.name} (video)',
   _ => '${a.name} (${a.text.trimRight().split('\n').length} lines)',
 };

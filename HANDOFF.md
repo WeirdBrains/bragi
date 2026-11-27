@@ -2,6 +2,53 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 20:11 EST: video V3, the phone app's video attach, platform decoders and inline player (merged `feature/video-v3-flutter`, LF-43)
+
+V3 of [docs/design/video.md](docs/design/video.md), on top of the VS Code slice (merge d2132af, entry below). Phones have no ffmpeg. The core plans the frames and the platform decodes them.
+
+- **Core** ([video.rs](crates/bragi-core/src/video.rs), [video_core.rs](crates/bragi-core/src/video_core.rs)):
+  - `sample()` now goes through `planned()`.
+  - `plan()` returns a `FramePlan`: the times, the size and the tokens per frame. It is always uniform (`phone_prefs`, since phones have no scene detector) and never includes sound.
+  - `ProvidedSource` turns the phone's decoded frames back into a `FrameSource`, taking the nearest frame for each planned time.
+  - `Core::video_frame_plan` and `Core::attach_video_frames` keep the original path for playback (`keep_clip`).
+  - The plan and the sampled attachment agree, also when the settings ask for scene mode.
+- **Bridge** ([api/video.rs](crates/bragi-bridge/src/api/video.rs); frb 2.13.0 bindings regenerated as `lib/src/rust/api/video.dart`):
+  - Calls: `video_frame_plan`, `attach_video_frames`, `attach_video_file` (ffmpeg, for a Flutter build on a computer), `video_file_unavailable`, `video_attachment` (a sent message's clip, for its card) and `video_info`.
+  - Labels and limits: `video_label`, `video_limits` and `set_video_limits`.
+  - The reads are `#[frb(sync)]`.
+- **Platform decoders** on the `org.weirdbrains.bragi/video` channel, both answering `probe` and `frames` (JPEG, scaled to the plan):
+  - Android ([VideoDecoder.kt](app/android/app/src/main/kotlin/org/weirdbrains/bragi/VideoDecoder.kt), `MediaMetadataRetriever`: `getScaledFrameAtTime` on API 27+, `OPTION_CLOSEST`, with rotation).
+  - iOS (`VideoDecoder` in [AppDelegate.swift](app/ios/Runner/AppDelegate.swift), `AVAssetImageGenerator`). It lives there so the Xcode project needs no edit.
+- **Flutter** ([video.dart](app/lib/src/video.dart), [controller.dart](app/lib/src/controller.dart), [chat_screen.dart](app/lib/src/chat_screen.dart)):
+  - Decoders: `VideoDecoder`, either the platform one or a scripted one for the demo build and tests.
+  - Players: `VideoClipBackend`, either `video_player` on phones or a scripted one. The new dependency is `video_player` ^2.10.0.
+  - Composer: a video button opens a picker (`FileType.video`; the demo build writes a sample clip). While frames are read it shows "Reading frames of …". A limits chip opens a sheet for this device's override (`key=value`, Clear and Save), and refusals show as the notice.
+  - Video card on a sent message: the bubble line and the picture (the first frame until it plays), with Play/Pause, a seek bar, elapsed / total, Mute and Open in system player (`url_launcher`). Below are the frames the model saw; a tap plays from that frame. The duplicate file card is hidden for clips.
+  - Fallbacks: the card says why it can't play and offers the system player. The reasons are: the clip isn't on this device (the frames still show), no player in this build (Flutter on a computer), or the platform can't play it (on load or mid-clip).
+  - One clip at a time: a clip and an audio file never play together, and changing chats stops the clip.
+  - Layout: the composer's icon buttons and Continue are compact, so the row still fits a 412 px phone with the extra button.
+
+**Checks** (on alien-blue, scratch worktree, final commit dd9389a):
+- `cargo fmt --all --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --workspace --no-fail-fast`: 360 passed, 0 failed, 5 ignored in 44 suites. That includes `a_phone_decodes_the_cores_plan_and_sampling_uses_its_frames` and the bridge's `a_clip_reads_back_for_its_card`. An earlier run caught the scene-mode plan disagreeing, and it was fixed in b0b5d8b.
+- `flutter analyze`: only the 6 existing `curly_braces` infos.
+- `flutter test --dart-define=BRAGI_DEMO=true`, file by file, against `libbragi_bridge.so` built from this branch: code 3/3, models 3/3, scenario 2/2, theme 1/1, wake 3/3 and the new video 5/5 passed.
+  - The video tests cover: extensions; the scripted decoder and player; the fallback text; and, through the real bridge and demo node, setting limits from the chip, a clip planned by the core and decoded by the scripted decoder (6 frames at the clip's shape), a send, and the card's play, pause, frame seek, mute and system player. They also cover a load failure, a mid-clip failure, a clip from another device, and leaving the chat.
+  - settings failed 0/1 on the final run at line 228 (the known endpoint-flow flake from the V1 and V2 entries). It passed 1/1 on this branch's earlier run.
+- No GUI was opened. The Android and iOS decoders and the `video_player` path were not built or run on a device or emulator.
+
+**Not done:**
+- Building and running the native decoders on Android and iOS.
+- Sound from phone clips, and scene detection on phones.
+- Copying clips into the attachment store so other devices can play them.
+- A bundled LGPL ffmpeg.
+- Transcription, after Ymir milestone 2.
+- The Bragi status in Ymir `docs/DESIGN.md`.
+- The Weirdnet asks.
+
+**Next:** a device run of the decoders and player, then the remaining Bragi roadmap items.
+
 ## 2026-11-26 19:20 EST: video V2 slice 3, video in the VS Code extension through bragi serve (merged `feature/video-v2-vscode`, LF-43)
 
 Michael approved the next slices of [docs/design/video.md](docs/design/video.md): VS Code first, then the Flutter phone player (V3). The extension never runs ffmpeg. It sends the clip's path, and `bragi serve` samples it with the same limits and override as every other shell.

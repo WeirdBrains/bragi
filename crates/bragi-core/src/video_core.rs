@@ -10,7 +10,9 @@ use crate::attach::Attachment;
 use crate::core::Core;
 use crate::error::Result;
 use crate::sessions::Target;
-use crate::video::{Ffmpeg, FfmpegCli, FrameSource, LimitOverrides, LimitsView, ModelLimits, VideoPrefs};
+use crate::video::{
+    Ffmpeg, FfmpegCli, Frame, FramePlan, FrameSource, LimitOverrides, LimitsView, ModelLimits, Probe, ProvidedSource, VideoPrefs, phone_prefs,
+};
 
 /// This device's per-model video limits, beside the other device settings.
 const OVERRIDES_FILE: &str = "video-limits.json";
@@ -138,6 +140,49 @@ impl Core {
                 audio_ok: self.state().catalog.model(model).is_some_and(|m| m.takes(Modalities::AUDIO)),
             }),
         }
+    }
+}
+
+impl Core {
+    /// What a phone's decoder should read for the clip `name` (its `probe` from the platform) sent
+    /// to `model` at `target`: the frame times and size, from the same limits and override as
+    /// everywhere else (LF-43, V3). Refuses like [`attach_video`](Self::attach_video).
+    pub async fn video_frame_plan(
+        &self,
+        target: Option<&Target>,
+        model: &str,
+        name: &str,
+        probe: &Probe,
+        prefs: &VideoPrefs,
+        reserved: u32,
+    ) -> Result<FramePlan> {
+        let plan = self.video_plan(target, model).await?;
+        crate::video::plan(name, probe, model, &plan.limits, prefs, reserved)
+    }
+
+    /// The clip `name` as one attachment from the frames a phone's decoder made for
+    /// [`video_frame_plan`](Self::video_frame_plan) (no soundtrack on phones). `path` is where the
+    /// clip is on this device, kept for the player when `prefs.keep_original` is on.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn attach_video_frames(
+        &self,
+        target: Option<&Target>,
+        model: &str,
+        name: &str,
+        path: Option<&Path>,
+        probe: Probe,
+        frames: Vec<(u64, Frame)>,
+        prefs: &VideoPrefs,
+        reserved: u32,
+    ) -> Result<Attachment> {
+        let plan = self.video_plan(target, model).await?;
+        let source = ProvidedSource { probe, frames };
+        let phone = phone_prefs(prefs);
+        let mut a = self.attach_video_source(name, &source, model, &VideoPlan { limits: plan.limits, audio_ok: false }, &phone, reserved)?;
+        if let Some(p) = path {
+            keep_clip(&mut a, prefs, p);
+        }
+        Ok(a)
     }
 }
 

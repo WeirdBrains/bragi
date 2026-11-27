@@ -4,12 +4,16 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart' show PlatformException;
+import 'package:flutter/widgets.dart' show Widget;
+import 'package:url_launcher/url_launcher.dart';
 
 import 'api.dart';
 import 'appearance.dart';
 import 'audio.dart';
 import 'code_api.dart';
 import 'code_controller.dart';
+import 'video.dart';
 
 /// Puts [delta] at [offset] (characters, as the core counts them), replacing what follows.
 String splice(String text, int offset, String delta) {
@@ -40,9 +44,18 @@ class ApprovalCard {
 }
 
 class BragiController extends ChangeNotifier {
-  BragiController(this.api, {ClipBackend Function()? audio, CodeApi? code})
-    : _newAudio = audio ?? ClipBackend.create,
-      _codeApi = code ?? const RustCodeApi();
+  BragiController(
+    this.api, {
+    ClipBackend Function()? audio,
+    CodeApi? code,
+    VideoDecoder? Function()? decoder,
+    VideoClipBackend? Function()? video,
+    Future<bool> Function(String path)? openExternally,
+  }) : _newAudio = audio ?? ClipBackend.create,
+       _codeApi = code ?? const RustCodeApi(),
+       _newDecoder = decoder ?? VideoDecoder.create,
+       _newVideo = video ?? VideoClipBackend.create,
+       _openExternally = openExternally ?? _systemOpen;
 
   final BragiApi api;
   final CodeApi _codeApi;
@@ -135,8 +148,12 @@ class BragiController extends ChangeNotifier {
   void dispose() {
     _watch?.cancel();
     unawaited(stopClip());
+    unawaited(stopVideo());
     unawaited(_clipPosition?.cancel());
     unawaited(_clipEnded?.cancel());
+    for (final s in _videoSubs) {
+      unawaited(s.cancel());
+    }
     super.dispose();
   }
 
@@ -492,6 +509,7 @@ class BragiController extends ChangeNotifier {
       return;
     }
     await stopClip();
+    await stopVideo();
     final known = f.durationMs == null
         ? null
         : Duration(milliseconds: f.durationMs!.toInt());
@@ -548,6 +566,299 @@ class BragiController extends ChangeNotifier {
     await _audio?.stop();
   }
 
+  // ---- video (LF-43, V3): attach through the platform decoder, play inline, one clip at a time ----
+
+  final VideoDecoder? Function() _newDecoder;
+  final VideoClipBackend? Function() _newVideo;
+  final Future<bool> Function(String path) _openExternally;
+  VideoDecoder? _decoder;
+  VideoClipBackend? _videoBackend;
+  final List<StreamSubscription<Object?>> _videoSubs = [];
+
+  /// The clip playing or paused, if any.
+  VideoClip? video;
+
+  /// Why a clip can't play in the chat, by file id.
+  final Map<String, (VideoFallback, String?)> videoFallbacks = {};
+
+  /// A clip being read (the attach row shows it).
+  String? videoReading;
+
+  /// The current model's video limits, as last read (the chip and the limits sheet).
+  VideoLimitsView? videoLimits;
+
+  static Future<bool> _systemOpen(String path) async {
+    // url_launcher opens file: URIs in the system's default app.
+    return launchUrl(Uri.file(path), mode: LaunchMode.externalApplication);
+  }
+
+  /// The player for this build, made on first use (null: clips open in the system player).
+  VideoClipBackend? get _videoPlayer => _videoBackend ??= _newVideo();
+
+  TargetView? get _videoTarget => current == null ? newChatTarget : null;
+
+  List<String> get _historyText => [for (final m in messages) m.text];
+
+  /// Samples the clip at [path] for the current model and adds it to the next message. On a phone
+  /// the platform decodes the frames the core plans; on a computer ffmpeg reads it through the
+  /// core. Refusals (no limits for the model, too long, no decoder) show as the notice.
+  Future<void> attachVideo(String path, {String? name}) async {
+    final file = name ?? path.split(RegExp(r'[/\\]')).last;
+    if (videoReading != null) return;
+    videoReading = file;
+    notice = null;
+    notifyListeners();
+    try {
+      final decoder = _decoder ??= _newDecoder();
+      final AttachmentView a;
+      if (decoder != null) {
+        final facts = await decoder.probe(path);
+        final probe = VideoProbeView(
+          durationMs: BigInt.from(facts.durationMs),
+          width: facts.width,
+          height: facts.height,
+          fps: facts.fps,
+          hasAudio: facts.hasAudio,
+        );
+        final plan = await api.videoFramePlan(
+          file,
+          probe,
+          model,
+          _videoTarget,
+          _historyText,
+        );
+        final frames = await decoder.frames(
+          path,
+          [for (final t in plan.timesMs) t.toInt()],
+          plan.width,
+          plan.height,
+        );
+        a = await api.attachVideoFrames(
+          file,
+          path,
+          probe,
+          [
+            for (final f in frames)
+              VideoFrameIn(
+                atMs: BigInt.from(f.atMs),
+                mime: f.mime,
+                bytes: f.bytes,
+              ),
+          ],
+          model,
+          _videoTarget,
+          _historyText,
+        );
+      } else {
+        final why = api.videoFileUnavailable();
+        if (why != null) throw why;
+        a = await api.attachVideoFile(path, model, _videoTarget, _historyText);
+      }
+      attachments = [...attachments, a];
+    } catch (e) {
+      notice = '$e';
+      unawaited(refreshVideoLimits());
+    } finally {
+      videoReading = null;
+      notifyListeners();
+    }
+  }
+
+  /// Reads the current model's video limits (for the chip).
+  Future<VideoLimitsView?> refreshVideoLimits() async {
+    try {
+      videoLimits = await api.videoLimits(model, _videoTarget);
+    } catch (_) {
+      videoLimits = null;
+    }
+    notifyListeners();
+    return videoLimits;
+  }
+
+  /// Sets this device's video limits for the current model (`key=value …`; empty clears them).
+  Future<VideoLimitsView?> setVideoLimits(String text) async {
+    try {
+      videoLimits = await api.setVideoLimits(model, text.trim(), _videoTarget);
+      final ignored = videoLimits!.ignored;
+      notice = ignored.isEmpty
+          ? videoLimits!.chip
+          : '${videoLimits!.chip}. Ignored (they would raise a reported limit): ${ignored.join(', ')}';
+    } catch (e) {
+      notice = '$e';
+    }
+    notifyListeners();
+    return videoLimits;
+  }
+
+  final Map<String, VideoInfoView?> _videoInfo = {};
+
+  /// The clip of file [file] in the current chat (null when it isn't one), read once.
+  VideoInfoView? videoInfo(String file) {
+    final c = current;
+    if (c == null) return null;
+    return _videoInfo.putIfAbsent('${c.id}/$file', () {
+      try {
+        return api.videoAttachment(c.id, file);
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
+  /// Play or pause on a clip's card; [from] plays from there (a frame of the strip). Audio stops
+  /// first. When the clip can't play here, the card says why.
+  Future<void> playVideo(
+    String file,
+    VideoInfoView info, {
+    Duration? from,
+  }) async {
+    final conv = current?.id;
+    if (conv == null) return;
+    final v = video;
+    final player = _videoBackend;
+    if (v != null &&
+        v.conversation == conv &&
+        v.file == file &&
+        player != null) {
+      if (v.loading) return;
+      if (from != null) {
+        v.position = from;
+        await player.seek(from);
+        if (!v.playing) {
+          v.playing = true;
+          await player.play();
+        }
+      } else if (v.playing) {
+        v.playing = false;
+        await player.pause();
+      } else {
+        if (v.duration != null && v.position >= v.duration!) {
+          v.position = Duration.zero;
+          await player.seek(Duration.zero);
+        }
+        v.playing = true;
+        await player.play();
+      }
+      notifyListeners();
+      return;
+    }
+    await stopClip();
+    await stopVideo();
+    final path = info.clip;
+    if (path == null || !info.clipHere) {
+      videoFallbacks[file] = (VideoFallback.notHere, null);
+      notifyListeners();
+      return;
+    }
+    final p = _videoPlayer;
+    if (p == null) {
+      videoFallbacks[file] = (VideoFallback.noPlayer, null);
+      notifyListeners();
+      return;
+    }
+    videoFallbacks.remove(file);
+    final known = Duration(milliseconds: info.durationMs.toInt());
+    final next = VideoClip(conversation: conv, file: file, duration: known);
+    video = next;
+    notifyListeners();
+    if (_videoSubs.isEmpty) {
+      _videoSubs.add(
+        p.position.listen((at) {
+          final v = video;
+          if (v == null || v.loading) return;
+          v.position = at;
+          notifyListeners();
+        }),
+      );
+      _videoSubs.add(
+        p.ended.listen((_) {
+          final v = video;
+          if (v == null) return;
+          v.playing = false;
+          v.position = v.duration ?? v.position;
+          notifyListeners();
+        }),
+      );
+      _videoSubs.add(
+        p.failed.listen((why) {
+          final v = video;
+          if (v == null) return;
+          videoFallbacks[v.file] = (VideoFallback.cantPlay, why);
+          unawaited(stopVideo());
+          notifyListeners();
+        }),
+      );
+    }
+    try {
+      final length = await p.load(path, known);
+      if (!identical(video, next)) return;
+      next
+        ..duration = length ?? known
+        ..loading = false
+        ..playing = true;
+      if (from != null) {
+        next.position = from;
+        await p.seek(from);
+      }
+      await p.play();
+    } catch (e) {
+      if (identical(video, next)) video = null;
+      videoFallbacks[file] = (
+        VideoFallback.cantPlay,
+        e is PlatformException ? e.message : '$e',
+      );
+    }
+    notifyListeners();
+  }
+
+  /// The seek bar of clip [file], moved to [fraction] of its length.
+  Future<void> seekVideo(String file, double fraction) async {
+    final v = video;
+    final len = v?.duration;
+    if (v == null || v.file != file || v.loading || len == null) return;
+    final to = Duration(
+      milliseconds: (fraction.clamp(0.0, 1.0) * len.inMilliseconds).round(),
+    );
+    v.position = to;
+    notifyListeners();
+    await _videoBackend?.seek(to);
+  }
+
+  Future<void> toggleVideoMute() async {
+    final v = video;
+    if (v == null) return;
+    v.muted = !v.muted;
+    notifyListeners();
+    await _videoBackend?.setMuted(v.muted);
+  }
+
+  /// The clip in the system player.
+  Future<void> openVideoExternally(VideoInfoView info) async {
+    final path = info.clip;
+    if (path == null || !info.clipHere) {
+      notice = "That clip isn't on this device.";
+    } else {
+      final v = video;
+      if (v != null && v.playing) {
+        v.playing = false;
+        await _videoBackend?.pause();
+      }
+      final ok = await _openExternally(path);
+      notice = ok ? null : 'No app here opens ${info.name}.';
+    }
+    notifyListeners();
+  }
+
+  /// The picture of the clip playing.
+  Widget? videoView() => video == null ? null : _videoBackend?.view();
+
+  /// Stops the clip, if one plays.
+  Future<void> stopVideo() async {
+    if (video == null) return;
+    video = null;
+    await _videoBackend?.stop();
+  }
+
   String? _logged;
 
   @override
@@ -555,6 +866,8 @@ class BragiController extends ChangeNotifier {
     // A clip stops when the chat on screen changes.
     final c = clip;
     if (c != null && c.conversation != current?.id) unawaited(stopClip());
+    final v = video;
+    if (v != null && v.conversation != current?.id) unawaited(stopVideo());
     // Every notice shown is kept in the list behind the bell.
     final n = notice;
     if (n != null && n != _logged) {
