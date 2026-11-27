@@ -51,7 +51,15 @@ mkdir -p dist
 rm -f "dist/$name".*
 ( cd "$stage/app" && ditto -c -k --keepParent Bragi.app "$root/dist/$name.zip" )
 ln -s /Applications "$stage/app/Applications"
-hdiutil create -volname "Bragi $ver" -srcfolder "$stage/app" -ov -format UDZO "dist/$name.dmg"
+# hdiutil's own size guess for -srcfolder can come up short ("No space left on device"), so the image
+# is sized from the folder with room to spare, and a failed create is tried again.
+dmg_mb=$(( $(du -sm "$stage/app" | cut -f1) * 12 / 10 + 32 ))
+for attempt in 1 2 3; do
+  hdiutil create -volname "Bragi $ver" -srcfolder "$stage/app" -size "${dmg_mb}m" -ov -format UDZO "dist/$name.dmg" && break
+  [[ $attempt == 3 ]] && exit 1
+  echo "hdiutil create failed (attempt $attempt), trying again" >&2
+  sleep 5
+done
 mkdir -p "$stage/tar/$name"
 cp "$stage/bragi" "$stage/tar/$name/bragi"
 ln -s bragi "$stage/tar/$name/bragi-tui"
