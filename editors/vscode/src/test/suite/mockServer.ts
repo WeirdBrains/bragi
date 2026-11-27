@@ -33,6 +33,15 @@ export class MockServer {
   /** An agent chat waiting at its card: called with the choice. */
   private waitingCard?: (choice: string) => void;
   private nextId = 1;
+  /** Chats kept by the mock (`/v1/code/chat` adds to them): id → messages. */
+  chats = new Map<string, any[]>();
+  sessionFolders = new Map<string, string>();
+  folders: { id: string; name: string; parent?: string | null }[] = [];
+  private lastDelete?: { chat: string; removed: { at: number; m: any }[] };
+  /** Linking as `GET /v1/state` reports it (bragi-core's PairState). */
+  pair: any = { state: 'linked', user: 'u-1', device: 'This Bragi' };
+  /** What the other device does with a link code: `match` shows a code to compare. */
+  offerScript: 'match' | 'wait' = 'match';
 
   get url(): string {
     return `http://127.0.0.1:${this.port}`;
@@ -104,6 +113,148 @@ export class MockServer {
     };
   }
 
+  /** Keeps a plain chat turn (with its attachments) the way Bragi's history would. */
+  private record(body: any, id: string, answer: string): void {
+    const msgs = this.chats.get(id) ?? [];
+    const n = this.nextId++;
+    const attachments = (body.attachments ?? []).map((a: any) => {
+      if (a.text !== undefined) {
+        return { name: a.name, text: a.text };
+      }
+      const ext = String(a.name).split('.').pop()!.toLowerCase();
+      return ['wav', 'mp3'].includes(ext) ? { name: a.name, text: '', media: { kind: 'audio', format: ext, data: a.data } } : { name: a.name, text: '', media: { kind: 'image', mime: `image/${ext === 'jpg' ? 'jpeg' : ext}`, data: a.data } };
+    });
+    msgs.push({ id: `u${n}`, role: 'user', text: body.prompt, state: 'complete', attachments, at_ms: n });
+    msgs.push({ id: `a${n}`, role: 'assistant', text: answer, state: 'complete', model: 'gemma-4-e4b', at_ms: n });
+    this.chats.set(id, msgs);
+  }
+
+  private chatRoutes(req: http.IncomingMessage, res: http.ServerResponse, path: string, body: any): boolean {
+    const notFound = (what: string) => this.json(res, 404, { error: { kind: 'not_found', message: `no ${what}` } });
+    let m = /^\/v1\/sessions\/([^/]+)\/messages\/([^/]+)(\/react)?$/.exec(path);
+    if (m) {
+      const msgs = this.chats.get(m[1]);
+      const at = msgs?.findIndex((x) => x.id === m![2]) ?? -1;
+      if (!msgs || at < 0) {
+        notFound('message');
+        return true;
+      }
+      if (m[3]) {
+        const r: string[] = msgs[at].reactions ?? [];
+        msgs[at].reactions = r.includes(body.emoji) ? r.filter((e) => e !== body.emoji) : [...r, body.emoji];
+        this.json(res, 200, { reactions: msgs[at].reactions });
+        return true;
+      }
+      const withReply = (req.url ?? '').includes('with_reply=true') && msgs[at + 1]?.role === 'assistant';
+      const removed = msgs.splice(at, withReply ? 2 : 1).map((x, i) => ({ at: at + i, m: x }));
+      this.lastDelete = { chat: m[1], removed };
+      this.json(res, 200, { undo: 'undo-1', messages: removed.length, ids: removed.map((r) => r.m.id) });
+      return true;
+    }
+    m = /^\/v1\/sessions\/([^/]+)(\/folder)?$/.exec(path);
+    if (m && (req.method === 'GET' || m[2])) {
+      const msgs = this.chats.get(m[1]);
+      if (!msgs) {
+        notFound('chat');
+        return true;
+      }
+      if (m[2]) {
+        if (body.folder) {
+          this.sessionFolders.set(m[1], body.folder);
+        } else {
+          this.sessionFolders.delete(m[1]);
+        }
+        this.json(res, 200, { ok: true });
+        return true;
+      }
+      this.json(res, 200, { conversation: { id: m[1], title: msgs[0]?.text ?? '', messages: msgs }, folder: this.sessionFolders.get(m[1]) ?? null });
+      return true;
+    }
+    m = /^\/v1\/folders(?:\/([^/]+)(\/rename|\/move)?)?$/.exec(path);
+    if (m) {
+      if (!m[1]) {
+        if (req.method === 'POST') {
+          const f = { id: 'f-' + this.nextId++, name: body.name, parent: body.parent ?? null };
+          this.folders.push(f);
+          this.json(res, 201, f);
+        } else {
+          this.json(res, 200, { folders: this.folders });
+        }
+        return true;
+      }
+      const f = this.folders.find((x) => x.id === m![1]);
+      if (!f) {
+        notFound('folder');
+        return true;
+      }
+      if (m[2] === '/rename') {
+        f.name = body.name;
+      } else if (m[2] === '/move') {
+        f.parent = body.parent;
+      } else {
+        this.folders = this.folders.filter((x) => x !== f).map((x) => (x.parent === f.id ? { ...x, parent: f.parent } : x));
+        for (const [s, id] of [...this.sessionFolders]) {
+          if (id === f.id) {
+            if (f.parent) {
+              this.sessionFolders.set(s, f.parent);
+            } else {
+              this.sessionFolders.delete(s);
+            }
+          }
+        }
+      }
+      this.json(res, 200, { ok: true });
+      return true;
+    }
+    switch (path) {
+      case '/v1/undo': {
+        const d = this.lastDelete;
+        if (!d || body.undo !== 'undo-1') {
+          notFound('delete to undo');
+          return true;
+        }
+        const msgs = this.chats.get(d.chat)!;
+        for (const r of d.removed) {
+          msgs.splice(r.at, 0, r.m);
+        }
+        this.lastDelete = undefined;
+        this.json(res, 200, { ok: true });
+        return true;
+      }
+      case '/v1/link/offer':
+        if (this.pair.state === 'linked') {
+          this.json(res, 400, { error: { kind: 'pairing', message: 'this device is already linked' } });
+          return true;
+        }
+        this.pair = { state: 'offering', link: 'LINK-CODE-42', expires_ms: Date.now() + 600000 };
+        if (this.offerScript === 'match') {
+          setTimeout(() => {
+            if (this.pair.state === 'offering') {
+              this.pair = { state: 'confirm', sas: '913-205' };
+            }
+          }, 300);
+        }
+        this.json(res, 200, { link: 'LINK-CODE-42', expires_ms: this.pair.expires_ms });
+        return true;
+      case '/v1/link/offer/confirm':
+        if (this.pair.state !== 'confirm') {
+          this.json(res, 409, { error: { kind: 'pairing', message: 'nothing to confirm yet' } });
+          return true;
+        }
+        this.pair = body.matches ? { state: 'waiting', sas: this.pair.sas } : { state: 'failed', message: 'the codes did not match' };
+        if (body.matches) {
+          setTimeout(() => (this.pair = { state: 'linked', user: 'u-1', device: 'Test Bragi' }), 300);
+        }
+        this.json(res, 200, { ok: true, pair: this.pair });
+        return true;
+      case '/v1/link/offer/cancel':
+        this.pair = { state: 'unpaired' };
+        this.json(res, 200, { ok: true, pair: this.pair });
+        return true;
+    }
+    return false;
+  }
+
   private handle(req: http.IncomingMessage, res: http.ServerResponse, raw: string): void {
     const path = (req.url ?? '').split('?')[0];
     const body = raw ? JSON.parse(raw) : undefined;
@@ -147,6 +298,9 @@ export class MockServer {
       Object.assign(e, { name: body.name, base_url: body.base_url, model: body.model ?? null, mode: body.mode, enabled: body.enabled, has_key: body.clear_key ? false : body.api_key ? true : e.has_key });
       return this.json(res, 200, e);
     }
+    if (this.chatRoutes(req, res, path, body)) {
+      return;
+    }
     const ms = /^\/v1\/mcp-servers\/([^/]+)(\/enabled|\/always-allow|\/test)?$/.exec(path);
     if (ms && this.mcpClient) {
       const s = this.mcpServers.find((x) => x.id === ms[1]);
@@ -172,7 +326,7 @@ export class MockServer {
     }
     switch (path) {
       case '/v1/state':
-        return this.json(res, 200, { linked: true, models: [{ id: 'gemma-4-e4b', status: 'warm' }, { id: 'qwen3-32b', status: 'loadable' }], default_model: 'gemma-4-e4b' });
+        return this.json(res, 200, { linked: this.pair.state === 'linked', pair: this.pair, models: [{ id: 'gemma-4-e4b', status: 'warm' }, { id: 'qwen3-32b', status: 'loadable' }], default_model: 'gemma-4-e4b' });
       case '/v1/targets':
         return this.json(res, 200, {
           targets: [
@@ -238,6 +392,7 @@ export class MockServer {
         for (const e of events) {
           res.write(`data: ${JSON.stringify(e)}\n\n`);
         }
+        this.record(body, id, 'It adds two numbers.');
         res.end();
         return;
       }
@@ -266,7 +421,12 @@ export class MockServer {
       case '/v1/endpoints/test':
         return this.json(res, 200, { ok: true, models: ['m'], latency_ms: 3, message: 'ok' });
       case '/v1/sessions':
-        return this.json(res, 200, { sessions: [{ id: 's-1', title: 'First chat', updated_ms: 1, messages: 2, target_label: 'Weirdnet pool' }] });
+        return this.json(res, 200, {
+          sessions: [
+            { id: 's-1', title: 'First chat', updated_ms: 1, messages: 2, target_label: 'Weirdnet pool', folder: this.sessionFolders.get('s-1') ?? null },
+            ...[...this.chats].map(([id, msgs]) => ({ id, title: msgs[0]?.text ?? '', updated_ms: 2, messages: msgs.length, target_label: 'Weirdnet pool', folder: this.sessionFolders.get(id) ?? null })),
+          ],
+        });
       case '/v1/mcp-servers':
         if (!this.mcpClient) {
           return this.json(res, 404, { error: { kind: 'not_found', message: path } });

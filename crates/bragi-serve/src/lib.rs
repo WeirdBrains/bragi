@@ -29,6 +29,8 @@
 //! - `GET|POST /v1/mcp-servers`, `PUT|DELETE /v1/mcp-servers/{id}`, `POST …/{id}/enabled`,
 //!   `…/{id}/test`, `…/{id}/always-allow`: outside MCP servers; `POST /v1/agent/approve` answers
 //!   an agent's approval card (see [`mcp`]).
+//! - `GET /v1/sessions/{id}`, reactions, deleting a message, folders and showing a link code
+//!   ([`chats`]). `/v1/code/chat` also takes `attachments` (files, a selection, images, audio).
 
 pub mod cli;
 pub mod ensure;
@@ -56,6 +58,8 @@ use serde_json::{Value, json};
 pub const DEFAULT_PORT: u16 = 4877;
 /// Largest request body (an editor context with a few open files fits easily).
 pub const MAX_BODY: usize = 4 * 1024 * 1024;
+/// A chat turn may carry images (5 MiB each) and audio (10 MiB) as base64.
+pub const MAX_CHAT_BODY: usize = 48 * 1024 * 1024;
 /// A suggestion or rewrite that hasn't finished by then is stopped.
 pub const ANSWER_TIMEOUT: Duration = Duration::from_secs(300);
 
@@ -181,6 +185,7 @@ pub async fn serve_tracked(
     Ok(())
 }
 
+mod chats;
 mod manage;
 mod mcp;
 
@@ -210,12 +215,13 @@ pub fn router_with_clips(core: Core, token: String, port: u16, open_clip: video:
         .route("/v1/code/rewrite", post(rewrite))
         .route("/v1/code/hunks", post(hunks))
         .route("/v1/code/apply", post(apply_hunks))
-        .route("/v1/code/chat", post(code_chat))
+        .route("/v1/code/chat", post(code_chat).layer(DefaultBodyLimit::max(MAX_CHAT_BODY)))
         .route("/v1/cancel", post(cancel))
         .route("/v1/video/limits", post(video::limits))
         .route("/v1/video/limits/set", post(video::set_limits))
         .merge(manage::routes())
         .merge(mcp::routes())
+        .merge(chats::routes())
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
     Router::new()
         .route("/v1/health", get(|| async { Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") })) }))
@@ -536,6 +542,9 @@ struct CodeChatBody {
     /// The project folder, for MCP servers scoped to a folder.
     #[serde(default)]
     folder: Option<String>,
+    /// Files or a selection the user attached in the panel, and images or audio.
+    #[serde(default)]
+    attachments: Vec<chats::AttachmentBody>,
 }
 
 fn sse_response(events: impl futures::Stream<Item = String> + Send + 'static) -> Response {
@@ -573,6 +582,12 @@ fn guarded_events(core: Core, h: ChatHandle) -> impl futures::Stream<Item = Chat
 
 async fn code_chat(State(app): State<App>, Json(b): Json<CodeChatBody>) -> Response {
     let mut attachments = b.context.as_ref().map(code::chat_attachments).unwrap_or_default();
+    for a in &b.attachments {
+        match a.read() {
+            Ok(a) => attachments.push(a),
+            Err(e) => return core_error(e),
+        }
+    }
     let mut clip = None;
     if let Some(v) = &b.video {
         // Sized for the model that answers, leaving room for what the turn already carries.

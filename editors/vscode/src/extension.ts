@@ -5,7 +5,7 @@
 import * as vscode from 'vscode';
 import { Router } from './backends';
 import { ChatView } from './chat';
-import { mcpServerRunning, register as registerManagement } from './commands';
+import { mcpServerRunning, register as registerManagement, sessionItems } from './commands';
 import { Manage } from './manage';
 import { ConnectionsView } from './tree';
 import { editorContext } from './context';
@@ -191,6 +191,42 @@ export function activate(context: vscode.ExtensionContext): BragiApi {
       }),
     ),
     vscode.commands.registerCommand('bragi.videoLimits', () => chat.editVideoLimits()),
+    vscode.commands.registerCommand(
+      'bragi.chat.attachFile',
+      run(async (uri?: vscode.Uri, all?: vscode.Uri[]) => {
+        await vscode.commands.executeCommand(`${ChatView.id}.focus`);
+        const picked = (Array.isArray(all) && all.length ? all : uri instanceof vscode.Uri ? [uri] : []).filter((u) => u.scheme === 'file');
+        if (picked.length === 0) {
+          await chat.pickFiles();
+        }
+        for (const u of picked) {
+          chat.controller.attachFile(u.fsPath);
+        }
+        return chat.controller.pendingFiles.length;
+      }),
+    ),
+    vscode.commands.registerCommand(
+      'bragi.chat.attachSelection',
+      run(async () => {
+        const ok = chat.attachSelection();
+        await vscode.commands.executeCommand(`${ChatView.id}.focus`);
+        return ok;
+      }),
+    ),
+    vscode.commands.registerCommand(
+      'bragi.sessions.open',
+      run(async (id?: string) => {
+        if (!(await ensureToken(secrets, serve))) {
+          return undefined;
+        }
+        let pick = typeof id === 'string' ? id : undefined;
+        if (!pick) {
+          const chosen = await vscode.window.showQuickPick(sessionItems(await manage.sessions(), await manage.folders()), { title: 'Open which chat?', matchOnDescription: true });
+          pick = chosen?.s?.id;
+        }
+        return pick ? chat.open(pick) : undefined;
+      }),
+    ),
     vscode.commands.registerCommand(
       'bragi.askAboutSelection',
       run(async (question?: string) => {

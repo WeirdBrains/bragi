@@ -4,6 +4,7 @@
 import * as vscode from 'vscode';
 import { chatContextText, cleanSuggestion, effectiveScope, PromptMessage, rewritePrompt, rewriteResult, suggestPrompt } from './prompts';
 import { Applied, applyHunks, computeHunks, HunkList } from './hunks';
+import { ChatFile, inlineText, wireFile } from './files';
 import { Secrets } from './tokens';
 import { BragiError, BragiTarget, ChatEvent, EditorContext, ModelList, RewriteResult, Scope, TargetOption, VideoAttach, VideoLimits } from './types';
 
@@ -18,6 +19,8 @@ export interface ChatTurn {
   agent?: boolean;
   /** The workspace folder, for MCP servers scoped to a folder. */
   folder?: string;
+  /** Files, the selection, images or sound attached in the panel. */
+  files?: ChatFile[];
 }
 
 /** The answer to an agent's approval card. */
@@ -217,7 +220,7 @@ export class BragiBackend implements Backend {
     const res = await this.request(
       'POST',
       '/v1/code/chat',
-      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target(), video: turn.video, agent: turn.agent || undefined, folder: turn.folder },
+      { prompt: turn.prompt, context: turn.context, conversation: turn.conversation, model: turn.model || undefined, target: this.target(), video: turn.video, agent: turn.agent || undefined, folder: turn.folder, attachments: turn.files?.length ? turn.files.map(wireFile) : undefined },
       signal,
     );
     let conversation: string | undefined;
@@ -328,9 +331,13 @@ export class DirectBackend implements Backend {
     if (turn.video) {
       throw new BragiError('A video needs the Bragi target: bragi serve samples the clip for the model (the direct server gets text only).', 'bad_request');
     }
+    if (turn.files?.some((f) => f.kind !== 'text')) {
+      throw new BragiError('Images and sound need the Bragi target (the direct server gets text only).', 'bad_request');
+    }
     const id = turn.conversation && this.chats.has(turn.conversation) ? turn.conversation : `direct-${this.next++}`;
     const history = this.chats.get(id) ?? [];
-    const content = turn.context ? `${chatContextText(turn.context)}${turn.prompt}` : turn.prompt;
+    const prompt = turn.files?.length ? `${inlineText(turn.files)}${turn.prompt}` : turn.prompt;
+    const content = turn.context ? `${chatContextText(turn.context)}${prompt}` : prompt;
     const messages = [...history, { role: 'user' as const, content }];
     onEvent({ type: 'conversation', id, request_id: id });
     const model = await this.model(turn.model, signal);

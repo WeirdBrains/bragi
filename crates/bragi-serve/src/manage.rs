@@ -27,7 +27,7 @@ pub(crate) fn routes() -> Router<App> {
         .route("/v1/endpoints/{id}/test", post(test_endpoint))
         .route("/v1/endpoints/{id}/models", get(endpoint_models))
         .route("/v1/sessions", get(sessions))
-        .route("/v1/sessions/{id}", delete(delete_session))
+        .route("/v1/sessions/{id}", get(super::chats::open).delete(delete_session))
 }
 
 async fn links(State(app): State<App>) -> Json<serde_json::Value> {

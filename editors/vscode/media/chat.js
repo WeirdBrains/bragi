@@ -11,7 +11,76 @@
   const clip = document.getElementById('clip');
   const clipName = document.getElementById('clip-name');
   const clipChip = document.getElementById('clip-chip');
+  const filesRow = document.getElementById('files');
   let answer = null;
+  // The last question, waiting for the id Bragi gives it.
+  let question = null;
+
+  // Quick reactions, as in the apps (bragi-core's QUICK_REACTIONS).
+  const QUICK = ['👍', '👎', '❤️', '😂', '🎉', '🤔'];
+
+  // Files in a message: images shown, sound playable, the rest named.
+  function fileList(files) {
+    const box = el('div', 'attachments');
+    for (const f of files || []) {
+      if (f.kind === 'image' && f.src) {
+        const img = document.createElement('img');
+        img.src = f.src;
+        img.alt = f.name;
+        img.title = f.name;
+        box.appendChild(img);
+      } else if (f.kind === 'audio' && f.src) {
+        const a = document.createElement('audio');
+        a.controls = true;
+        a.src = f.src;
+        a.title = f.name;
+        box.append(el('div', 'meta', f.name), a);
+      } else {
+        box.appendChild(el('div', 'meta', `${f.kind === 'video' ? 'video' : 'file'}: ${f.name}`));
+      }
+    }
+    return box;
+  }
+
+  // Reactions and delete under a message once Bragi has given it an id.
+  function stamp(msg, id, role) {
+    if (!msg || !id) return;
+    msg.dataset.id = id;
+    msg.dataset.role = role;
+    let actions = msg.querySelector(':scope > .actions');
+    if (actions) actions.remove();
+    actions = el('div', 'actions');
+    const shown = el('span', 'reactions');
+    const add = el('span', 'quick');
+    for (const e of QUICK) {
+      const b = el('button', 'react', e);
+      b.title = 'React ' + e;
+      b.onclick = () => vscode.postMessage({ type: 'react', id, emoji: e });
+      add.appendChild(b);
+    }
+    const del = el('button', 'react', '🗑');
+    del.title = 'Delete this message';
+    del.onclick = () => vscode.postMessage({ type: 'delete', id, role });
+    actions.append(shown, add, del);
+    msg.appendChild(actions);
+  }
+
+  function showReactions(msg, reactions) {
+    const shown = msg && msg.querySelector(':scope > .actions .reactions');
+    if (!shown) return;
+    shown.textContent = '';
+    for (const e of reactions || []) {
+      const b = el('button', 'react on', e);
+      b.title = 'Take back ' + e;
+      b.onclick = () => vscode.postMessage({ type: 'react', id: msg.dataset.id, emoji: e });
+      shown.appendChild(b);
+    }
+  }
+
+  function byId(id) {
+    for (const m of log.querySelectorAll('.msg')) if (m.dataset.id === id) return m;
+    return null;
+  }
 
   function busy(on) {
     send.hidden = on;
@@ -197,6 +266,8 @@
   document.getElementById('new').onclick = () => vscode.postMessage({ type: 'new' });
   target.onclick = () => vscode.postMessage({ type: 'pickModel' });
   document.getElementById('video').onclick = () => vscode.postMessage({ type: 'attachVideo' });
+  document.getElementById('attach').onclick = () => vscode.postMessage({ type: 'attachFile' });
+  document.getElementById('selection').onclick = () => vscode.postMessage({ type: 'attachSelection' });
   document.getElementById('clip-remove').onclick = () => vscode.postMessage({ type: 'detachVideo' });
   document.getElementById('clip-limits').onclick = () => vscode.postMessage({ type: 'videoLimits' });
   // A clip dropped on the panel (from the OS, or the Explorer with Shift held).
@@ -224,7 +295,9 @@
         const u = el('div', 'msg user');
         u.appendChild(el('div', 'text', m.text));
         if (m.context) u.appendChild(el('div', 'meta', 'with ' + m.context));
+        if (m.files && m.files.length) u.appendChild(fileList(m.files));
         log.appendChild(u);
+        question = u;
         answer = el('div', 'msg bot');
         answer.appendChild(el('div', 'meta', 'Waiting for a node…'));
         log.appendChild(answer);
@@ -251,7 +324,56 @@
         break;
       case 'done':
         busy(false);
+        if (answer) answer.dataset.pending = '1';
         answer = null;
+        break;
+      case 'ids': {
+        stamp(question, m.user, 'user');
+        const bots = log.querySelectorAll('.msg.bot[data-pending]');
+        const last = bots.length ? bots[bots.length - 1] : null;
+        if (last) delete last.dataset.pending;
+        stamp(last, m.answer, 'assistant');
+        question = null;
+        break;
+      }
+      case 'message': {
+        const msg = el('div', m.role === 'user' ? 'msg user' : 'msg bot');
+        if (m.role === 'user') {
+          msg.appendChild(el('div', 'text', m.text));
+          if (m.files && m.files.length) msg.appendChild(fileList(m.files));
+        } else {
+          msg.appendChild(el('div', 'meta', m.model || ''));
+          const body = el('div', 'body');
+          render(body, m.text);
+          msg.appendChild(body);
+        }
+        log.appendChild(msg);
+        stamp(msg, m.id, m.role);
+        showReactions(msg, m.reactions);
+        scroll();
+        break;
+      }
+      case 'reactions':
+        showReactions(byId(m.id), m.reactions);
+        break;
+      case 'removed':
+        for (const id of m.ids) {
+          const msg = byId(id);
+          if (msg) msg.remove();
+        }
+        break;
+      case 'files':
+        filesRow.textContent = '';
+        filesRow.hidden = !m.files.length;
+        m.files.forEach((f, index) => {
+          const chip = el('span', 'chip', f.name);
+          chip.title = f.kind;
+          const x = el('button', 'react', '✕');
+          x.title = "Don't send " + f.name;
+          x.onclick = () => vscode.postMessage({ type: 'detachFile', index });
+          chip.appendChild(x);
+          filesRow.appendChild(chip);
+        });
         break;
       case 'error':
         if (answer) answer.appendChild(el('div', 'error', m.message));
@@ -264,6 +386,7 @@
         log.textContent = '';
         busy(false);
         answer = null;
+        question = null;
         break;
       case 'target':
         target.textContent = m.label;

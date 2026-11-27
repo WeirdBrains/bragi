@@ -5,12 +5,29 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { ApprovalChoice, Backend, Router } from './backends';
 import { editorContext } from './context';
+import { ChatFile, MEDIA_EXTENSIONS, readChatFile, selectionFile } from './files';
+import { Manage, StoredAttachment, StoredMessage } from './manage';
 import { BragiError, ChatEvent, EditorContext, VideoLimits } from './types';
-import { droppedClip, isVideoPath, PlayerMessage, playerMessage, resourceRoots, VIDEO_EXTENSIONS, VideoEvent, withSource } from './video';
+import { droppedClip, droppedFiles, isVideoPath, PlayerMessage, playerMessage, resourceRoots, VIDEO_EXTENSIONS, VideoEvent, withSource } from './video';
+
+/** A file in a message as the panel draws it: an image or sound plays from `src` (a `data:` URL). */
+export interface ViewFile {
+  name: string;
+  kind: 'text' | 'image' | 'audio' | 'video';
+  src?: string;
+}
 
 /** What the panel shows; the controller sends these. */
 export type ViewMessage =
-  | { type: 'user'; text: string; context?: string }
+  | { type: 'user'; text: string; context?: string; files?: ViewFile[] }
+  /** Files waiting to go with the next message. */
+  | { type: 'files'; files: ViewFile[] }
+  /** The ids Bragi gave the last question and answer (reactions and delete need them). */
+  | { type: 'ids'; user?: string; answer?: string }
+  /** A message of an opened chat. */
+  | { type: 'message'; role: 'user' | 'assistant'; id: string; text: string; files?: ViewFile[]; reactions?: string[]; model?: string }
+  | { type: 'reactions'; id: string; reactions: string[] }
+  | { type: 'removed'; ids: string[] }
   | { type: 'start'; model?: string; node?: string }
   | { type: 'answer'; text: string }
   | { type: 'status'; text: string }
@@ -53,13 +70,113 @@ export class ChatController {
   private limits?: VideoLimits;
   /** Clips the chat showed, the only files "Open in system player" opens. */
   readonly clips = new Set<string>();
+  /** Files and selections waiting to go with the next message. */
+  private files: ChatFile[] = [];
+  private readonly manage: Manage;
 
   constructor(
     private readonly router: Router,
     private readonly post: (m: ViewMessage) => void,
     private readonly exists: (p: string) => boolean = (p) => fs.existsSync(p),
     private readonly folder: () => string | undefined = () => undefined,
-  ) {}
+  ) {
+    this.manage = new Manage(() => router.bragi);
+  }
+
+  /** The files waiting to go with the next message. */
+  get pendingFiles(): readonly ChatFile[] {
+    return this.files;
+  }
+
+  /** Holds `file` (text, an image or sound) for the next message. */
+  attachFile(file: string): ChatFile {
+    const f = readChatFile(file);
+    this.addFile(f);
+    return f;
+  }
+
+  /** Holds the selection (`relPath`, 1-based lines) for the next message. */
+  attachSelection(relPath: string, startLine: number, endLine: number, text: string): ChatFile {
+    const f = selectionFile(relPath, startLine, endLine, text);
+    this.addFile(f);
+    return f;
+  }
+
+  private addFile(f: ChatFile): void {
+    if (f.kind !== 'text' && this.router.target() === 'direct') {
+      throw new BragiError('Images and sound need the Bragi target (the direct server gets text only).', 'bad_request');
+    }
+    this.files = [...this.files.filter((x) => x.name !== f.name), f];
+    this.postFiles();
+  }
+
+  detachFile(index: number): void {
+    this.files = this.files.filter((_, i) => i !== index);
+    this.postFiles();
+  }
+
+  private postFiles(): void {
+    this.post({ type: 'files', files: this.files.map(viewFile) });
+  }
+
+  /** Opens chat `id` from Bragi's history: its messages replace the panel's, and the next message continues it. */
+  async open(id: string): Promise<number> {
+    this.stop();
+    const s = await this.manage.openSession(id);
+    this.conversation = s.conversation.id;
+    this.backendId = 'bragi';
+    this.post({ type: 'reset' });
+    for (const m of s.conversation.messages) {
+      this.post(historyMessage(m));
+    }
+    return s.conversation.messages.length;
+  }
+
+  private bragiChat(): string {
+    if (!this.conversation || this.backendId !== 'bragi') {
+      throw new BragiError('Reactions and deleting are for chats kept in Bragi (the Bragi target).', 'bad_request');
+    }
+    return this.conversation;
+  }
+
+  /** Toggles `emoji` on message `id`; returns its reactions. */
+  async react(id: string, emoji: string): Promise<string[]> {
+    const reactions = await this.manage.react(this.bragiChat(), id, emoji);
+    this.post({ type: 'reactions', id, reactions });
+    return reactions;
+  }
+
+  /** Deletes message `id` (and with `withReply` the answer after it); returns the undo token. */
+  async deleteMessage(id: string, withReply: boolean): Promise<string> {
+    if (this.busy) {
+      throw new BragiError('Stop the answer before deleting it.', 'bad_request');
+    }
+    const d = await this.manage.deleteMessage(this.bragiChat(), id, withReply);
+    this.post({ type: 'removed', ids: d.ids });
+    return d.undo;
+  }
+
+  /** Puts back the last delete and redraws the chat. */
+  async undo(token: string): Promise<void> {
+    const id = this.bragiChat();
+    await this.manage.undo(token);
+    await this.open(id);
+  }
+
+  /** After an answer: the ids Bragi gave the question and the answer. */
+  private async stamp(): Promise<void> {
+    if (!this.conversation || this.backendId !== 'bragi') {
+      return;
+    }
+    try {
+      const msgs = (await this.manage.openSession(this.conversation)).conversation.messages;
+      const answer = msgs.length && msgs[msgs.length - 1].role === 'assistant' ? msgs[msgs.length - 1] : undefined;
+      const user = [...msgs].reverse().find((m) => m.role === 'user');
+      this.post({ type: 'ids', user: user?.id, answer: answer?.id });
+    } catch {
+      // An older Bragi without GET /v1/sessions/{id}: no reactions or delete on this message.
+    }
+  }
 
   /** Approval cards of the running request still waiting for an answer. */
   readonly waiting = new Set<number>();
@@ -153,7 +270,9 @@ export class ChatController {
     this.stop();
     this.conversation = undefined;
     this.backendId = undefined;
+    this.files = [];
     this.post({ type: 'reset' });
+    this.postFiles();
   }
 
   stop(): void {
@@ -172,12 +291,17 @@ export class ChatController {
       return '';
     }
     const video = this.video;
+    const files = this.files;
     const parts = [context ? (context.selection ? `selection in ${context.path}` : context.path) : undefined, video ? path.basename(video) : undefined].filter(Boolean);
     const label = parts.length ? parts.join(' and ') : undefined;
-    this.post({ type: 'user', text: prompt, context: label });
+    this.post({ type: 'user', text: prompt, context: label, files: files.length ? files.map(viewFile) : undefined });
     if (video) {
       this.video = undefined;
       this.post({ type: 'detached' });
+    }
+    if (files.length) {
+      this.files = [];
+      this.postFiles();
     }
     const abort = new AbortController();
     this.abort = abort;
@@ -242,8 +366,9 @@ export class ChatController {
             break;
         }
       };
-      await backend.chat({ prompt, context, conversation: this.conversation, model: this.router.modelFor(backend), video: video ? { path: video } : undefined, agent: options.agent || undefined, folder: options.agent ? this.folder() : undefined }, onEvent, abort.signal);
+      await backend.chat({ prompt, context, conversation: this.conversation, model: this.router.modelFor(backend), video: video ? { path: video } : undefined, agent: options.agent || undefined, folder: options.agent ? this.folder() : undefined, files: files.length ? files : undefined }, onEvent, abort.signal);
       this.post({ type: 'done' });
+      await this.stamp();
     } catch (e) {
       const err = e instanceof BragiError ? e : new BragiError(e instanceof Error ? e.message : String(e), e instanceof Error && e.name === 'AbortError' ? 'cancelled' : 'other');
       this.post(err.kind === 'cancelled' ? { type: 'done' } : { type: 'error', message: err.message });
@@ -256,6 +381,29 @@ export class ChatController {
     }
     return text;
   }
+}
+
+function viewFile(f: ChatFile): ViewFile {
+  return { name: f.name, kind: f.kind, src: f.src };
+}
+
+function storedFile(a: StoredAttachment): ViewFile {
+  const m = a.media;
+  if (!m) {
+    return { name: a.name, kind: 'text' };
+  }
+  if (m.kind === 'image') {
+    return { name: a.name, kind: 'image', src: `data:${m.mime};base64,${m.data}` };
+  }
+  if (m.kind === 'audio') {
+    return { name: a.name, kind: 'audio', src: `data:audio/${m.format === 'mp3' ? 'mpeg' : 'wav'};base64,${m.data}` };
+  }
+  return { name: a.name, kind: 'video' };
+}
+
+function historyMessage(m: StoredMessage): ViewMessage {
+  const files = (m.attachments ?? []).map(storedFile);
+  return { type: 'message', role: m.role, id: m.id, text: m.text, files: files.length ? files : undefined, reactions: m.reactions?.length ? m.reactions : undefined, model: m.model ?? undefined };
 }
 
 function nonce(): string {
@@ -355,6 +503,70 @@ export class ChatView implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Asks for files with the file dialog and holds them for the next message. */
+  async pickFiles(): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+      canSelectMany: true,
+      openLabel: 'Attach',
+      title: 'Attach files to the chat',
+      defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri,
+      filters: { 'All files': ['*'], 'Images and sound': MEDIA_EXTENSIONS },
+    });
+    for (const uri of picked ?? []) {
+      this.attachFileShown(uri.fsPath);
+    }
+  }
+
+  /** Holds `file` for the next message; a problem is shown, not thrown. */
+  attachFileShown(file: string): void {
+    try {
+      this.controller.attachFile(file);
+    } catch (e) {
+      void vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Holds the active editor's selection for the next message. */
+  attachSelection(): boolean {
+    const editor = vscode.window.activeTextEditor ?? vscode.window.visibleTextEditors[0];
+    if (!editor || editor.selection.isEmpty) {
+      void vscode.window.showErrorMessage('Select some text in an editor first.');
+      return false;
+    }
+    const sel = editor.selection;
+    const endLine = sel.end.character === 0 && sel.end.line > sel.start.line ? sel.end.line : sel.end.line + 1;
+    try {
+      this.controller.attachSelection(vscode.workspace.asRelativePath(editor.document.uri), sel.start.line + 1, endLine, editor.document.getText(sel));
+      return true;
+    } catch (e) {
+      void vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+      return false;
+    }
+  }
+
+  /** Deletes a message after asking (a question can take its answer with it); offers Undo. */
+  async deleteMessage(id: string, role: 'user' | 'assistant'): Promise<void> {
+    const items = role === 'user' ? ['Delete with its answer', 'Delete only this'] : ['Delete'];
+    const pick = await vscode.window.showWarningMessage('Delete this message on every linked device?', { modal: true }, ...items);
+    if (!pick) {
+      return;
+    }
+    try {
+      const undo = await this.controller.deleteMessage(id, pick === 'Delete with its answer');
+      if ((await vscode.window.showInformationMessage('Bragi: message deleted.', 'Undo')) === 'Undo') {
+        await this.controller.undo(undo);
+      }
+    } catch (e) {
+      void vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Opens chat `id` in the panel. */
+  async open(id: string): Promise<number> {
+    await vscode.commands.executeCommand(`${ChatView.id}.focus`);
+    return this.controller.open(id);
+  }
+
   /** Opens a clip the chat showed in the system player. */
   async openClip(file: string): Promise<boolean> {
     if (!this.controller.clips.has(file) || !fs.existsSync(file)) {
@@ -383,7 +595,7 @@ export class ChatView implements vscode.WebviewViewProvider {
     const style = view.webview.asWebviewUri(vscode.Uri.joinPath(media, 'chat.css'));
     view.webview.html = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${view.webview.cspSource}; script-src 'nonce-${n}'; media-src ${view.webview.cspSource}; img-src data:;">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${view.webview.cspSource}; script-src 'nonce-${n}'; media-src ${view.webview.cspSource} data:; img-src data:;">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link rel="stylesheet" href="${style}"><title>Bragi</title></head>
 <body>
@@ -392,12 +604,13 @@ export class ChatView implements vscode.WebviewViewProvider {
 <footer>
 <textarea id="input" rows="3" placeholder="Ask about your code (Enter sends, Shift+Enter is a new line)"></textarea>
 <div id="clip" class="row clip" hidden><span id="clip-name"></span><span id="clip-chip" class="meta grow"></span><button id="clip-limits" title="Set this model's video limits">Limits…</button><button id="clip-remove" title="Don't send the clip">✕</button></div>
-<div class="row"><label><input type="checkbox" id="ctx" checked> Include editor context</label><label title="The model may use tools (a node's, or your MCP servers'); each call asks first"><input type="checkbox" id="agent"> Agent</label><button id="video" title="Attach a video (or drop one here)">Video…</button>
+<div id="files" class="row files" hidden></div>
+<div class="row"><label><input type="checkbox" id="ctx" checked> Include editor context</label><label title="The model may use tools (a node's, or your MCP servers'); each call asks first"><input type="checkbox" id="agent"> Agent</label><button id="attach" title="Attach files: text, images (PNG, JPEG, GIF, WebP) or sound (WAV, MP3); or drop them here">File…</button><button id="selection" title="Attach the selected text">Selection</button><button id="video" title="Attach a video (or drop one here)">Video…</button>
 <span class="grow"></span><button id="stop" hidden>Stop</button><button id="send">Send</button></div>
 </footer>
 <script nonce="${n}" src="${script}"></script>
 </body></html>`;
-    view.webview.onDidReceiveMessage(async (m: { type: string; prompt?: string; context?: boolean; agent?: boolean; code?: string; uris?: string; path?: string; ask?: number; choice?: ApprovalChoice }) => {
+    view.webview.onDidReceiveMessage(async (m: { type: string; prompt?: string; context?: boolean; agent?: boolean; code?: string; uris?: string; path?: string; ask?: number; choice?: ApprovalChoice; index?: number; id?: string; emoji?: string; role?: 'user' | 'assistant' }) => {
       switch (m.type) {
         case 'ready':
           this.refreshTarget();
@@ -410,13 +623,43 @@ export class ChatView implements vscode.WebviewViewProvider {
           break;
         case 'dropVideo': {
           const file = droppedClip(m.uris ?? '');
+          const others = droppedFiles(m.uris ?? '').filter((f) => f !== file);
           if (file) {
             await this.attach(file);
-          } else {
-            void vscode.window.showErrorMessage(`Drop a video file (${VIDEO_EXTENSIONS.join(', ')}). Hold Shift while dropping from the Explorer.`);
+          }
+          for (const f of others) {
+            this.attachFileShown(f);
+          }
+          if (!file && others.length === 0) {
+            void vscode.window.showErrorMessage('Drop a file or a video. Hold Shift while dropping from the Explorer.');
           }
           break;
         }
+        case 'attachFile':
+          await this.pickFiles();
+          break;
+        case 'attachSelection':
+          this.attachSelection();
+          break;
+        case 'detachFile':
+          if (typeof m.index === 'number') {
+            this.controller.detachFile(m.index);
+          }
+          break;
+        case 'react':
+          if (m.id && m.emoji) {
+            try {
+              await this.controller.react(m.id, m.emoji);
+            } catch (e) {
+              void vscode.window.showErrorMessage(e instanceof Error ? e.message : String(e));
+            }
+          }
+          break;
+        case 'delete':
+          if (m.id) {
+            await this.deleteMessage(m.id, m.role === 'user' ? 'user' : 'assistant');
+          }
+          break;
         case 'detachVideo':
           this.controller.detachVideo();
           break;
