@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-27
+
 ### Added
 
 - The Release workflow bundles the LGPL ffmpeg: each desktop job builds ffmpeg and ffprobe with `scripts/build-ffmpeg.sh` (FFmpeg 9.0.2 from the pinned, checksummed tarball) on its runner and packs them with Bragi: the Linux tarballs and zips (`bin/`, notices in `share/doc/ffmpeg/`), the macOS app (`Contents/Helpers`, universal: one build per arch joined with `lipo`) and tarball, and the Windows zip and installers (beside `bragi.exe`; built statically in MSYS2). Each job checks the bundle is there. The deb, rpm and Arch packages still recommend the distro's ffmpeg instead.
