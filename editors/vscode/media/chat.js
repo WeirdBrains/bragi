@@ -6,6 +6,7 @@
   const send = document.getElementById('send');
   const stop = document.getElementById('stop');
   const ctx = document.getElementById('ctx');
+  const agent = document.getElementById('agent');
   const target = document.getElementById('target');
   const clip = document.getElementById('clip');
   const clipName = document.getElementById('clip-name');
@@ -15,6 +16,14 @@
   function busy(on) {
     send.hidden = on;
     stop.hidden = !on;
+    if (!on) {
+      // The answer is over: a card nobody answered can't be any more.
+      for (const card of cards.values()) {
+        const bar = card.querySelector('.bar');
+        if (bar) bar.replaceWith(el('div', 'meta', 'Not answered (the task ended)'));
+      }
+      cards.clear();
+    }
   }
 
   function el(tag, cls, text) {
@@ -142,6 +151,36 @@
     return card;
   }
 
+  // Agent mode: the model asks to run a tool. The answer goes back with the card's number.
+  const CHOICES = [
+    ['once', 'Allow once'],
+    ['this_task', 'Allow for this task'],
+    ['always', 'Always allow'],
+    ['deny', 'Deny'],
+  ];
+  const ANSWERED = { deny: 'Denied', once: 'Allowed once', this_task: 'Allowed for this task', always: 'Always allowed' };
+  const cards = new Map();
+
+  function approvalCard(m) {
+    const card = el('div', 'approval');
+    card.appendChild(el('div', 'meta', `Wants to run ${m.tool} (${m.tier}${m.site ? ', ' + m.site : ''})`));
+    card.appendChild(el('div', 'text', m.summary));
+    const bar = el('div', 'bar');
+    for (const [choice, label] of CHOICES) {
+      if (choice === 'always' && !m.always) continue;
+      const b = el('button', choice === 'deny' ? 'secondary' : '', label);
+      b.dataset.choice = choice;
+      b.onclick = () => {
+        for (const x of bar.querySelectorAll('button')) x.disabled = true;
+        vscode.postMessage({ type: 'approve', ask: m.ask, choice });
+      };
+      bar.appendChild(b);
+    }
+    card.appendChild(bar);
+    cards.set(m.ask, card);
+    return card;
+  }
+
   function scroll() {
     log.scrollTop = log.scrollHeight;
   }
@@ -150,7 +189,7 @@
     const prompt = input.value.trim();
     if (!prompt || !stop.hidden) return;
     input.value = '';
-    vscode.postMessage({ type: 'send', prompt, context: ctx.checked });
+    vscode.postMessage({ type: 'send', prompt, context: ctx.checked, agent: agent.checked });
   }
 
   send.onclick = submit;
@@ -245,6 +284,27 @@
         scroll();
         break;
       }
+      case 'approval':
+        (answer || log).appendChild(approvalCard(m));
+        scroll();
+        break;
+      case 'approved': {
+        const card = cards.get(m.ask);
+        if (card) {
+          const bar = card.querySelector('.bar');
+          if (bar) bar.replaceWith(el('div', 'meta', ANSWERED[m.choice] || m.choice));
+          cards.delete(m.ask);
+        }
+        break;
+      }
+      case 'tool':
+        if (answer) answer.appendChild(el('div', 'meta tool', `${m.state === 'started' ? 'Running' : m.state === 'done' ? 'Ran' : 'Failed'} ${m.tool}`));
+        scroll();
+        break;
+      case 'notice':
+        (answer || log).appendChild(el('div', 'meta notice', m.text));
+        scroll();
+        break;
       case 'prefill':
         input.value = m.text;
         input.focus();

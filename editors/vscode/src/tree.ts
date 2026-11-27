@@ -125,8 +125,10 @@ export class ConnectionsView implements vscode.TreeDataProvider<Node> {
       }
       return all.map((s) => {
         const n = new Node(s.name, 'mcpServer', vscode.TreeItemCollapsibleState.None, s.id);
-        n.description = `${s.transport}${s.enabled ? '' : ' · off'}`;
-        n.tooltip = s.transport === 'stdio' ? [s.command, ...(s.args ?? [])].join(' ') : s.url;
+        const always = s.always_allow?.length ? ` · ${s.always_allow.length} always allowed` : '';
+        const scope = s.scope?.kind === 'folder' ? ` · ${s.scope.value}` : '';
+        n.description = `${s.transport}${s.enabled ? '' : ' · off'}${scope}${always}`;
+        n.tooltip = [s.target, s.warning, s.always_allow?.length ? `Always allowed: ${s.always_allow.join(', ')}` : ''].filter(Boolean).join('\n');
         n.iconPath = new vscode.ThemeIcon(s.enabled ? 'tools' : 'circle-slash');
         return n;
       });

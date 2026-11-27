@@ -51,23 +51,24 @@ export interface SessionSummary {
 }
 
 /**
- * An outside MCP server as Bragi lists it (`/v1/mcp-servers`, LF-37's `McpServer`): no secrets,
- * only which are set.
+ * An outside MCP server as Bragi lists it (`/v1/mcp-servers`, bragi-core's `McpServerView`): no
+ * secrets, only which names have a value.
  */
 export interface McpServerView {
   id: string;
   name: string;
   transport: 'stdio' | 'http';
   enabled: boolean;
-  command?: string;
-  args?: string[];
-  cwd?: string;
-  url?: string;
-  env_names?: string[];
-  header_names?: string[];
-  has_bearer?: boolean;
-  scope?: { kind: 'all' | 'folder' | 'session'; value?: string };
-  always_allow?: string[];
+  /** The command line or the address. */
+  target: string;
+  env_names: string[];
+  header_names: string[];
+  has_bearer: boolean;
+  scope: { kind: 'all' | 'folder' | 'session'; value?: string };
+  /** Tools (as offered, `<server>.<tool>`) that run without asking. */
+  always_allow: string[];
+  /** For a local command: it runs as you. */
+  warning?: string | null;
 }
 
 export interface McpServerInput {
@@ -78,7 +79,9 @@ export interface McpServerInput {
   args?: string[];
   cwd?: string;
   url?: string;
+  /** Where its tools are offered: every chat, or code chats on `folder`. */
   scope?: 'all' | 'folder';
+  folder?: string;
   /** Typed once, kept by Bragi's secret store. */
   secrets?: { env?: Record<string, string>; headers?: Record<string, string>; bearer?: string };
 }
@@ -147,9 +150,8 @@ export class Manage {
     return this.api('DELETE', `/v1/sessions/${encodeURIComponent(id)}`);
   }
 
-  // MCP client servers. TODO(LF-37): `bragi serve` has no /v1/mcp-servers routes until
-  // feature/mcp-client (bragi-core `mcp_servers`) is in main; the shapes below are the agreed ones.
-  // Until then these fail with 'mcp_unavailable' and the UI says so.
+  // Outside MCP servers (`/v1/mcp-servers`). An older `bragi serve` without the routes answers
+  // 404; these then fail with 'mcp_unavailable' and the UI says so.
   private async mcp<T>(method: string, path: string, body?: unknown): Promise<T> {
     try {
       return await this.api<T>(method, path, body);
@@ -179,5 +181,15 @@ export class Manage {
 
   testMcpServer(id: string): Promise<{ ok: boolean; tools: string[]; message: string }> {
     return this.mcp('POST', `/v1/mcp-servers/${encodeURIComponent(id)}/test`);
+  }
+
+  /** Replaces a server's settings; without `secrets` the stored ones stay. */
+  editMcpServer(id: string, i: McpServerInput): Promise<McpServerView> {
+    return this.mcp('PUT', `/v1/mcp-servers/${encodeURIComponent(id)}`, i);
+  }
+
+  /** Gives or takes back "always allow" for one of the server's tools. */
+  setMcpToolAlwaysAllowed(id: string, tool: string, allow: boolean): Promise<McpServerView> {
+    return this.mcp('POST', `/v1/mcp-servers/${encodeURIComponent(id)}/always-allow`, { tool, allow });
   }
 }

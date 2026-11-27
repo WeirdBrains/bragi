@@ -243,6 +243,11 @@
         "icon": "$(debug-start)"
       },
       {
+        "command": "bragi.mcpServer.alwaysAllow",
+        "title": "Take Back \"Always Allow\" for an MCP Tool…",
+        "category": "Bragi"
+      },
+      {
         "command": "bragi.mcp.applySettings",
         "title": "Apply MCP Servers from Settings",
         "category": "Bragi"
@@ -415,6 +420,11 @@
           "command": "bragi.mcpServer.test",
           "when": "view == bragi.connections && viewItem == mcpServer",
           "group": "1_test"
+        },
+        {
+          "command": "bragi.mcpServer.alwaysAllow",
+          "when": "view == bragi.connections && viewItem == mcpServer",
+          "group": "2_allow"
         },
         {
           "command": "bragi.mcpServer.remove",
