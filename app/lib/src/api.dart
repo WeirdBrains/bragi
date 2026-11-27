@@ -119,6 +119,10 @@ abstract class BragiApi {
     List<String> history,
   );
   String? videoFileUnavailable();
+  // Copying clips into their messages for linked devices (`video.store_clip`).
+  bool videoStoreClip();
+  bool setVideoStoreClip(bool on);
+  int videoStoredClipMaxMib();
   rv.VideoInfoView videoInfo(String name, String json);
   rv.VideoInfoView? videoAttachment(String conversation, String file);
   Future<rv.VideoLimitsView> videoLimits(
@@ -372,6 +376,12 @@ class RustBragiApi implements BragiApi {
   );
   @override
   String? videoFileUnavailable() => rv.videoFileUnavailable();
+  @override
+  bool videoStoreClip() => rv.videoStoreClip();
+  @override
+  bool setVideoStoreClip(bool on) => rv.setVideoStoreClip(enabled: on);
+  @override
+  int videoStoredClipMaxMib() => rv.videoStoredClipMaxMib();
   @override
   rv.VideoInfoView videoInfo(String name, String json) =>
       rv.videoInfo(name: name, json: json);

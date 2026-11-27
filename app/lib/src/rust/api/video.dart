@@ -15,6 +15,18 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 String? videoFileUnavailable() =>
     RustLib.instance.api.crateApiVideoVideoFileUnavailable();
 
+/// Whether clips attached here are copied into their message so linked devices can play them
+/// (this device's `video.store_clip`, off by default).
+bool videoStoreClip() => RustLib.instance.api.crateApiVideoVideoStoreClip();
+
+/// Turns copying clips into their messages on or off for this device; returns the new value.
+bool setVideoStoreClip({required bool enabled}) =>
+    RustLib.instance.api.crateApiVideoSetVideoStoreClip(enabled: enabled);
+
+/// The largest clip copied into a message, in MiB, for the settings' text.
+int videoStoredClipMaxMib() =>
+    RustLib.instance.api.crateApiVideoVideoStoredClipMaxMib();
+
 /// Which frames of the clip `name` to decode, and how big, for `model` at `target` (the default
 /// model and target when absent). `history` is the text already going with the message.
 Future<VideoFramePlanView> videoFramePlan({

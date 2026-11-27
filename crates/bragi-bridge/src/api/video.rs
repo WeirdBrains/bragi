@@ -112,6 +112,29 @@ pub fn video_file_unavailable() -> Option<String> {
     core().ok().and_then(|c| c.video_unavailable()).map(str::to_string)
 }
 
+/// Whether clips attached here are copied into their message so linked devices can play them
+/// (this device's `video.store_clip`, off by default).
+#[frb(sync)]
+pub fn video_store_clip() -> bool {
+    core().is_ok_and(|c| c.video_prefs().store_clip)
+}
+
+/// Turns copying clips into their messages on or off for this device; returns the new value.
+#[frb(sync)]
+pub fn set_video_store_clip(enabled: bool) -> Result<bool, String> {
+    let c = core()?;
+    let mut prefs = c.video_prefs();
+    prefs.store_clip = enabled;
+    c.set_video_prefs(&prefs).map_err(err)?;
+    Ok(c.video_prefs().store_clip)
+}
+
+/// The largest clip copied into a message, in MiB, for the settings' text.
+#[frb(sync)]
+pub fn video_stored_clip_max_mib() -> u32 {
+    (video::MAX_STORED_CLIP_BYTES >> 20) as u32
+}
+
 /// Which frames of the clip `name` to decode, and how big, for `model` at `target` (the default
 /// model and target when absent). `history` is the text already going with the message.
 pub async fn video_frame_plan(

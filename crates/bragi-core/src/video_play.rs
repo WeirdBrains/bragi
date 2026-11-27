@@ -51,6 +51,73 @@ impl Fallback {
     }
 }
 
+/// How long a written copy of a stored clip is kept after it was last played
+/// ([`prune_clip_cache`]).
+pub const CLIP_CACHE_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+/// The most the written copies may take together; the least lately played go first.
+pub const CLIP_CACHE_MAX_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// The names of the written copies `messages`' stored clips play from (`<hash>.<ext>` in the clip
+/// cache), so they can go when the messages do.
+pub fn clip_files<'a>(messages: impl IntoIterator<Item = &'a crate::history::ChatMessage>) -> Vec<String> {
+    let mut names: Vec<String> = messages
+        .into_iter()
+        .flat_map(|m| &m.attachments)
+        .filter_map(|a| match &a.media {
+            Some(crate::attach::Media::Video(v)) => v.stored.as_ref().and_then(|s| s.file_name()),
+            _ => None,
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Removes the copies `names` (from [`clip_files`]) from `cache`. Returns how many were there.
+/// Names that aren't a copy's (`<hash>.<ext>`) are ignored, so nothing outside `cache` goes.
+pub fn remove_clip_files(cache: &Path, names: &[String]) -> usize {
+    names.iter().filter(|n| is_clip_file_name(n)).filter(|n| std::fs::remove_file(cache.join(n.as_str())).is_ok()).count()
+}
+
+fn is_clip_file_name(name: &str) -> bool {
+    let Some((hash, _)) = name.split_once('.') else { return false };
+    hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) && !name.contains(['/', '\\']) && is_video_path(Path::new(name))
+}
+
+/// Startup housekeeping for the clip cache: drops copies not played for `max_age`, half-written
+/// files, then the least lately played until the rest fit in `max_bytes`. Anything else in the
+/// folder is left alone. Returns how many files went. A copy that goes is written again when its
+/// clip is played (the message still holds it).
+pub fn prune_clip_cache(cache: &Path, now: std::time::SystemTime, max_age: Duration, max_bytes: u64) -> usize {
+    let Ok(dir) = std::fs::read_dir(cache) else { return 0 };
+    let mut removed = 0;
+    let mut kept: Vec<(std::time::SystemTime, u64, PathBuf)> = Vec::new();
+    for e in dir.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let Ok(meta) = e.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let modified = meta.modified().unwrap_or(now);
+        let age = now.duration_since(modified).unwrap_or_default();
+        let partial = name.starts_with('.') && name.ends_with(".part");
+        if (partial && age > Duration::from_secs(3600)) || (is_clip_file_name(&name) && age > max_age) {
+            removed += usize::from(std::fs::remove_file(e.path()).is_ok());
+        } else if is_clip_file_name(&name) {
+            kept.push((modified, meta.len(), e.path()));
+        }
+    }
+    kept.sort_by_key(|k| std::cmp::Reverse(k.0));
+    let mut total = 0u64;
+    for (_, len, path) in kept {
+        total += len;
+        if total > max_bytes {
+            removed += usize::from(std::fs::remove_file(path).is_ok());
+        }
+    }
+    removed
+}
+
 /// Whether a message's clip can play on this device: its file is here, or a copy came with the
 /// message. Cheap (no reading), for drawing.
 pub fn clip_available(sampled: &Sampled) -> bool {
@@ -418,6 +485,71 @@ mod tests {
         assert_eq!(at("-protocol_whitelist").as_deref(), Some("file,pipe"));
         assert_eq!(at("-vf").as_deref(), Some("fps=15,scale=640:-2"));
         assert!(args.contains(&"-nostdin".to_string()) && args.contains(&"-an".to_string()));
+    }
+
+    #[test]
+    fn clip_copies_are_named_from_messages_and_removed_only_inside_the_cache() {
+        use crate::history::{ChatMessage, Mode, Role};
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("c.mp4");
+        std::fs::write(&file, b"clip").unwrap();
+        let st = crate::video::StoredClip::read(&file).unwrap();
+        let name = st.as_ref().unwrap().file_name().unwrap();
+        let video = |stored| {
+            crate::attach::Attachment::from_video(
+                "c.mp4",
+                Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored },
+            )
+        };
+        let mut m = ChatMessage::new(Role::User, "look", Mode::Chat);
+        m.attachments = vec![video(st.clone()), video(None), video(st.clone())];
+        let plain = ChatMessage::new(Role::Assistant, "ok", Mode::Chat);
+        assert_eq!(clip_files([&m, &plain]), vec![name.clone()], "one name per copy, none for a clip without one");
+
+        let cache = dir.path().join("clips");
+        let played =
+            playable_clip_in(&Sampled { summary: String::new(), duration_ms: 1, frames: Vec::new(), audio: None, clip: None, stored: st }, &cache)
+                .unwrap();
+        let outside = dir.path().join("keep.mp4");
+        std::fs::write(&outside, b"x").unwrap();
+        assert_eq!(remove_clip_files(&cache, &["../keep.mp4".into(), "notes.txt".into()]), 0);
+        assert!(outside.is_file(), "nothing outside the cache goes");
+        assert_eq!(remove_clip_files(&cache, std::slice::from_ref(&name)), 1);
+        assert!(!played.exists());
+        assert_eq!(remove_clip_files(&cache, &[name]), 0, "already gone");
+    }
+
+    #[test]
+    fn the_startup_prune_drops_old_and_half_written_copies_then_the_least_lately_played() {
+        use std::time::SystemTime;
+        let cache = tempfile::tempdir().unwrap();
+        let now = SystemTime::now();
+        let put = |hash: char, len: u64, age_s: u64| {
+            let p = cache.path().join(format!("{}.mp4", hash.to_string().repeat(64)));
+            let f = std::fs::File::create(&p).unwrap();
+            f.set_len(len).unwrap();
+            f.set_modified(now - Duration::from_secs(age_s)).unwrap();
+            p
+        };
+        let old = put('a', 10, 40 * 24 * 3600);
+        let fresh = put('b', 10, 60);
+        let older = put('c', 10, 3 * 24 * 3600);
+        let mid = put('d', 10, 24 * 3600);
+        let part = cache.path().join(".x.mp4.0011.part");
+        std::fs::File::create(&part).unwrap().set_modified(now - Duration::from_secs(2 * 3600)).unwrap();
+        let new_part = cache.path().join(".y.mp4.0022.part");
+        std::fs::write(&new_part, b"").unwrap();
+        let other = cache.path().join("README.txt");
+        std::fs::write(&other, b"not ours").unwrap();
+
+        // Old and half-written go; then the rest must fit in 20 bytes: the least lately played go.
+        assert_eq!(prune_clip_cache(cache.path(), now, CLIP_CACHE_MAX_AGE, 20), 3);
+        assert!(!old.exists() && !part.exists() && !older.exists());
+        assert!(fresh.is_file() && mid.is_file(), "the two played last fit");
+        assert!(new_part.is_file(), "a copy being written now stays");
+        assert!(other.is_file(), "files that aren't copies stay");
+        assert_eq!(prune_clip_cache(cache.path(), now, CLIP_CACHE_MAX_AGE, CLIP_CACHE_MAX_BYTES), 0);
+        assert_eq!(prune_clip_cache(&cache.path().join("none"), now, CLIP_CACHE_MAX_AGE, 0), 0, "no cache yet");
     }
 
     #[test]

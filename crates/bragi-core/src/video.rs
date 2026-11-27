@@ -668,6 +668,10 @@ impl StoredClip {
         let name = self.file_name().ok_or_else(|| bad("the stored clip is damaged"))?;
         let path = dir.join(name);
         if std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() == self.size) {
+            // Played again: the startup prune keeps what was played lately.
+            if let Ok(f) = std::fs::File::options().append(true).open(&path) {
+                let _ = f.set_modified(std::time::SystemTime::now());
+            }
             return Ok(path);
         }
         let bytes = base64::engine::general_purpose::STANDARD.decode(&self.data).map_err(|_| bad("the stored clip is damaged (not base64)"))?;

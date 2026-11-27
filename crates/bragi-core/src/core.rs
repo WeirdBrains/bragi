@@ -449,6 +449,17 @@ impl Core {
             _runtime: runtime,
         };
         core.publish_pool();
+        // Copies of stored clips not played for a month, or over the cache's size, go (off the
+        // caller's thread: it only reads one folder).
+        let cache = core.clip_cache();
+        std::thread::spawn(move || {
+            crate::video_play::prune_clip_cache(
+                &cache,
+                std::time::SystemTime::now(),
+                crate::video_play::CLIP_CACHE_MAX_AGE,
+                crate::video_play::CLIP_CACHE_MAX_BYTES,
+            )
+        });
         if Identity::exists(&core.identity_dir()) {
             let c = core.clone();
             core.inner.handle.spawn(async move {
@@ -1155,7 +1166,10 @@ impl Core {
     /// after the next sync pass, and from this device's store now. [`Core::undo_delete`] takes it
     /// back for [`UNDO_MS`](crate::history::UNDO_MS).
     pub fn delete_conversations(&self, ids: &[String]) -> Result<Deleted> {
+        let clips: Vec<String> =
+            ids.iter().filter_map(|id| self.inner.history.load(id).ok()).flat_map(|c| crate::video_play::clip_files(&c.messages)).collect();
         let d = self.inner.history.delete_conversations(ids)?;
+        crate::video_play::remove_clip_files(&self.clip_cache(), &clips);
         self.after_delete(&d);
         Ok(d)
     }
@@ -1173,7 +1187,11 @@ impl Core {
         if busy && c.messages.iter().any(|m| ids.contains(&m.id) && m.state == MessageState::Streaming) {
             return Err(CoreError::new(ErrorKind::BadRequest, "stop the answer before deleting it"));
         }
+        let clips = crate::video_play::clip_files(c.messages.iter().filter(|m| ids.contains(&m.id)));
         let d = self.inner.history.delete_messages(conversation, &ids)?;
+        // The written copies of their clips go too (undo brings the clips back in the messages,
+        // and a copy is written again when one is played).
+        crate::video_play::remove_clip_files(&self.clip_cache(), &clips);
         self.after_delete(&d);
         Ok(d)
     }
@@ -1188,6 +1206,8 @@ impl Core {
     /// Deletes all history, on every linked device, with no undo. Returns how many conversations.
     pub fn clear_history(&self) -> Result<usize> {
         let n = self.inner.history.clear()?;
+        // Every written clip copy: the ones of other pools are written again when played.
+        crate::video_play::prune_clip_cache(&self.clip_cache(), std::time::SystemTime::now(), std::time::Duration::ZERO, 0);
         self.inner.state.send_modify(|_| {});
         Ok(n)
     }
