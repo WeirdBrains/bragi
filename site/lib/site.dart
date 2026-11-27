@@ -18,7 +18,7 @@ const siteDescription =
 const repoUrl = 'https://github.com/WeirdBrains/bragi';
 
 /// The latest release; bump with each release (docs/RELEASES.md).
-const latestVersion = '0.16.1';
+const latestVersion = '0.17.0';
 const latestDate = 'November 27, 2026';
 const releaseUrl = '$repoUrl/releases/tag/v$latestVersion';
 String releaseAsset(String name) => '$repoUrl/releases/download/v$latestVersion/$name';

@@ -2,6 +2,16 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 13:45 EST: v0.17.0 released
+
+Michael (11-27) asked to cut it. [v0.17.0](https://github.com/WeirdBrains/bragi/releases/tag/v0.17.0) (`release: v0.17.0`, e674bcc, minor cut on main b2758f5, app `0.17.0+22`): the bundled LGPL ffmpeg (9.0.2) in the Linux, macOS and Windows desktop packages, and the on-device engine (`on-device`, llama.cpp) in every release build: Linux, macOS (Metal), Windows x86_64 and ARM64, Android (static libc++) and iOS (Metal), with build paths remapped. The cut's checks (fmt, clippy `-D warnings`, `cargo test --workspace`) passed. The Release run 46045059654 was green on every job the first time (no re-runs); Editor extension 46045059617 green. Release flow:
+- Leak scan of the 41 files: 0 hits.
+- `github` and `assets` ok. No minisign key is set, so there are no `.minisig` files.
+- The six Arch `.sig` files are uploaded (`sign-bragi.sh 0.17.0`, EXIT 0), for 48 assets.
+- This commit sets bragi-bin's PKGBUILD/.SRCINFO (`taur-srcinfo`, `taur-check` ready), Nix `release.json` and the site's `latestVersion` to 0.17.0, then TAUR bragi-bin 0.17.0-1 (dry-run first).
+
+**Next:** native video V4 (with Ymir's native video).
+
 ## 2026-11-27 11:45 EST: the on-device engine in the Android and iOS apps (merged `feature/on-device-mobile`)
 
 The rest of the B4 "Next" item: the engine in the phone release builds. It goes out with the next release.
