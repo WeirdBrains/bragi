@@ -6,6 +6,12 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-27
+
+### Fixed
+
+- The release builds of 0.16.0 failed, so it shipped no files; 0.16.1 is the same app with the builds fixed: the terminal-only `bragi` (the Linux `bragi-tui` packages, the BSDs) compiles again, the iOS app builds with Xcode 26 (video_player_avfoundation 2.12.5 needs the iOS 26 SDK), and the macOS dmg is sized from the app so it no longer runs out of space.
+
 ## [0.16.0] - 2026-11-27
 
 ### Added
