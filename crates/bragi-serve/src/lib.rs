@@ -25,6 +25,10 @@
 //! - `POST /v1/video/limits`, `/v1/video/limits/set`: a model's video limits and this device's
 //!   override.
 //! - `POST /v1/cancel`: stops a streaming request.
+//! - `GET|POST /v1/links`, `/v1/endpoints`, `/v1/sessions` …: what Settings manages ([`manage`]).
+//! - `GET|POST /v1/mcp-servers`, `PUT|DELETE /v1/mcp-servers/{id}`, `POST …/{id}/enabled`,
+//!   `…/{id}/test`, `…/{id}/always-allow`: outside MCP servers; `POST /v1/agent/approve` answers
+//!   an agent's approval card (see [`mcp`]).
 
 pub mod cli;
 pub mod ensure;
@@ -178,6 +182,7 @@ pub async fn serve_tracked(
 }
 
 mod manage;
+mod mcp;
 
 #[derive(Clone)]
 struct App {
@@ -210,6 +215,7 @@ pub fn router_with_clips(core: Core, token: String, port: u16, open_clip: video:
         .route("/v1/video/limits", post(video::limits))
         .route("/v1/video/limits/set", post(video::set_limits))
         .merge(manage::routes())
+        .merge(mcp::routes())
         .route_layer(middleware::from_fn_with_state(app.clone(), auth));
     Router::new()
         .route("/v1/health", get(|| async { Json(json!({ "ok": true, "version": env!("CARGO_PKG_VERSION") })) }))
@@ -521,6 +527,15 @@ struct CodeChatBody {
     /// A clip on this machine, sampled into the turn for the model.
     #[serde(default)]
     video: Option<video::VideoBody>,
+    /// Agent mode: a task on a node (the pool), or on an endpoint Bragi's own tool-call loop with
+    /// the outside MCP servers that apply. Tool calls ask first (`approval` events, answered
+    /// with `POST /v1/agent/approve`). An endpoint chat with MCP servers in scope is an agent
+    /// turn without it.
+    #[serde(default)]
+    agent: bool,
+    /// The project folder, for MCP servers scoped to a folder.
+    #[serde(default)]
+    folder: Option<String>,
 }
 
 fn sse_response(events: impl futures::Stream<Item = String> + Send + 'static) -> Response {
@@ -584,12 +599,25 @@ async fn code_chat(State(app): State<App>, Json(b): Json<CodeChatBody>) -> Respo
             Err(e) => return core_error(e),
         }
     }
-    let h = match app.core.send_to(b.conversation.as_deref(), &b.prompt, b.model, attachments, b.target) {
+    let sent = match (b.agent, b.target) {
+        (true, Some(Target::Endpoint { id, model })) => app.core.send_agent_local(
+            b.conversation.as_deref(),
+            &b.prompt,
+            &id,
+            Some(model).filter(|m| !m.is_empty()).or(b.model),
+            b.folder,
+            attachments,
+        ),
+        (true, _) => app.core.send_agent(b.conversation.as_deref(), &b.prompt, None, None, attachments),
+        (false, target) => app.core.send_to(b.conversation.as_deref(), &b.prompt, b.model, attachments, target),
+    };
+    let h = match sent {
         Ok(h) => h,
         Err(e) => return core_error(e),
     };
     let first = json!({ "type": "conversation", "id": h.conversation_id, "request_id": h.request_id }).to_string();
-    let rest = guarded_events(app.core.clone(), h).map(|ev| serde_json::to_string(&ev).unwrap_or_default());
+    let core = app.core.clone();
+    let rest = guarded_events(app.core.clone(), h).map(move |ev| mcp::event_json(&core, &ev));
     sse_response(futures::stream::iter(std::iter::once(first).chain(clip)).chain(rest))
 }
 
