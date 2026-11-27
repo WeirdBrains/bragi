@@ -4,7 +4,7 @@
 
 Bragi is the chat client for a Ymir cloud. Every milestone ships its features in the shared Rust core for both the desktop and phone shells, so neither falls behind. The plan lives in Ymir's design doc.
 
-Updated 2026-11-26. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
+Updated 2026-11-27. Design: [docs/DESIGN.md](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones).
 
 ## B1 Core and both shells (Done)
 
@@ -26,7 +26,7 @@ Weirdnet crates: none new.
 
 ## B4 Sync and optional extras (In progress)
 
-Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. A per-chat training consent for Ymir's training export (off unless you mark a chat, and synced like the chat) is built in every shell. Wake-ups (weirdnet-push): each device shares a sealed wake card only with your linked devices, refuses stale or repeated wakes, and can keep an opt-in relay wake connection (off by default, with its battery cost shown; an Android foreground service, so F-Droid builds can be woken without Google push). An optional on-device model (weirdnet-model, llama.cpp in-process) is built in every shell: off by default, a model downloads only after you agree to what, how big and from where, and it then shows in the picker as "On this device" and answers when no node is reachable. The engine is in builds with the `on-device` Cargo feature, which the Linux release builds turn on. Next: APNs/FCM delivery, and the engine in the macOS, Windows and phone release builds.
+Chat history on the shared context store, so a conversation follows you between devices: built and shown on both shells. A per-chat training consent for Ymir's training export (off unless you mark a chat, and synced like the chat) is built in every shell. Wake-ups (weirdnet-push): each device shares a sealed wake card only with your linked devices, refuses stale or repeated wakes, and can keep an opt-in relay wake connection (off by default, with its battery cost shown; an Android foreground service, so F-Droid builds can be woken without Google push). An optional on-device model (weirdnet-model, llama.cpp in-process) is built in every shell: off by default, a model downloads only after you agree to what, how big and from where, and it then shows in the picker as "On this device" and answers when no node is reachable. The engine is in builds with the `on-device` Cargo feature, which the Linux, macOS (with Metal) and Windows release builds turn on. Next: APNs/FCM delivery, and the engine in the phone release builds.
 
 Weirdnet crates: `weirdnet-sync`, `weirdnet-push`, `weirdnet-model`.
 

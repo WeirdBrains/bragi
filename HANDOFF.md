@@ -2,6 +2,23 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 11:30 EST: the on-device engine in the macOS (Metal) and Windows release builds (merged `feature/on-device-macos-windows`)
+
+Michael (11-27): "Go on through the Bragi features". The first of the B4 "Next" items: the engine in the macOS and Windows release builds. It goes out with the next release.
+
+**CI:** `workflow_dispatch` Release runs on the branch. [46028513861](https://github.com/WeirdBrains/bragi/actions/runs/46028513861) passed every job: check, Linux x86_64/ARM64, macOS universal, Windows x86_64/ARM64, Android, iOS. Before it: 46020717191 (Windows x86_64 green; macOS failed to link `___isPlatformVersionAtLeast` from llama.cpp's Metal code; Windows ARM64 failed because clang-cl gets no `/EHsc` from cc) and 46023785729 (all green but macOS, whose new runner-path check found GPUI's metallib path, see below).
+
+**What:**
+- [scripts/dist-macos.sh](scripts/dist-macos.sh): `BRAGI_FEATURES` defaults to `on-device` (as on Linux; empty builds without). llama.cpp builds per arch with `GGML_NATIVE=OFF` and its Metal backend on (ggml's default on Apple), with the shaders embedded (`GGML_METAL_EMBED_LIBRARY`); weirdnet-model offloads all layers (`gpu_layers: 999`) and its settings line says "llama.cpp (Metal)". The existing `-ffile-prefix-map` flags cover llama.cpp's C/C++.
+- [crates/bragi-core/build.rs](crates/bragi-core/build.rs) (new): with `on-device` on macOS or iOS it links clang's runtime (`libclang_rt.osx`/`ios`/`iossim`, found with `xcrun clang --print-runtime-dir`, `static:-bundle`), because rustc links with `-nodefaultlibs` and llama.cpp's Metal code uses `@available`. Nothing on other targets.
+- [scripts/dist-windows.ps1](scripts/dist-windows.ps1): `BRAGI_FEATURES` defaults to `on-device` (`none` builds without). x86_64 builds llama.cpp with MSVC and trims `__FILE__` with `/d1trimfile:` (cargo home, target dir, checkout, profile). ARM64 enters a Visual Studio developer shell (arm64) and builds it with clang-cl and Ninja (`CC_/CXX_aarch64_pc_windows_msvc`, `CMAKE_GENERATOR=Ninja`, `/EHsc`, `-Xclang -fmacro-prefix-map`): ggml's ARM CPU backend refuses `GGML_NATIVE=OFF` under MSVC proper, and `GGML_NATIVE=ON` would tie the exe to the runner's CPU. weirdnet-model refuses to load on an x86 CPU without what the build needs, instead of crashing.
+- [.github/workflows/release.yml](.github/workflows/release.yml): macOS and Windows pass `BRAGI_FEATURES: on-device`. macOS checks both slices have the engine and link Metal and have no runner path; Windows checks both exes have the engine and none of `GITHUB_WORKSPACE`, the profile or `runneradmin`. GPUI's build embeds its compiled `shaders.metallib`, which records the metallib command with its build-dir paths (`target/<triple>/release/build/gpui_apple/<hash>/out`); that comes from the GPUI git dependency, was in earlier releases too, and is reported as a warning, any other runner path fails the job.
+- Docs: [CHANGELOG.md](CHANGELOG.md), [docs/RELEASES.md](docs/RELEASES.md), [roadmap.toml](roadmap.toml) B4 ([ROADMAP.md](ROADMAP.md) and the site regenerated).
+
+**Checks (alien-blue, scratch clone, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf47`, `flock`/`nice`/`ionice`, `-j 6`):** `cargo fmt --all --check`; `cargo clippy -D warnings` on `--workspace --all-targets`, `-p bragi-desktop --features on-device`, `-p bragi-bridge --features on-device` and `-p bragi-desktop --no-default-features`; `cargo test --workspace --no-fail-fast` (387 passed, 0 failed, 5 ignored, 47 suites); `actionlint`; the site's link and roadmap checks. The macOS and Windows builds can only run in CI.
+
+**Left:** GPUI's metallib build path (upstream, in the gpui dependency); the engine not run with real weights on a Mac or a Windows machine.
+
 ## 2026-11-27 08:40 EST: release packaging bundles the LGPL ffmpeg everywhere, Linux builds with the on-device engine (merged `feature/packaging-on-device-ffmpeg`)
 
 Michael (11-27) asked for this after the release. It goes out with the next release (0.16.1 doesn't have it).
