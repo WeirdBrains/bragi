@@ -2,6 +2,23 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 06:03 EST: B7 checked against the real pool (on main)
+
+Michael (11-27) approved the live check with a test grant. B7 is **done**: its last item was a check against a real Ymir node.
+
+**How:** [crates/bragi-core/examples/b7_real_node.rs](crates/bragi-core/examples/b7_real_node.rs), a headless Bragi core with throwaway state on alien-blue, dialing Ymir on alien-blue over Tailscale. `ymirctl pool add` on alien-blue linked it as "Bragi B7 test" (peer `…nNe9bp`); afterwards `ymirctl pool revoke` revoked it and its data folder (with its copy of the identity) was deleted by exact path. No `node.toml`, grant or model of anyone else changed; the pulled and uploaded test models were removed.
+
+**Results (2026-11-27, real nodes m1 and m2 on ymird 0.22.0, alien-blue on 0.20.0, starbase):**
+- Overview of 9 devices in 124 ms: Ymir on alien-blue ready (3 models), Ymir on starbase ready (3), the Bragi devices "not a model node" or unreachable (offline). m1 and m2 first answered **needs owner device (unknown-device)**: they had not got the new roster yet. A minute later, after the pull, both were ready. A just-linked device can see that for a short while; nothing to fix in Bragi.
+- Training view: Ymir on alien-blue 3 runs, starbase 0, no rollouts in the pool.
+- Hub search `bartowski/SmolLM2-135M-Instruct-GGUF` against the real Hub: 1 hit, 9 fit rows in 1.5 s, "fits" on alien-blue and starbase (best f16).
+- Pull of the Q8_0 (144.8 MB) to Ymir on alien-blue: cancelled at 2.1 MB, pulled again to completion in 3.5 s (`served: false`).
+- Remove: refused without the confirm ("removing a model needs a confirm"), then freed 144,811,360 bytes.
+- Upload of an 88.2 MB GGUF from this device as `b7-upload-test` (license apache-2.0, not saved in the node's `node.toml`): 578 ms; removed afterwards.
+- After the revoke, m1, m2, alien-blue, starbase and vkng1 all answered **needs owner device (revoked)**.
+
+**Not checked live:** the Flutter and GPUI screens themselves (they call these same core functions and were tried against demo nodes); pulls to m1 and m2, whose `ymird` runs with `HF_HUB_OFFLINE=1`; rollouts and node-to-node copies (no rollouts in the pool). The log is at `notes/b7-real-node-20261127.log` in the dev notes (not in this repo).
+
 ## 2026-11-27 00:01 EST: B4 optional on-device model (merged `feature/b4-on-device-model`)
 
 The last open optional extra of B4 in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones): "with no reachable node bragi-core runs a small model in-process through weirdnet-model, downloaded only with consent; off by default; shows in the same picker as 'On this device'".
