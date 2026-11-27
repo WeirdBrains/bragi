@@ -166,14 +166,23 @@ void main() {
       await tester.pump();
     }
 
-    /// Lets a core call and the redraw finish.
+    /// Lets a core call and the redraw finish: waits until the controller has been quiet (no
+    /// notifyListeners) for 8 real event-loop turns of 40 ms, at least 12 turns in all and at most
+    /// 10 s. A fixed number of turns was too short when the machine is loaded.
     Future<void> settle() async {
-      // Each core call resolves on a real event-loop turn, and a screen refresh makes several in a row.
-      for (var i = 0; i < 12; i++) {
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 40)),
-        );
-        await tester.pump();
+      var quiet = 0;
+      void heard() => quiet = 0;
+      c.addListener(heard);
+      try {
+        for (var i = 0; i < 250 && (i < 12 || quiet < 8); i++) {
+          quiet++;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 40)),
+          );
+          await tester.pump();
+        }
+      } finally {
+        c.removeListener(heard);
       }
       await tester.pumpAndSettle();
     }
