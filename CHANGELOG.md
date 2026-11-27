@@ -6,6 +6,8 @@ All notable changes to Bragi are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-27
+
 ### Added
 
 - The optional on-device model (B4): Settings → **On-device model** in the desktop and the Flutter app, and `/on-device [on|off|use ID|get ID|stop|remove ID]` in the terminal app. Off by default, per device (`on-device.json`). Turning it on downloads nothing: each model (weirdnet-model's catalog: Gemma 4 E2B on phones, E4B elsewhere) downloads only after its consent card (what, how big, from where, where it is saved and the free disk) gets an OK, into `<data dir>/models`, resuming a stopped download and checking the SHA-256. A downloaded, chosen model shows in the target picker as **On this device**; chats bound to it run in-process (text only) with stop, and a chat or completion for the pool falls back to it when no node and no fallback endpoint can answer. `bragi mcp` takes `endpoint: "device"`. The engine (llama.cpp through weirdnet-model's `llama` feature) is in builds with the new `on-device` Cargo feature of bragi-core, bragi-desktop, bragi-tui and bragi-bridge; without it the setting says the build has no on-device engine.
