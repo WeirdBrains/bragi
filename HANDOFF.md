@@ -2,6 +2,36 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-27 00:01 EST: B4 optional on-device model (merged `feature/b4-on-device-model`)
+
+The last open optional extra of B4 in Ymir's [design doc](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md#bragi-milestones): "with no reachable node bragi-core runs a small model in-process through weirdnet-model, downloaded only with consent; off by default; shows in the same picker as 'On this device'".
+
+- **Core** ([on_device.rs](crates/bragi-core/src/on_device.rs), [targets.rs](crates/bragi-core/src/targets.rs), [sessions.rs](crates/bragi-core/src/sessions.rs)):
+  - Off by default, per device: `on-device.json` in the data dir (not synced). `set_on_device(true)` picks a model (weirdnet-model's `default_for`: Gemma 4 E2B on phones, E4B elsewhere) but downloads nothing.
+  - Consent: `on_device_consent(id)` gives weirdnet-model's consent text plus where it is saved and the free disk. `download_on_device_model(id, consent)` refuses without `consent`, then builds `Consent::given` and runs `weirdnet_model::download` on a thread into `<data dir>/models`. It resumes a `.part`, checks the SHA-256, and reports progress in `AppState.on_device` (throttled to 200 ms). It can be stopped (`cancel_on_device_download`, the part is kept) and one runs at a time. `remove_on_device_model` deletes the file.
+  - New `Target::Device { model }` (serde `kind: "device"`). `targets()` lists "On this device · <label>" only when it is on, downloaded and the build has an engine (`OnDeviceStatus::ready`). `check_target` says which of those is missing.
+  - Chat: `send_device` is text only (pictures, sound and video are refused with a message). It saves the turn like an endpoint answer (`node` "On this device", `model` the label), streams through the same `coalesce`, stops on `Core::cancel` (keeping what came, `Stopped`) and reuses the loaded `weirdnet_model::Worker` until the model changes. `complete_to` runs there too.
+  - Fallback: a pool chat or completion with no node (`NotPaired`/`Unavailable`) and no fallback endpoint goes to the on-device model when it is ready. With no node, the default target is the first endpoint offered alongside, then the device.
+  - The engine: bragi-core's new `on-device` Cargo feature turns on `weirdnet-model/llama` (`LlamaEngine::load`, default `LlamaOptions`; `llama::describe()` names it). bragi-desktop, bragi-tui and bragi-bridge pass the feature through. Without it, the setting says "This build of Bragi has no on-device engine." `set_on_device_engine` and `set_on_device_source` let tests (and embedders) swap the engine and the Hub.
+  - History lives on the context store, so on-device chats need a linked device (an unlinked device can still run completions).
+- **Desktop** ([view/on_device.rs](crates/bragi-desktop/src/view/on_device.rs)): Settings → ON-DEVICE MODEL: the switch with the status line, a row per model (Download / Stop / Use / Remove) and the consent card before any download. The picker refreshes when the model becomes ready or stops being ready.
+- **Terminal app**: `/on-device` (status and models), `on|off`, `use ID`, `get ID` (shows what downloads, and how to say yes), `get ID yes`, `stop`, `remove ID`. The picker lists the downloaded models under "On this device".
+- **Bridge and Flutter** ([api/on_device.rs](crates/bragi-bridge/src/api/on_device.rs), [on_device_ui.dart](app/lib/src/on_device_ui.dart)): sync `on_device_status`, `set_on_device`, `on_device_models`, `choose_on_device_model`, `on_device_consent`, `download_on_device_model`, `cancel_on_device_download` and `remove_on_device_model` (progress as a fraction and a label, no u64 in Dart). Settings → ON-DEVICE MODEL with the consent dialog, polls while downloading, and tells the controller to refresh the targets. `target_of`/`target_view` know `device`.
+- **bragi mcp**: `endpoint: "device"` sends to the on-device model.
+- **Tests** (no real weights, no real engine): `tests/on_device.rs` (5: off by default and no download without consent; a consented download from the mock Hub, then chats, a bound session, a completion, the text-only refusal, off and remove; cancel and resume; a failed download and stop mid-answer; the pool's fallback with no node), 3 unit tests in `on_device.rs`, the bridge's status view, the desktop's row actions, a terminal-app script, and 4 Flutter widget tests.
+- **Checks** (alien-blue, scratch worktree, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf43-b4`, under `flock`/`nice`/`ionice`, `-j 6`):
+  - `cargo fmt --all --check`: clean (after `cargo fmt` on the regenerated bridge).
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo clippy -p bragi-core --features on-device --all-targets -- -D warnings`: clean; llama-cpp-sys-2 0.1.161 built llama.cpp (CPU) on alien-blue.
+  - `cargo test --workspace --no-fail-fast`: 387 passed, 0 failed, 5 ignored in 47 suites (11 new).
+  - `flutter analyze`: no issues.
+  - `flutter test --dart-define=BRAGI_DEMO=true` with `BRAGI_BRIDGE_LIB` set to this build: 25 passed (4 new) on the second full run. The first run failed `settings_test.dart` once. Run alone, that test failed 2 of 4 times with the on-device section and 3 of 4 times with it commented out, each time at a different line after a core call. So it is a timing flake of its fixed `settle()` waits under load (load average about 60 on alien-blue), not this change. It is worth making `settle()` wait on a condition.
+  - The new core and terminal-app tests passed 4 runs in a row.
+- **Docs**: [roadmap.toml](roadmap.toml) B4 (ROADMAP.md and the site regenerated), CHANGELOG. Ymir's `docs/DESIGN.md` was not touched: Ymir is owned by another agent. Its B4 lines ("On-device model: not built", and the milestone line) need an update from Ymir's owner.
+- **Left**:
+  - The release packaging doesn't build with `--features on-device` yet (llama.cpp's C++ build for each target: Android NDK, iOS, macOS Metal, Windows).
+  - Not run with real weights or a real llama.cpp engine.
+
 ## 2026-11-26 23:10 EST: stored clips polish: the Flutter switch and clip cache cleanup (merged `feature/video-clip-polish`, LF-43)
 
 The two loose ends of the stored clips follow-up.
