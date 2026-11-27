@@ -2,6 +2,14 @@
 
 ## 0.2.0 (unreleased)
 
+- The rest of the apps' chat in the panel (LF-40): **File…** and **Selection** attach files, the selected
+  text, images (PNG, JPEG, GIF, WebP) and sound (WAV, MP3) to the next message (also **Attach File to
+  Chat…** in the Explorer menu, **Attach Selection to Chat** in the editor menu, or a drop); images show and
+  sound plays in the message. Under each message: quick reactions and delete (a question can take its answer
+  with it; **Undo** puts it back). **Open Chat from History…** loads a chat, grouped by folder, and the next
+  message continues it; **New / Rename / Move / Delete Chat Folder…** and **Move Chat to Folder…** file
+  chats. **Link This Bragi to Another Device (Show a Code)…** shows a link code (copied), then the short code
+  to compare. Images and sound need the Bragi target; the direct target gets text files inline.
 - Agent mode and outside MCP servers in full (LF-40 on LF-37): the chat panel's **Agent** switch lets the
   model use tools (a node's, or the outside MCP servers that apply on an endpoint); each call shows a card
   with **Allow once**, **Allow for this task**, **Always allow** (outside MCP servers' tools) and **Deny**.
