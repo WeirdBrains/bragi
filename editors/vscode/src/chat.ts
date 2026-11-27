@@ -71,13 +71,14 @@ export class ChatController {
       return false;
     }
     this.waiting.delete(ask);
+    // Shown at once: what the answer lets happen streams in while the request is still out.
+    this.post({ type: 'approved', ask, choice });
     try {
       await this.router.bragi.approve(id, ask, choice);
     } catch (e) {
       this.post({ type: 'notice', text: `That card couldn't be answered: ${e instanceof Error ? e.message : String(e)}` });
       return false;
     }
-    this.post({ type: 'approved', ask, choice });
     return true;
   }
 
@@ -220,18 +221,18 @@ export class ChatController {
             break;
           }
           case 'approval': {
-            const a = e as { ask: number; tool: string; tier: string; site?: string | null; summary: string; always?: boolean };
+            const a = e as unknown as { ask: number; tool: string; tier: string; site?: string | null; summary: string; always?: boolean };
             this.waiting.add(a.ask);
             this.post({ type: 'approval', ask: a.ask, tool: a.tool, tier: a.tier, site: a.site ?? undefined, summary: a.summary, always: a.always === true });
             break;
           }
           case 'tool': {
-            const t = e as { tool: string; state: 'started' | 'done' | 'failed' };
+            const t = e as unknown as { tool: string; state: 'started' | 'done' | 'failed' };
             this.post({ type: 'tool', tool: t.tool, state: t.state });
             break;
           }
           case 'notice':
-            this.post({ type: 'notice', text: (e as { text: string }).text });
+            this.post({ type: 'notice', text: (e as unknown as { text: string }).text });
             break;
           case 'error': {
             const er = e as { kind: string; message: string };

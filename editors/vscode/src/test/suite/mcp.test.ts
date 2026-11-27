@@ -46,7 +46,7 @@ suite('MCP servers and agent mode', () => {
     assert.deepStrictEqual(v.scope, { kind: 'folder', value: '/work/app' });
     assert.strictEqual(v.has_bearer, true);
     assert.ok(!JSON.stringify(await manage.mcpServers()).includes('tok-abcdef123456'));
-    assert.deepStrictEqual(mock.last('/v1/mcp-servers')!.body.secrets, { bearer: 'tok-abcdef123456' }, 'the token goes to Bragi once');
+    assert.deepStrictEqual([...mock.seen].reverse().find((x) => x.path === '/v1/mcp-servers' && x.method === 'POST')!.body.secrets, { bearer: 'tok-abcdef123456' }, 'the token goes to Bragi once');
     const e = await manage.editMcpServer(v.id, { name: 'Docs', transport: 'http', url: 'https://example.com/v2/mcp' });
     assert.strictEqual(e.target, 'https://example.com/v2/mcp');
     assert.strictEqual(e.has_bearer, true, 'no secrets in the edit: the stored token stays');
