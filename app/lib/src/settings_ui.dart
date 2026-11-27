@@ -18,6 +18,54 @@ Widget _heading(String text) => Padding(
   ),
 );
 
+/// Settings, Video: "Play clips on all my devices" (`video.store_clip`, off by default). On, a
+/// clip attached here (up to the cap) goes into its message, so linked devices can play it.
+class StoreClipsTile extends StatefulWidget {
+  const StoreClipsTile({super.key, required this.api});
+
+  final BragiApi api;
+
+  @override
+  State<StoreClipsTile> createState() => _StoreClipsTileState();
+}
+
+class _StoreClipsTileState extends State<StoreClipsTile> {
+  late bool _on = widget.api.videoStoreClip();
+  String? _error;
+
+  void _set(bool on) {
+    try {
+      final now = widget.api.setVideoStoreClip(on);
+      setState(() {
+        _on = now;
+        _error = null;
+      });
+    } catch (e) {
+      setState(() => _error = '$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mib = widget.api.videoStoredClipMaxMib();
+    return SwitchListTile(
+      key: const Key('store-clips'),
+      dense: true,
+      title: const Text('Play clips on all my devices'),
+      subtitle: Text(
+        _error ??
+            'Copies each clip you attach (up to $mib MiB) into its message, so your linked devices can play it. It syncs and is deleted with the message. Larger clips play only here.',
+        style: TextStyle(
+          fontSize: 12,
+          color: _error == null ? BragiColors.textSecondary : BragiColors.error,
+        ),
+      ),
+      value: _on,
+      onChanged: _set,
+    );
+  }
+}
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.controller});
 
@@ -159,6 +207,8 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                 ),
+                _heading('VIDEO'),
+                StoreClipsTile(api: c.api),
                 _heading('WAKE-UPS'),
                 WakeSection(api: c.api),
                 _heading('HISTORY'),

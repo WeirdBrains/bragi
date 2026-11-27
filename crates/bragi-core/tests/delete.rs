@@ -128,3 +128,59 @@ async fn a_deleted_message_is_gone_on_the_other_device_too() {
     })
     .await;
 }
+
+/// A stored clip's written copy goes when its message does, and the copies of a deleted
+/// conversation go with it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_deleted_message_takes_its_clip_copy_with_it() {
+    use bragi_core::video::{Sampled, StoredClip};
+    let tmp = tempfile::tempdir().unwrap();
+    let demo = Arc::new(DemoNode::start(&tmp.path().join("demo"), Duration::from_millis(5)).await.unwrap());
+    let a = link(&demo, &tmp.path().join("a"), "Bragi A").await;
+    let clip = |name: &str, bytes: &[u8]| {
+        let p = tmp.path().join(name);
+        std::fs::write(&p, bytes).unwrap();
+        let s = Sampled {
+            summary: "Video".into(),
+            duration_ms: 1_000,
+            frames: Vec::new(),
+            audio: None,
+            clip: None,
+            stored: StoredClip::read(&p).unwrap(),
+        };
+        bragi_core::Attachment::from_video(name, s)
+    };
+    let send = |conversation: Option<String>, a2: bragi_core::Attachment| {
+        let mut h = a.send_with(conversation.as_deref(), "what happens?", None, vec![a2]).unwrap();
+        async move {
+            while let Some(ev) = tokio::time::timeout(Duration::from_secs(20), h.events.recv()).await.expect("stream stalled") {
+                if matches!(ev, ChatEvent::Done { .. } | ChatEvent::Error { .. }) {
+                    break;
+                }
+            }
+            h.conversation_id
+        }
+    };
+    let conv = send(None, clip("one.mp4", b"first clip")).await;
+    send(Some(conv.clone()), clip("two.webm", b"second clip")).await;
+    let other = send(None, clip("three.mkv", b"third clip")).await;
+    let played = |conv: &str, n: usize| {
+        let c = a.conversation(conv).unwrap();
+        let m = c.messages.iter().filter(|m| m.role == bragi_core::Role::User).nth(n).unwrap().clone();
+        let Some(bragi_core::Media::Video(v)) = &m.attachments[0].media else { panic!("no clip") };
+        (m.id.clone(), a.playable_clip(v).unwrap())
+    };
+    let (first, p1) = played(&conv, 0);
+    let (_, p2) = played(&conv, 1);
+    let (_, p3) = played(&other, 0);
+    assert!(p1.starts_with(a.clip_cache()) && p1.is_file() && p2.is_file() && p3.is_file());
+
+    a.delete_message(&conv, &first, true).unwrap();
+    assert!(!p1.exists(), "the deleted message's copy went");
+    assert!(p2.is_file() && p3.is_file(), "the others stay");
+    a.delete_conversation(&other).unwrap();
+    assert!(!p3.exists(), "a deleted conversation's copies go");
+    assert!(p2.is_file());
+    a.clear_history().unwrap();
+    assert!(!p2.exists(), "clearing history empties the cache");
+}
