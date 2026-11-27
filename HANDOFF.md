@@ -2,6 +2,27 @@
 
 A running record of finished work on Bragi, newest first. Each entry says what changed, the commits, which checks ran and which did not, what is left and what comes next. Owner: [m3talsmith](https://github.com/m3talsmith). See also [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md) and [AGENTS.md](AGENTS.md).
 
+## 2026-11-26 21:02 EST: extension parity, MCP servers and agent approvals in VS Code (merged `feature/ext-parity-mcp`, LF-40 on LF-37)
+
+The first of the two open slices of [docs/design/extension-parity.md](docs/design/extension-parity.md). The extension's MCP commands and Connections view already existed (LF-40) and called routes `bragi serve` didn't have; now it has them, and the chat panel can run agent turns with approval cards.
+
+- **bragi serve** ([mcp.rs](crates/bragi-serve/src/mcp.rs)):
+  - Routes: `GET|POST /v1/mcp-servers`, `PUT|DELETE /v1/mcp-servers/{id}`, `POST …/{id}/enabled {enabled}`, `…/{id}/test` (always 200 with the report, 404 for an unknown id), `…/{id}/always-allow {tool, allow}`, and `POST /v1/agent/approve {request_id, ask, choice}` (`{ok}`; 404 "that card isn't waiting any more"; 422 for a choice that isn't `deny`, `once`, `this_task` or `always`).
+  - Responses are bragi-core's `McpServerView`: never a secret. `secrets {env, headers, bearer}` are taken on add and edit; an edit without them keeps what is stored. `scope` is the word `all` or `folder` (with `folder`) or the core's `{kind, value}`.
+  - `/v1/code/chat` takes `agent` and `folder`. For the pool it is a task on a node (`send_agent`); for an endpoint, Bragi's own tool-call loop with the MCP servers in scope (`send_agent_local`). `approval` events gain `always` (offered only for an outside MCP server's tool).
+- **Extension** ([manage.ts](editors/vscode/src/manage.ts), [commands.ts](editors/vscode/src/commands.ts), [tree.ts](editors/vscode/src/tree.ts), [chat.ts](editors/vscode/src/chat.ts), [chat.js](editors/vscode/media/chat.js)):
+  - `McpServerView` matches the core. Adding a server asks where its tools may be used (every chat, or code chats in this folder). Servers can be edited and tested. **Take Back "Always Allow" for an MCP Tool…** is new. The tree shows the scope and the number of tools always allowed.
+  - The chat's **Agent** switch. Each tool call shows a card (tool, tier, site, what it will do) with **Allow once**, **Allow for this task**, **Always allow** (when offered) and **Deny**. The answer shows on the card at once; tool runs and notices show in the answer; a card still open when the answer ends says "Not answered (the task ended)". The direct target refuses agent mode.
+- **Tests**:
+  - [tests/mcp.rs](crates/bragi-serve/tests/mcp.rs): the list and its secrets, on/off, always-allow given and taken back, a test that can't connect, bad input refused; an agent task on the demo cloud whose card is approved over HTTP, answered once only, and whose tool runs ("2 notes mention").
+  - [mcp.test.ts](editors/vscode/src/test/suite/mcp.test.ts): 6 tests against the mock (listing, scope, edit keeps the token, test; take back always-allow; agent turn with "always allow"; deny; plain chat and the direct target; commands present).
+- **Checks** (alien-blue, scratch clone, `CARGO_TARGET_DIR=/mnt/ext1/cargo-target/lf43-ext`, under `flock`/`nice`/`ionice`):
+  - `cargo fmt --all --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 363 passed, 0 failed, 5 ignored in 45 suites.
+  - Extension `npm run lint`: clean. `npm test` (xvfb-run, `env -i`, throwaway HOME): 67 passing, 1 pending.
+- **Left**: the rest of extension parity (chat files, images and sound, reactions and delete, open and folders, link code) is `feature/ext-parity-chat`, next.
+
 ## 2026-11-26 20:11 EST: video V3, the phone app's video attach, platform decoders and inline player (merged `feature/video-v3-flutter`, LF-43)
 
 V3 of [docs/design/video.md](docs/design/video.md), on top of the VS Code slice (merge d2132af, entry below). Phones have no ffmpeg. The core plans the frames and the platform decodes them.
