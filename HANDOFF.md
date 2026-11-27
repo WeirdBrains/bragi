@@ -44,7 +44,7 @@ The last open optional extra of B4 in Ymir's [design doc](https://github.com/Wei
   - `flutter analyze`: no issues.
   - `flutter test --dart-define=BRAGI_DEMO=true` with `BRAGI_BRIDGE_LIB` set to this build: 25 passed (4 new) on the second full run. The first run failed `settings_test.dart` once. Run alone, that test failed 2 of 4 times with the on-device section and 3 of 4 times with it commented out, each time at a different line after a core call. So it is a timing flake of its fixed `settle()` waits under load (load average about 60 on alien-blue), not this change. It is worth making `settle()` wait on a condition.
   - The new core and terminal-app tests passed 4 runs in a row.
-- **Docs**: [roadmap.toml](roadmap.toml) B4 (ROADMAP.md and the site regenerated), CHANGELOG. Ymir's `docs/DESIGN.md` was not touched: Ymir is owned by another agent. Its B4 lines ("On-device model: not built", and the milestone line) need an update from Ymir's owner.
+- **Docs**: [roadmap.toml](roadmap.toml) B4 ([ROADMAP.md](ROADMAP.md) and the site regenerated), CHANGELOG. Ymir's [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) was not touched: Ymir is owned by another agent. Its B4 lines ("On-device model: not built", and the milestone line) need an update from Ymir's owner.
 - **Left**:
   - The release packaging doesn't build with `--features on-device` yet (llama.cpp's C++ build for each target: Android NDK, iOS, macOS Metal, Windows).
   - Not run with real weights or a real llama.cpp engine.
@@ -77,14 +77,14 @@ The open follow-ups of [docs/design/video.md](docs/design/video.md).
   - FFmpeg 9.0.2, a pinned tarball and sha256. The sha256 was pinned after checking the release signature against the FFmpeg key FCF9 86EA … D676 58D8, using a throwaway GNUPGHOME.
   - `--disable-gpl --disable-nonfree --disable-everything`, then only what Bragi runs: 7 demuxers, 21 decoders, parsers and BSFs; the encoders `mjpeg,pcm_s16le,wrapped_avframe` (`-f null` scene detection needs the last); the muxers `image2pipe,wav,null`; 13 filters; and the protocols `file,pipe`, no network.
   - Reproducible flags: `SOURCE_DATE_EPOCH` and `-ffile-prefix-map`.
-  - Output: `bin/ffmpeg`, `bin/ffprobe`, `LICENSE.md`, `CONFIG.txt` and `SOURCE.txt`. `--print-config` prints the configure line, which is in the notices verbatim.
+  - Output: `bin/ffmpeg`, `bin/ffprobe`, [`LICENSE.md`](https://github.com/FFmpeg/FFmpeg/blob/n9.0.2/COPYING.LGPLv2.1) (the LGPL 2.1 text), `CONFIG.txt` and `SOURCE.txt`. `--print-config` prints the configure line, which is in the notices verbatim.
   - Built end to end on alien-blue, about 6.3 MiB per binary. Every ffmpeg command Bragi runs worked on mp4/H.264+AAC, webm/VP9+Opus and avi/MPEG-4+MP3: probe, a frame, scene detection, the soundtrack and the player's MJPEG stream. No binary is committed.
 - **Packaging**:
   - `dist-linux.sh` bundles a build into the desktop and terminal tarballs when `BRAGI_FFMPEG_DIR` or `dist/ffmpeg/<host>` has one.
   - The nfpm deb and rpm packages `Recommends` the distro's ffmpeg (`ffmpeg`; `(ffmpeg or ffmpeg-free)`). `bragi-bin` has an `optdepends` entry (`.SRCINFO` regenerated). Nix wraps with `ffmpeg-headless` after `PATH`.
   - `dist-macos.sh` puts it in `Contents/Helpers`, signed ad hoc before the app, and `Ffmpeg::locate` now looks there (`locate_from`, tested).
   - `dist-windows.ps1` and `bragi.wxs` (`-d Ffmpeg=0|1`, component `BragiFfmpeg`) put it beside `bragi.exe`.
-  - `THIRD_PARTY_NOTICES.md` ships in every package.
+  - [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) ships in every package.
   - The PowerShell, WiX and macOS paths were not run, because alien-blue is Linux with no pwsh. Bash scripts pass `bash -n` (there is no shellcheck here), the YAML parses, and the WiX XML parses.
 - **Desktop fullscreen** ([video.rs](crates/bragi-desktop/src/video.rs), [view.rs](crates/bragi-desktop/src/view.rs)):
   - A **⛶ Fullscreen** button lays the picture and the shared controls over the window, and the window goes fullscreen if it wasn't.
@@ -108,7 +108,7 @@ The open follow-ups of [docs/design/video.md](docs/design/video.md).
   - A Flutter switch for stored clips.
   - Pruning `<dir>/clips`.
   - Phone decoders still not run on a device.
-  - Ymir's `docs/DESIGN.md` Bragi status is stale. Its B4 status says push "Bragi side built" and on-device model "not built"; the stored clips and video work aren't mentioned.
+  - Ymir's [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) Bragi status is stale. Its B4 status says push "Bragi side built" and on-device model "not built"; the stored clips and video work aren't mentioned.
 
 ## 2026-11-26 21:44 EST: extension parity done, chat files, images and sound, reactions, delete, history, folders and link codes in VS Code (merged `feature/ext-parity-chat`, LF-40)
 
@@ -206,7 +206,7 @@ V3 of [docs/design/video.md](docs/design/video.md), on top of the VS Code slice 
 - Copying clips into the attachment store so other devices can play them.
 - A bundled LGPL ffmpeg.
 - Transcription, after Ymir milestone 2.
-- The Bragi status in Ymir `docs/DESIGN.md`.
+- The Bragi status in Ymir [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md).
 - The Weirdnet asks.
 
 **Next:** a device run of the decoders and player, then the remaining Bragi roadmap items.
@@ -226,7 +226,7 @@ Michael approved the next slices of [docs/design/video.md](docs/design/video.md)
 - `flutter analyze`: only the 6 existing `curly_braces` infos. There are no Dart or bridge changes, so `flutter test` was not run.
 - No live GUI was opened. The webview player was checked by tests only and has not been watched on screen.
 
-**Not done:** the Flutter phone player and decoders (V3, next), copying clips into the attachment store so other devices can play them, a bundled LGPL ffmpeg, transcription after Ymir milestone 2, the Bragi status in Ymir `docs/DESIGN.md`, and the Weirdnet asks.
+**Not done:** the Flutter phone player and decoders (V3, next), copying clips into the attachment store so other devices can play them, a bundled LGPL ffmpeg, transcription after Ymir milestone 2, the Bragi status in Ymir [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md), and the Weirdnet asks.
 
 **Next:** V3, `feature/video-v3-flutter`.
 
@@ -241,7 +241,7 @@ The rest of V2 in [docs/design/video.md](docs/design/video.md), on top of slice 
 
 **Checks:** on alien-blue: `cargo fmt --all --check` was clean at d3086c5. `cargo clippy --workspace --all-targets -- -D warnings` was clean at 32bd1f8, and later commits touched only docs and HANDOFF. `cargo test --workspace --no-fail-fast` at d3086c5 gave 356 passed, 0 failed, 5 ignored in 43 suites. That includes 9 new tests, 5 in `video_play` and 4 desktop `VideoPlayback` tests over a scripted decoder: clock-following and seek-restart, decoder failure, too slow after the grace period, and mute keeping its place. `flutter analyze` showed only the 6 existing `curly_braces` infos. `flutter test --dart-define=BRAGI_DEMO=true` was run file by file against the bridge built from this branch: code 3/3, models 3/3, scenario 2/2, theme 1/1 and wake 3/3 passed. settings failed 0/1, at line 228 on one run and line 389 on the next, in the endpoint flows. It is the same test that fails on origin/main (V1 entry), and this branch changes nothing in `app/` or `bragi-bridge`. Slice 1 checks are in the entry below (54d6a27: fmt, clippy, 347/0/5 in 43 suites). No GUI was opened, so the player was tested by unit tests only and never watched on screen.
 
-**Not done:** the VS Code attach and webview player, the Flutter phone player and decoders (V3), copying the original clip into the attachment store so other devices can play it, fullscreen, a bundled LGPL ffmpeg, wiring transcription once Ymir milestone 2 lands, the Bragi status in Ymir `docs/DESIGN.md`, and the Weirdnet asks (`McpSource` passing image and audio blocks to the model, image-block annotations, `weirdnet-media`). weirdnet-model 0.5.4 is published and not adopted yet.
+**Not done:** the VS Code attach and webview player, the Flutter phone player and decoders (V3), copying the original clip into the attachment store so other devices can play it, fullscreen, a bundled LGPL ffmpeg, wiring transcription once Ymir milestone 2 lands, the Bragi status in Ymir [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md), and the Weirdnet asks (`McpSource` passing image and audio blocks to the model, image-block annotations, `weirdnet-media`). weirdnet-model 0.5.4 is published and not adopted yet.
 
 **Next:** look at the player on a real screen, then VS Code or V3.
 
@@ -256,7 +256,7 @@ Michael approved rolling straight into V2 of [docs/design/video.md](docs/design/
 
 **Checks:** on alien-blue at 54529a0: `cargo fmt --all --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --no-fail-fast` 347 passed, 0 failed, 5 ignored in 43 suites (new: `extract_takes_the_callers_count_and_size_and_refuses_too_much`, `the_override_text_parses_round_trips_and_says_what_is_ignored`, bragi-mcp `probe_frames_and_chat_with_a_clip`, `an_mcp_client_reads_frames_as_images_with_their_times`, which reads frames through `Client::call_tool_content`/`Content::from_json`/`decoded_bytes` over a pipe and shows a 128 KiB line cap failing where 64 MiB delivers). `flutter analyze`: the 6 existing `curly_braces` infos only (no Dart or bridge changes, so no `flutter test`). No GUI opened.
 
-**Not done:** the Bragi status line in Ymir `docs/DESIGN.md` (follow-up), MCP image/audio parts reaching the model through `McpSource` (Weirdnet ask), image-block annotations (Weirdnet ask).
+**Not done:** the Bragi status line in Ymir [`docs/DESIGN.md`](https://github.com/WeirdBrains/ymir/blob/main/docs/DESIGN.md) (follow-up), MCP image/audio parts reaching the model through `McpSource` (Weirdnet ask), image-block annotations (Weirdnet ask).
 
 **Next:** the V2 player (`feature/video-v2-player`).
 
